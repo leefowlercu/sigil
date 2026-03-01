@@ -69,6 +69,341 @@ Feature: Sigil baseline CLI and config contracts
     Then command exits non-zero
     And command error contains `unknown command`
 
+  Scenario: Loads default run configuration file from current working directory
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: default prompt
+      context: default context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    And the sigil application starts without an explicit run config path
+    When run configuration is merged
+    Then the default run config path is "./sigil-run.yaml"
+    And run configuration initialization succeeds
+
+  Scenario: Applies SIGIL_RUN environment variable overrides using dot-to-underscore key mapping
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: file prompt
+      context: file context
+      llm:
+        provider: anthropic
+        model: claude-sonnet-4
+      """
+    And environment override "SIGIL_RUN_LLM_PROVIDER" is "openai"
+    And environment override "SIGIL_RUN_LLM_MODEL" is "gpt-5.1"
+    When run configuration is merged
+    Then effective run llm.provider is "openai"
+    And effective run llm.model is "gpt-5.1"
+
+  Scenario: Rejects run configuration when llm.provider or llm.model is missing after merge
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Requires exactly one of prompt and prompt_template
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      prompt_template: prompt-template
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Requires exactly one of context and context_template
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      context_template: context-template
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Defaults llm.gateway to openrouter when omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run llm.gateway is "openrouter"
+
+  Scenario: Allows omitted llm.openrouter block when gateway is openrouter
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run llm.openrouter.base_url is "https://openrouter.ai/api/v1"
+    And effective run llm.openrouter.request_timeout_ms is 30000
+    And effective run llm.openrouter.api_key_env is "OPENROUTER_API_KEY"
+
+  Scenario: Rejects unsupported llm.gateway values
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        gateway: invalid-gateway
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Applies OpenRouter defaults when openrouter fields are omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        openrouter: {}
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run llm.openrouter.base_url is "https://openrouter.ai/api/v1"
+    And effective run llm.openrouter.request_timeout_ms is 30000
+    And effective run llm.openrouter.api_key_env is "OPENROUTER_API_KEY"
+
+  Scenario: Applies RLM defaults when rlm fields are omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run rlm.enabled is true
+    And effective run rlm.max_depth is 3
+
+  Scenario: Accepts required values provided entirely by environment variables
+    Given no default run config files exist
+    And environment override "SIGIL_RUN_PROMPT" is "env prompt"
+    And environment override "SIGIL_RUN_CONTEXT" is "env context"
+    And environment override "SIGIL_RUN_LLM_PROVIDER" is "openai"
+    And environment override "SIGIL_RUN_LLM_MODEL" is "gpt-5.1"
+    When run configuration is resolved
+    Then run configuration initialization succeeds
+    And effective run llm.provider is "openai"
+    And effective run llm.model is "gpt-5.1"
+
+  Scenario: Accepts llm.provider only when value is openai or anthropic
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: anthropic
+        model: claude-sonnet-4
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: unsupported
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Validates llm.model against allowed list for provider openai
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: claude-sonnet-4
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Validates llm.model against allowed list for provider anthropic
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: anthropic
+        model: claude-sonnet-4
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: anthropic
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Rejects run configuration when llm.model is not allowed for selected llm.provider
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: claude-sonnet-4
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Applies default reasoning config values when llm.reasoning block is omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run llm.reasoning.enabled is true
+    And effective run llm.reasoning.effort is "medium"
+
+  Scenario: Accepts llm.reasoning.effort only when value is minimal low medium or high
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        reasoning:
+          effort: minimal
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        reasoning:
+          effort: low
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        reasoning:
+          effort: high
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        reasoning:
+          effort: extreme
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Allows reasoning effort to be present and ignored when llm.reasoning.enabled is false
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        reasoning:
+          enabled: false
+          effort: high
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run llm.reasoning.enabled is false
+    And effective run llm.reasoning.effort is "high"
+
+  Scenario: Applies SIGIL_RUN environment overrides for llm.reasoning.enabled and llm.reasoning.effort
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+        reasoning:
+          enabled: true
+          effort: low
+      """
+    And environment override "SIGIL_RUN_LLM_REASONING_ENABLED" is "false"
+    And environment override "SIGIL_RUN_LLM_REASONING_EFFORT" is "high"
+    When run configuration is merged
+    Then effective run llm.reasoning.enabled is false
+    And effective run llm.reasoning.effort is "high"
+
   Scenario: Uses default application and run configuration paths when no flags are provided
     Given application config exists at "./sigil.yaml" with:
       """
@@ -105,12 +440,18 @@ Feature: Sigil baseline CLI and config contracts
     When a user runs `sigil run start --config ./custom-sigil.yaml --run-config ./custom-run.yaml`
     Then command exits with status code 0
 
-  Scenario: Fails when a resolved configuration path is missing or not a readable file
-    Given run config file exists at "./sigil-run.yaml"
+  Scenario: Fails when required configuration paths are missing unreadable or not regular files
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
     And a directory exists at "./not-a-file"
     When a user runs `sigil run start --config ./not-a-file`
     Then command exits non-zero
     And command error contains `invalid --config value`
+    When a user runs `sigil run start --run-config ./missing-run.yaml`
+    Then command exits non-zero
+    And command error contains `invalid --run-config value`
     When a user runs `sigil run start --unknown-flag`
     Then command exits non-zero
     And command error contains `unknown flag`

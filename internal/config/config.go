@@ -13,17 +13,54 @@ import (
 
 const (
 	applicationEnvPrefix = "SIGIL"
+	runEnvPrefix         = "SIGIL_RUN"
 )
 
 var (
-	configMu      sync.RWMutex
-	activeConfig  Config
-	configLoaded  bool
+	configMu     sync.RWMutex
+	activeConfig Config
+	configLoaded bool
+
+	runConfigMu     sync.RWMutex
+	activeRunConfig RunConfig
+	runConfigLoaded bool
+
 	validLogLevel = map[string]struct{}{
 		"debug": {},
 		"info":  {},
 		"warn":  {},
 		"error": {},
+	}
+
+	validRunGateways = map[string]struct{}{
+		"openrouter": {},
+	}
+
+	validRunProviderModels = map[string]map[string]struct{}{
+		"openai": {
+			"gpt-5.1":           {},
+			"gpt-5.1-codex-max": {},
+			"gpt-5.2":           {},
+			"gpt-5.2-pro":       {},
+			"gpt-5.2-codex":     {},
+			"gpt-5.3-codex":     {},
+		},
+		"anthropic": {
+			"claude-sonnet-4":   {},
+			"claude-opus-4":     {},
+			"claude-sonnet-4.5": {},
+			"claude-haiku-4.5":  {},
+			"claude-opus-4.5":   {},
+			"claude-sonnet-4.6": {},
+			"claude-opus-4.6":   {},
+		},
+	}
+
+	validRunReasoningEfforts = map[string]struct{}{
+		"minimal": {},
+		"low":     {},
+		"medium":  {},
+		"high":    {},
 	}
 )
 
@@ -40,7 +77,7 @@ func InitFromPath(configPath string) (err error) {
 		}
 	}()
 
-	path := resolveConfigPath(configPath)
+	path := resolveConfigPath(configPath, DefaultConfigPath)
 
 	configName, configDir, err := splitConfigPath(path)
 	if err != nil {
@@ -57,7 +94,7 @@ func InitFromPath(configPath string) (err error) {
 
 	registerDefaults(v)
 
-	if err := readConfig(v); err != nil {
+	if err := readConfig(v, true); err != nil {
 		return err
 	}
 
@@ -78,6 +115,57 @@ func InitFromPath(configPath string) (err error) {
 	return nil
 }
 
+// InitRun initializes run configuration using the default run config source.
+func InitRun() error {
+	return initRunFromPath(DefaultRunConfigPath, true)
+}
+
+// InitRunFromPath initializes run configuration using the provided run config path.
+func InitRunFromPath(runConfigPath string) error {
+	return initRunFromPath(runConfigPath, false)
+}
+
+func initRunFromPath(runConfigPath string, allowMissing bool) (err error) {
+	defer func() {
+		if err != nil {
+			clearActiveRunConfig()
+		}
+	}()
+
+	path := resolveConfigPath(runConfigPath, DefaultRunConfigPath)
+
+	configName, configDir, err := splitConfigPath(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve run config path; %w", err)
+	}
+
+	v := viper.New()
+	v.SetConfigName(configName)
+	v.SetConfigType("yaml")
+	v.AddConfigPath(configDir)
+	v.SetEnvPrefix(runEnvPrefix)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	registerRunDefaults(v)
+
+	if err := readConfig(v, allowMissing); err != nil {
+		return err
+	}
+
+	var cfg RunConfig
+	if err := v.Unmarshal(&cfg); err != nil {
+		return fmt.Errorf("failed to unmarshal run config; %w", err)
+	}
+
+	if err := validateRunConfig(cfg); err != nil {
+		return fmt.Errorf("invalid run config; %w", err)
+	}
+
+	setActiveRunConfig(cfg)
+	return nil
+}
+
 // Get returns the active config.
 func Get() (Config, error) {
 	configMu.RLock()
@@ -93,6 +181,28 @@ func Get() (Config, error) {
 // MustGet returns the active config and panics if config was not initialized.
 func MustGet() Config {
 	cfg, err := Get()
+	if err != nil {
+		panic(err)
+	}
+
+	return cfg
+}
+
+// GetRun returns the active run config.
+func GetRun() (RunConfig, error) {
+	runConfigMu.RLock()
+	defer runConfigMu.RUnlock()
+
+	if !runConfigLoaded {
+		return RunConfig{}, errors.New("run config is not initialized")
+	}
+
+	return activeRunConfig, nil
+}
+
+// MustGetRun returns the active run config and panics if run config was not initialized.
+func MustGetRun() RunConfig {
+	cfg, err := GetRun()
 	if err != nil {
 		panic(err)
 	}
@@ -135,10 +245,26 @@ func clearActiveConfig() {
 	configLoaded = false
 }
 
-func resolveConfigPath(configPath string) string {
+func setActiveRunConfig(cfg RunConfig) {
+	runConfigMu.Lock()
+	defer runConfigMu.Unlock()
+
+	activeRunConfig = cfg
+	runConfigLoaded = true
+}
+
+func clearActiveRunConfig() {
+	runConfigMu.Lock()
+	defer runConfigMu.Unlock()
+
+	activeRunConfig = RunConfig{}
+	runConfigLoaded = false
+}
+
+func resolveConfigPath(configPath string, fallback string) string {
 	path := strings.TrimSpace(configPath)
 	if path == "" {
-		return DefaultConfigPath
+		return fallback
 	}
 
 	return path
@@ -178,10 +304,29 @@ func registerDefaults(v *viper.Viper) {
 	v.SetDefault("log_dir", defaults.LogDir)
 }
 
-func readConfig(v *viper.Viper) error {
+func registerRunDefaults(v *viper.Viper) {
+	defaults := NewDefaultRunConfig()
+	v.SetDefault("system_prompt_append", defaults.SystemPromptAppend)
+	v.SetDefault("prompt", defaults.Prompt)
+	v.SetDefault("prompt_template", defaults.PromptTemplate)
+	v.SetDefault("context", defaults.Context)
+	v.SetDefault("context_template", defaults.ContextTemplate)
+	v.SetDefault("llm.provider", defaults.LLM.Provider)
+	v.SetDefault("llm.model", defaults.LLM.Model)
+	v.SetDefault("llm.gateway", defaults.LLM.Gateway)
+	v.SetDefault("llm.reasoning.enabled", defaults.LLM.Reasoning.Enabled)
+	v.SetDefault("llm.reasoning.effort", defaults.LLM.Reasoning.Effort)
+	v.SetDefault("llm.openrouter.base_url", defaults.LLM.OpenRouter.BaseURL)
+	v.SetDefault("llm.openrouter.request_timeout_ms", defaults.LLM.OpenRouter.RequestTimeoutMS)
+	v.SetDefault("llm.openrouter.api_key_env", defaults.LLM.OpenRouter.APIKeyEnv)
+	v.SetDefault("rlm.enabled", defaults.RLM.Enabled)
+	v.SetDefault("rlm.max_depth", defaults.RLM.MaxDepth)
+}
+
+func readConfig(v *viper.Viper, allowMissing bool) error {
 	if err := v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
-		if errors.As(err, &notFound) {
+		if allowMissing && errors.As(err, &notFound) {
 			return nil
 		}
 
@@ -197,6 +342,52 @@ func validateConfig(cfg Config) error {
 	}
 
 	return nil
+}
+
+func validateRunConfig(cfg RunConfig) error {
+	if !exactlyOneStringSet(cfg.Prompt, cfg.PromptTemplate) {
+		return errors.New("exactly one of prompt and prompt_template must be set")
+	}
+
+	if !exactlyOneStringSet(cfg.Context, cfg.ContextTemplate) {
+		return errors.New("exactly one of context and context_template must be set")
+	}
+
+	provider := strings.TrimSpace(cfg.LLM.Provider)
+	if provider == "" {
+		return errors.New("llm.provider is required")
+	}
+
+	model := strings.TrimSpace(cfg.LLM.Model)
+	if model == "" {
+		return errors.New("llm.model is required")
+	}
+
+	if _, ok := validRunGateways[cfg.LLM.Gateway]; !ok {
+		return fmt.Errorf("unsupported llm.gateway %q", cfg.LLM.Gateway)
+	}
+
+	allowedModels, providerOk := validRunProviderModels[provider]
+	if !providerOk {
+		return fmt.Errorf("unsupported llm.provider %q", provider)
+	}
+
+	if _, modelOk := allowedModels[model]; !modelOk {
+		return fmt.Errorf("unsupported llm.model %q for llm.provider %q", model, provider)
+	}
+
+	if _, ok := validRunReasoningEfforts[cfg.LLM.Reasoning.Effort]; !ok {
+		return fmt.Errorf("unsupported llm.reasoning.effort %q", cfg.LLM.Reasoning.Effort)
+	}
+
+	return nil
+}
+
+func exactlyOneStringSet(left string, right string) bool {
+	leftSet := strings.TrimSpace(left) != ""
+	rightSet := strings.TrimSpace(right) != ""
+
+	return (leftSet || rightSet) && !(leftSet && rightSet)
 }
 
 func normalizeConfigPaths(cfg *Config) error {

@@ -1,6 +1,7 @@
 package subcommands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,4 +41,16 @@ func validateReadableRegularFile(path string) error {
 	}
 
 	return nil
+}
+
+func validateReadableRegularFileIfExists(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to stat path %q; %w", path, err)
+	}
+
+	return validateReadableRegularFile(path)
 }

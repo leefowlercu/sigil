@@ -9,7 +9,6 @@ import (
 func TestValidateStartInputsSetsSilenceUsageAfterValidationSuccess(t *testing.T) {
 	workDir := t.TempDir()
 	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
-	writeStartTestFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
 
 	originalDir, err := os.Getwd()
 	if err != nil {
@@ -29,6 +28,31 @@ func TestValidateStartInputsSetsSilenceUsageAfterValidationSuccess(t *testing.T)
 
 	if !startCmd.SilenceUsage {
 		t.Fatal("expected SilenceUsage to be true after successful validation")
+	}
+}
+
+func TestValidateStartInputsFailsWhenExplicitRunConfigPathIsMissing(t *testing.T) {
+	workDir := t.TempDir()
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	startCmd := NewStartCmd()
+	if err := startCmd.Flags().Set("run-config", "./missing-run.yaml"); err != nil {
+		t.Fatalf("failed to set run-config flag: %v", err)
+	}
+
+	if err := validateStartInputs(startCmd, nil); err == nil {
+		t.Fatal("expected validation error for missing explicit --run-config value")
 	}
 }
 

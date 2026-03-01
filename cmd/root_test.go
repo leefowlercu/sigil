@@ -59,7 +59,7 @@ func TestUnknownSubcommandUsesCobraDefaultError(t *testing.T) {
 func TestRunStartUsesDefaultPathsWhenFlagsOmitted(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
-	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start")
 	if err != nil {
@@ -70,7 +70,7 @@ func TestRunStartUsesDefaultPathsWhenFlagsOmitted(t *testing.T) {
 func TestRunStartOverridesConfigPath(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "custom-sigil.yaml"), "log_level: warn\n")
-	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--config", "./custom-sigil.yaml")
 	if err != nil {
@@ -81,7 +81,7 @@ func TestRunStartOverridesConfigPath(t *testing.T) {
 func TestRunStartOverridesRunConfigPath(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
-	writeFile(t, filepath.Join(workDir, "custom-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "custom-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--run-config", "./custom-run.yaml")
 	if err != nil {
@@ -92,7 +92,7 @@ func TestRunStartOverridesRunConfigPath(t *testing.T) {
 func TestRunStartOverridesBothPaths(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "custom-sigil.yaml"), "log_level: debug\n")
-	writeFile(t, filepath.Join(workDir, "custom-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "custom-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(
 		t,
@@ -124,7 +124,7 @@ func TestRunStartFailsWhenResolvedPathIsMissing(t *testing.T) {
 func TestRunStartFailsWhenConfigFlagIsExplicitlyEmpty(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
-	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--config", "")
 	if err == nil {
@@ -139,7 +139,7 @@ func TestRunStartFailsWhenConfigFlagIsExplicitlyEmpty(t *testing.T) {
 func TestRunStartFailsWhenRunConfigFlagIsExplicitlyEmpty(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
-	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--run-config", "")
 	if err == nil {
@@ -157,7 +157,7 @@ func TestRunStartFailsWhenResolvedPathIsNotRegularFile(t *testing.T) {
 	if err := os.Mkdir(dirPath, 0o755); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
 	}
-	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--config", "./not-a-file")
 	if err == nil {
@@ -187,7 +187,7 @@ func TestRunStartUsesFrameworkDefaultUnknownFlagError(t *testing.T) {
 func TestRunStartReturnsRuntimeErrorForInvalidAppConfig(t *testing.T) {
 	workDir := t.TempDir()
 	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: trace\n")
-	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start")
 	if err == nil {
@@ -196,6 +196,37 @@ func TestRunStartReturnsRuntimeErrorForInvalidAppConfig(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "failed to initialize config;") {
 		t.Fatalf("expected wrapped runtime error, got %v", err)
+	}
+}
+
+func TestRunStartAllowsMissingDefaultRunConfigWhenEnvironmentSuppliesRequiredValues(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+
+	env := map[string]string{
+		"SIGIL_RUN_PROMPT":       "env prompt",
+		"SIGIL_RUN_CONTEXT":      "env context",
+		"SIGIL_RUN_LLM_PROVIDER": "openai",
+		"SIGIL_RUN_LLM_MODEL":    "gpt-5.1",
+	}
+
+	_, _, err := executeRootCommand(t, workDir, env, "run", "start")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestRunStartFailsWhenExplicitRunConfigPathIsMissing(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+
+	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--run-config", "./missing-run.yaml")
+	if err == nil {
+		t.Fatal("expected missing run config path error")
+	}
+
+	if !strings.Contains(err.Error(), "invalid --run-config value") {
+		t.Fatalf("expected invalid --run-config error, got %v", err)
 	}
 }
 

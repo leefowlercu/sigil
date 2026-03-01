@@ -26,7 +26,7 @@ func NewStartCmd() *cobra.Command {
 		Use:   "start",
 		Short: "Initialize run inputs and prepare run startup",
 		Long: "sigil run start initializes command inputs for a run invocation.\n\n" +
-			"This command resolves application and run configuration paths, validates file input constraints, and initializes application configuration before runtime execution behavior is introduced.",
+			"This command resolves application and run configuration paths, validates file input constraints, and initializes application and run configuration before runtime execution behavior is introduced.",
 		Example: "# Start using default config paths\n" +
 			"  sigil run start\n\n" +
 			"# Start with an explicit application config path\n" +
@@ -64,8 +64,14 @@ func validateStartInputs(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid --config value; %w", err)
 	}
 
-	if err := validateReadableRegularFile(startRunConfigPath); err != nil {
-		return fmt.Errorf("invalid --run-config value; %w", err)
+	if cmd.Flags().Changed("run-config") {
+		if err := validateReadableRegularFile(startRunConfigPath); err != nil {
+			return fmt.Errorf("invalid --run-config value; %w", err)
+		}
+	} else {
+		if err := validateReadableRegularFileIfExists(startRunConfigPath); err != nil {
+			return fmt.Errorf("invalid --run-config value; %w", err)
+		}
 	}
 
 	cmd.SilenceUsage = true
@@ -84,9 +90,21 @@ func validateNonEmptyStartFlags(cmd *cobra.Command) error {
 	return nil
 }
 
-func runStartCommand(_ *cobra.Command, _ []string) error {
+func runStartCommand(cmd *cobra.Command, _ []string) error {
 	if err := config.InitFromPath(startConfigPath); err != nil {
 		return fmt.Errorf("failed to initialize config; %w", err)
+	}
+
+	if cmd.Flags().Changed("run-config") {
+		if err := config.InitRunFromPath(startRunConfigPath); err != nil {
+			return fmt.Errorf("failed to initialize run config; %w", err)
+		}
+
+		return nil
+	}
+
+	if err := config.InitRun(); err != nil {
+		return fmt.Errorf("failed to initialize run config; %w", err)
 	}
 
 	return nil
