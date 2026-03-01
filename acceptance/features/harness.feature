@@ -499,3 +499,128 @@ Feature: Sigil baseline CLI and config contracts
       """
     When application logging is initialized
     Then the effective log target path is "./override-log-dir/sigil.log"
+
+  Scenario: Initializes runs in queued state before execution begins
+    Given a new run is created
+    When lifecycle initialization completes
+    Then run state is "queued"
+
+  Scenario: Transitions run from queued to running when execution starts
+    Given a run in "queued" state
+    When execution starts
+    Then run transitions to "running"
+
+  Scenario: Creates exactly one root node at depth zero for each run
+    Given a run transitions to "running"
+    When node initialization occurs
+    Then exactly one root node exists with depth=0 and parent_node_id=null
+
+  Scenario: Allows child nodes only under an existing parent node in the same run
+    Given a run in "running" state
+    When a child node is created
+    Then it references an existing parent node in the same run
+
+  Scenario: Transitions run to completed on successful execution termination
+    Given a run in "running" state
+    When execution terminates successfully
+    Then run transitions to "completed"
+
+  Scenario: Transitions run to failed on unrecoverable runtime failure
+    Given a run in "running" state
+    When unrecoverable runtime failure occurs
+    Then run transitions to "failed"
+
+  Scenario: Transitions run to interrupted on explicit interruption
+    Given a run in "running" state
+    When explicit interruption is requested
+    Then run transitions to "interrupted"
+
+  Scenario: Rejects invalid transitions from terminal run states
+    Given a run in "running" state
+    When execution terminates successfully
+    And any further state transition is requested
+    Then transition validation fails
+    Given a run in "running" state
+    When unrecoverable runtime failure occurs
+    And any further state transition is requested
+    Then transition validation fails
+    Given a run in "running" state
+    When explicit interruption is requested
+    And any further state transition is requested
+    Then transition validation fails
+
+  Scenario: Represents tool and code execution as node-scoped events without creating nodes
+    Given a run in "running" state with active recursive nodes
+    When tool or code execution activity occurs
+    Then activity is recorded as node-scoped events and no additional node entity is created
+
+  Scenario: Persists run events to per-run append-only events.jsonl under sigil runs directory
+    Given a persisted lifecycle run exists
+    When canonical run lifecycle events are emitted
+    Then events are persisted to a per-run append-only events.jsonl path under sigil runs directory
+
+  Scenario: Uses UUIDv7 identifiers for run node and event identity fields
+    Given persisted canonical run events exist
+    When persisted event identity fields are inspected
+    Then run_id node_id when present and event_id are UUIDv7
+
+  Scenario: Assigns contiguous per-run sequence numbers starting at one
+    Given persisted canonical run events exist
+    When persisted event sequence values are inspected
+    Then seq starts at 1 and increments contiguously by 1
+
+  Scenario: Writes one valid JSON event envelope per line
+    Given persisted canonical run events exist
+    When events.jsonl is parsed line by line
+    Then each non-empty line is a valid JSON event envelope
+
+  Scenario: Requires run_id on all events and node_id on node-scoped events
+    Given persisted canonical run events exist
+    When required identity fields are validated
+    Then all events contain run_id and node-scoped events contain node_id
+
+  Scenario: Fsyncs each appended event before acknowledging persistence
+    Given persisted canonical run events exist
+    When persistence acknowledgement metrics are inspected
+    Then each appended event has been fsynced before acknowledgement
+
+  Scenario: Rejects event append when next sequence is not contiguous
+    Given persisted canonical run events exist
+    When an event append is requested with non-contiguous next sequence
+    Then event append is rejected for non-contiguous sequence
+
+  Scenario: Fails integrity validation on malformed or partial persisted event lines
+    Given persisted canonical run events exist
+    And events.jsonl is corrupted with malformed or partial lines
+    When event-log integrity validation executes
+    Then integrity validation fails for run recovery
+
+  Scenario: Preserves immutability by forbidding in-place event modification
+    Given persisted canonical run events exist
+    When an append attempts in-place sequence rewrite
+    Then event append is rejected by immutable event-store contract
+
+  Scenario: Carries schema_version to support forward event evolution
+    Given persisted canonical run events exist
+    When event envelopes are inspected
+    Then schema_version exists and equals v1
+
+  Scenario: Defines canonical core lifecycle event type catalog for v1
+    Given canonical v1 run-event validation rules
+    When canonical core lifecycle event types are validated
+    Then only canonical v1 lifecycle event types are accepted
+
+  Scenario: Enforces strict payload schema and invariants for each core lifecycle event type
+    Given canonical v1 lifecycle events with payloads
+    When strict payload schema validation is executed
+    Then required fields types and invariants are enforced per event type
+
+  Scenario: Rejects unknown fields and unknown event types under v1 strict extensibility rules
+    Given v1 event envelopes with unknown fields or unknown type
+    When strict v1 extensibility validation is executed
+    Then validation fails and events are rejected
+
+  Scenario: Defers non-core tool and model payload families while keeping core lifecycle payloads normative
+    Given a core lifecycle event payload includes deferred non-core fields
+    When core v1 payload validation executes
+    Then deferred non-core fields are rejected as out-of-contract
