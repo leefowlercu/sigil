@@ -1,0 +1,21 @@
+# Build artifacts
+/bin/
+/sigil
+
+# Go test and coverage artifacts
+*.coverprofile
+coverage.out
+coverage.txt
+
+# Local runtime data
+/sigil/logs/
+/sigil/runs/
+
+# Local configuration and environment files
+/sigil.yaml
+/sigil-run.yaml
+/.env
+/.env.*
+
+# OS/editor noise
+.DS_Store
