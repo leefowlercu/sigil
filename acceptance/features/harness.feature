@@ -624,3 +624,125 @@ Feature: Sigil baseline CLI and config contracts
     Given a core lifecycle event payload includes deferred non-core fields
     When core v1 payload validation executes
     Then deferred non-core fields are rejected as out-of-contract
+
+  Scenario: Resolves inference gateway through registry using llm.gateway
+    Given a valid inference request for gateway resolution
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference gateway resolution runs
+    Then resolution occurs through gateway registry lookup
+
+  Scenario: Uses OpenRouter Responses API in non-streaming mode for v1
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then request targets OpenRouter Responses API in non-streaming mode
+
+  Scenario: Resolves schema_id sigil.rlm.response.v1 from central registry for inference requests
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then schema is resolved from central registry and applied to request
+
+  Scenario: Uses schema_id sigil.rlm.response.v1 for terminal inference responses
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then schema is resolved from central registry and applied to request
+
+  Scenario: Requires strict json_schema structured outputs on all inference requests
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then strict json_schema structured output mode is required
+
+  Scenario: Enables response healing plugin on all inference requests
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then response healing plugin is enabled
+
+  Scenario: Applies reasoning configuration when llm.reasoning.enabled is true
+    Given a valid inference request for execution
+    And inference reasoning is enabled with effort "medium"
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then reasoning config is included using configured effort "medium"
+
+  Scenario: Omits reasoning request block when llm.reasoning.enabled is false
+    Given a valid inference request for execution
+    And inference reasoning is disabled
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then reasoning config is omitted
+
+  Scenario: Retries up to three total attempts with exponential backoff on 429 and 5xx responses
+    Given a valid inference request for execution
+    And openrouter mock gateway returns retry status sequence "429,500,200"
+    When inference execution runs
+    Then runtime retries with bounded policy (3 total attempts exponential backoff base 250ms jitter max 2s)
+
+  Scenario: Fails with typed inference error after bounded retries are exhausted
+    Given a valid inference request for execution
+    And openrouter mock gateway returns retry status sequence "429,500,503"
+    When inference execution runs
+    Then inference fails with typed error code "gateway_failure"
+
+  Scenario: Fails with typed inference error when healed response does not satisfy strict schema
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "schema-invalid"
+    When inference execution runs
+    Then inference fails with typed error code "output_validation"
+
+  Scenario: Fails with typed inference error when configured provider model pair does not support required reasoning behavior
+    Given a valid inference request for execution
+    And inference reasoning is enabled with effort "medium"
+    And openrouter mock gateway returns payload fixture "reasoning-unsupported"
+    When inference execution runs
+    Then inference fails with typed error code "reasoning_capability"
+
+  Scenario: Rejects inference request when schema_id is not found in central registry
+    Given a valid inference request for execution
+    And central inference schema registry excludes schema_id "sigil.unknown.v1"
+    When inference execution runs
+    Then inference fails with typed error code "schema_lookup"
+
+  Scenario: Returns canonical normalized inference response shape on success
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Requires decision discriminator values continue or final in sigil.rlm.response.v1
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "decision-invalid"
+    When inference execution runs
+    Then decision discriminator enforces continue or final
+
+  Scenario: Requires continuation branch and forbids final branch when decision is continue
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "continue-branch-invalid"
+    When inference execution runs
+    Then continuation branch invariant is enforced
+
+  Scenario: Requires final branch and forbids continuation branch when decision is final
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "final-branch-invalid"
+    When inference execution runs
+    Then final branch invariant is enforced
+
+  Scenario: Rejects unknown fields in sigil.rlm.response.v1 payloads
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "unknown-field"
+    When inference execution runs
+    Then unknown fields are rejected with typed output-validation error
+
+  Scenario: Emits reasoning data under top-level reasoning key and reasoning token counts under usage
+    Given a valid inference request for execution
+    And inference reasoning is enabled with effort "medium"
+    And openrouter mock gateway returns payload fixture "reasoning-artifacts"
+    When inference execution runs
+    Then reasoning artifacts are under top-level reasoning and reasoning token counts are under usage.reasoning_tokens

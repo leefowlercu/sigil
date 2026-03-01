@@ -18,33 +18,45 @@ import (
 	"github.com/google/uuid"
 	"github.com/leefowlercu/sigil/cmd"
 	"github.com/leefowlercu/sigil/internal/config"
+	sigilinference "github.com/leefowlercu/sigil/internal/inference"
+	sigilschema "github.com/leefowlercu/sigil/internal/inference/schema"
 	"github.com/leefowlercu/sigil/internal/logging"
 	sigilruntime "github.com/leefowlercu/sigil/internal/runtime"
 )
 
 type harnessWorld struct {
-	workingDir              string
-	originalWorkingDir      string
-	lastStdout              string
-	lastStderr              string
-	lastErr                 error
-	lastExitCode            int
-	configInitErr           error
-	loggingInitErr          error
-	runConfigInitErr        error
-	resolvedAppConfigPath   string
-	resolvedRunConfigPath   string
-	lifecycle               *sigilruntime.Lifecycle
-	lifecycleTransitionErr  error
-	lastCreatedNode         sigilruntime.Node
-	nodeCountBeforeActivity int
-	nodeCountAfterActivity  int
-	eventLogPath            string
-	persistedEvents         []sigilruntime.EventEnvelope
-	eventAppendErr          error
-	eventValidationErr      error
-	eventIntegrityErr       error
-	rawEventLines           []string
+	workingDir               string
+	originalWorkingDir       string
+	lastStdout               string
+	lastStderr               string
+	lastErr                  error
+	lastExitCode             int
+	configInitErr            error
+	loggingInitErr           error
+	runConfigInitErr         error
+	resolvedAppConfigPath    string
+	resolvedRunConfigPath    string
+	lifecycle                *sigilruntime.Lifecycle
+	lifecycleTransitionErr   error
+	lastCreatedNode          sigilruntime.Node
+	nodeCountBeforeActivity  int
+	nodeCountAfterActivity   int
+	eventLogPath             string
+	persistedEvents          []sigilruntime.EventEnvelope
+	eventAppendErr           error
+	eventValidationErr       error
+	eventIntegrityErr        error
+	rawEventLines            []string
+	inferenceService         *sigilinference.Service
+	inferenceGatewayRegistry *sigilinference.Registry
+	inferenceSchemaRegistry  *sigilschema.Registry
+	inferenceRequest         sigilinference.Request
+	inferenceResult          sigilinference.Result
+	inferenceErr             error
+	inferenceResolvedErr     error
+	inferenceRetryDelays     []time.Duration
+	inferenceRequestBody     map[string]any
+	inferenceMockServer      *openRouterMockServer
 }
 
 // InitializeScenario wires all acceptance steps for harness.feature.
@@ -52,6 +64,11 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	world := &harnessWorld{}
 
 	ctx.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
+		if world.inferenceMockServer != nil {
+			world.inferenceMockServer.Close()
+			world.inferenceMockServer = nil
+		}
+
 		if world.lifecycle != nil {
 			if err := world.lifecycle.Close(); err != nil {
 				return ctx, fmt.Errorf("failed to close lifecycle from previous scenario; %w", err)
@@ -98,11 +115,26 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		world.eventValidationErr = nil
 		world.eventIntegrityErr = nil
 		world.rawEventLines = nil
+		world.inferenceService = nil
+		world.inferenceGatewayRegistry = nil
+		world.inferenceSchemaRegistry = nil
+		world.inferenceRequest = sigilinference.Request{}
+		world.inferenceResult = sigilinference.Result{}
+		world.inferenceErr = nil
+		world.inferenceResolvedErr = nil
+		world.inferenceRetryDelays = nil
+		world.inferenceRequestBody = nil
+		world.inferenceMockServer = nil
 
 		return ctx, nil
 	})
 
 	ctx.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
+		if world.inferenceMockServer != nil {
+			world.inferenceMockServer.Close()
+			world.inferenceMockServer = nil
+		}
+
 		if world.lifecycle != nil {
 			if err := world.lifecycle.Close(); err != nil {
 				return ctx, fmt.Errorf("failed to close lifecycle resources; %w", err)
@@ -228,6 +260,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^stop usage/help is printed$`, world.stopUsageHelpIsPrinted)
 	ctx.Step(`^no default start config files exist$`, world.noDefaultStartConfigFilesExist)
 	ctx.Step(`^no default run config files exist$`, world.noDefaultRunConfigFilesExist)
+
+	registerInferenceSteps(ctx, world)
 }
 
 func (w *harnessWorld) aCleanSigilWorkingDirectory() error {
