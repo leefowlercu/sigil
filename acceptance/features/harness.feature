@@ -455,3 +455,47 @@ Feature: Sigil baseline CLI and config contracts
     When a user runs `sigil run start --unknown-flag`
     Then command exits non-zero
     And command error contains `unknown flag`
+
+  Scenario: Writes application logs to a derived sigil.log file path
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      log_dir: ./derived-log-dir
+      """
+    When application logging is initialized
+    Then the effective log file path is "./derived-log-dir/sigil.log"
+
+  Scenario: Uses JSON structured log records for application logging
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      log_dir: ./json-log-dir
+      """
+    When application logging is initialized
+    And application logging writes an info record with message "json-acceptance-record"
+    Then log records are structured JSON
+
+  Scenario: Uses default log file path when default log_dir is in effect
+    Given the sigil application starts without an explicit application config path
+    When application logging is initialized
+    Then the effective log target path is "./sigil/logs/sigil.log"
+
+  Scenario: Fails initialization when derived log file path cannot be opened as a file sink
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      log_dir: ./blocked-log-target
+      """
+    And a file exists at "./blocked-log-target"
+    When a user runs `sigil run`
+    Then command exits non-zero
+    And command error contains `failed to initialize application logging`
+
+  Scenario: Derives log file path from configured log_dir override
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      log_dir: ./override-log-dir
+      """
+    When application logging is initialized
+    Then the effective log target path is "./override-log-dir/sigil.log"

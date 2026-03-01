@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/leefowlercu/sigil/internal/config"
+	"github.com/leefowlercu/sigil/internal/logging"
 )
 
 func TestRootCommandNoSubcommandPrintsUsage(t *testing.T) {
@@ -64,6 +67,72 @@ func TestRunStartUsesDefaultPathsWhenFlagsOmitted(t *testing.T) {
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestRootBootstrapInitializesLoggingAtDefaultPath(t *testing.T) {
+	workDir := t.TempDir()
+
+	_, _, err := executeRootCommand(t, workDir, nil)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	activeLogPath, err := logging.ActiveLogFilePath()
+	if err != nil {
+		t.Fatalf("expected active log path, got %v", err)
+	}
+
+	expectedPath, err := config.ExpandPath("./sigil/logs/sigil.log")
+	if err != nil {
+		t.Fatalf("expected expected-path expansion success, got %v", err)
+	}
+	if activeLogPath != expectedPath {
+		t.Fatalf("expected active log path %q, got %q", expectedPath, activeLogPath)
+	}
+}
+
+func TestRootBootstrapUsesConfigOverrideForLoggingPath(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "custom-sigil.yaml"), "log_level: info\nlog_dir: ./override-logs\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
+
+	_, _, err := executeRootCommand(t, workDir, nil, "run", "start", "--config", "./custom-sigil.yaml")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	activeLogPath, err := logging.ActiveLogFilePath()
+	if err != nil {
+		t.Fatalf("expected active log path, got %v", err)
+	}
+
+	expectedPath, err := config.ExpandPath("./override-logs/sigil.log")
+	if err != nil {
+		t.Fatalf("expected expected-path expansion success, got %v", err)
+	}
+	if activeLogPath != expectedPath {
+		t.Fatalf("expected active log path %q, got %q", expectedPath, activeLogPath)
+	}
+}
+
+func TestRootBootstrapFailsWhenLogSinkCannotBeInitialized(t *testing.T) {
+	workDir := t.TempDir()
+	blockedTarget := filepath.Join(workDir, "blocked-log-target")
+	writeFile(t, blockedTarget, "blocked")
+	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\nlog_dir: ./blocked-log-target\n")
+
+	_, stderr, err := executeRootCommand(t, workDir, nil, "run")
+	if err == nil {
+		t.Fatal("expected logging initialization failure")
+	}
+
+	if !strings.Contains(err.Error(), "failed to initialize application logging;") {
+		t.Fatalf("expected wrapped logging init error, got %v", err)
+	}
+
+	if !strings.Contains(stderr, "failed to initialize application logging;") {
+		t.Fatalf("expected stderr to include logging init error, got %q", stderr)
 	}
 }
 

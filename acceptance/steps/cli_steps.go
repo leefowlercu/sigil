@@ -3,7 +3,9 @@ package steps
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +15,7 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/leefowlercu/sigil/cmd"
 	"github.com/leefowlercu/sigil/internal/config"
+	"github.com/leefowlercu/sigil/internal/logging"
 )
 
 type harnessWorld struct {
@@ -23,6 +26,7 @@ type harnessWorld struct {
 	lastErr               error
 	lastExitCode          int
 	configInitErr         error
+	loggingInitErr        error
 	runConfigInitErr      error
 	resolvedAppConfigPath string
 	resolvedRunConfigPath string
@@ -33,6 +37,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	world := &harnessWorld{}
 
 	ctx.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
+		_ = logging.Close()
+
 		workDir, err := os.MkdirTemp("", "sigil-acceptance-*")
 		if err != nil {
 			return ctx, err
@@ -55,6 +61,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		world.lastErr = nil
 		world.lastExitCode = 0
 		world.configInitErr = nil
+		world.loggingInitErr = nil
 		world.runConfigInitErr = nil
 		world.resolvedAppConfigPath = config.DefaultConfigPath
 		world.resolvedRunConfigPath = config.DefaultRunConfigPath
@@ -63,6 +70,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	})
 
 	ctx.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
+		_ = logging.Close()
+
 		if world.originalWorkingDir != "" {
 			_ = os.Chdir(world.originalWorkingDir)
 		}
@@ -81,10 +90,13 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^run config file exists at "([^"]*)"$`, world.runConfigFileExistsAt)
 	ctx.Step(`^run configuration exists at "([^"]*)" with:$`, world.runConfigurationExistsAtWith)
 	ctx.Step(`^a directory exists at "([^"]*)"$`, world.aDirectoryExistsAt)
+	ctx.Step(`^a file exists at "([^"]*)"$`, world.aFileExistsAt)
 	ctx.Step(`^environment override "([^"]*)" is "([^"]*)"$`, world.environmentOverrideIs)
 	ctx.Step(`^application configuration is resolved$`, world.applicationConfigurationIsResolved)
 	ctx.Step(`^application configuration is merged$`, world.applicationConfigurationIsMerged)
 	ctx.Step(`^application configuration validation runs$`, world.applicationConfigurationValidationRuns)
+	ctx.Step(`^application logging is initialized$`, world.applicationLoggingIsInitialized)
+	ctx.Step(`^application logging writes an info record with message "([^"]*)"$`, world.applicationLoggingWritesAnInfoRecordWithMessage)
 	ctx.Step(`^run configuration is resolved$`, world.runConfigurationIsResolved)
 	ctx.Step(`^run configuration is merged$`, world.runConfigurationIsMerged)
 	ctx.Step(`^run configuration validation runs$`, world.runConfigurationValidationRuns)
@@ -94,6 +106,9 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^baseline application config keys are "([^"]*)" and "([^"]*)"$`, world.baselineApplicationConfigKeysAreAnd)
 	ctx.Step(`^effective application log_level is "([^"]*)"$`, world.effectiveApplicationLogLevelIs)
 	ctx.Step(`^effective application log_dir is "([^"]*)"$`, world.effectiveApplicationLogDirIs)
+	ctx.Step(`^the effective log file path is "([^"]*)"$`, world.theEffectiveLogFilePathIs)
+	ctx.Step(`^the effective log target path is "([^"]*)"$`, world.theEffectiveLogTargetPathIs)
+	ctx.Step(`^log records are structured JSON$`, world.logRecordsAreStructuredJSON)
 	ctx.Step(`^effective run llm.provider is "([^"]*)"$`, world.effectiveRunLLMProviderIs)
 	ctx.Step(`^effective run llm.model is "([^"]*)"$`, world.effectiveRunLLMModelIs)
 	ctx.Step(`^effective run llm.gateway is "([^"]*)"$`, world.effectiveRunLLMGatewayIs)
@@ -105,6 +120,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^effective run llm.reasoning.enabled is (true|false)$`, world.effectiveRunLLMReasoningEnabledIs)
 	ctx.Step(`^effective run llm.reasoning.effort is "([^"]*)"$`, world.effectiveRunLLMReasoningEffortIs)
 	ctx.Step(`^application configuration initialization fails$`, world.applicationConfigurationInitializationFails)
+	ctx.Step(`^application logging initialization fails$`, world.applicationLoggingInitializationFails)
 	ctx.Step(`^run configuration initialization succeeds$`, world.runConfigurationInitializationSucceeds)
 	ctx.Step(`^run configuration initialization fails$`, world.runConfigurationInitializationFails)
 	ctx.Step(`^the sigil executable is available$`, world.theSigilExecutableIsAvailable)
@@ -183,6 +199,10 @@ func (w *harnessWorld) aDirectoryExistsAt(path string) error {
 	return os.MkdirAll(filepath.Clean(path), 0o755)
 }
 
+func (w *harnessWorld) aFileExistsAt(path string) error {
+	return os.WriteFile(filepath.Clean(path), []byte("fixture"), 0o644)
+}
+
 func (w *harnessWorld) environmentOverrideIs(key string, value string) error {
 	return os.Setenv(key, value)
 }
@@ -199,6 +219,26 @@ func (w *harnessWorld) applicationConfigurationIsMerged() error {
 
 func (w *harnessWorld) applicationConfigurationValidationRuns() error {
 	w.configInitErr = config.InitFromPath(w.resolvedAppConfigPath)
+	return nil
+}
+
+func (w *harnessWorld) applicationLoggingIsInitialized() error {
+	w.configInitErr = config.InitFromPath(w.resolvedAppConfigPath)
+	if w.configInitErr != nil {
+		w.loggingInitErr = fmt.Errorf("config initialization failed; %w", w.configInitErr)
+		return nil
+	}
+
+	w.loggingInitErr = logging.Init(config.MustGet())
+	return nil
+}
+
+func (w *harnessWorld) applicationLoggingWritesAnInfoRecordWithMessage(message string) error {
+	if w.loggingInitErr != nil {
+		return fmt.Errorf("application logging initialization failed; %w", w.loggingInitErr)
+	}
+
+	slog.Info(message)
 	return nil
 }
 
@@ -294,6 +334,62 @@ func (w *harnessWorld) effectiveApplicationLogDirIs(expectedDir string) error {
 
 	if cfg.LogDir != expectedPath {
 		return fmt.Errorf("expected log_dir %q, got %q", expectedPath, cfg.LogDir)
+	}
+
+	return nil
+}
+
+func (w *harnessWorld) theEffectiveLogFilePathIs(expectedPath string) error {
+	return w.assertEffectiveLogPath(expectedPath)
+}
+
+func (w *harnessWorld) theEffectiveLogTargetPathIs(expectedPath string) error {
+	return w.assertEffectiveLogPath(expectedPath)
+}
+
+func (w *harnessWorld) logRecordsAreStructuredJSON() error {
+	if w.loggingInitErr != nil {
+		return fmt.Errorf("application logging initialization failed; %w", w.loggingInitErr)
+	}
+
+	logPath, err := logging.ActiveLogFilePath()
+	if err != nil {
+		return err
+	}
+
+	content, err := os.ReadFile(filepath.Clean(logPath))
+	if err != nil {
+		return fmt.Errorf("failed to read log file %q; %w", logPath, err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	recordCount := 0
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+
+		record := make(map[string]any)
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			return fmt.Errorf("expected structured JSON record, got invalid line %q; %w", line, err)
+		}
+
+		if _, ok := record["time"]; !ok {
+			return fmt.Errorf("structured JSON record missing time field: %v", record)
+		}
+		if _, ok := record["level"]; !ok {
+			return fmt.Errorf("structured JSON record missing level field: %v", record)
+		}
+		if _, ok := record["msg"]; !ok {
+			return fmt.Errorf("structured JSON record missing msg field: %v", record)
+		}
+
+		recordCount++
+	}
+
+	if recordCount == 0 {
+		return fmt.Errorf("expected at least one structured JSON record")
 	}
 
 	return nil
@@ -455,6 +551,14 @@ func (w *harnessWorld) applicationConfigurationInitializationFails() error {
 	return nil
 }
 
+func (w *harnessWorld) applicationLoggingInitializationFails() error {
+	if w.loggingInitErr == nil {
+		return fmt.Errorf("expected application logging initialization failure")
+	}
+
+	return nil
+}
+
 func (w *harnessWorld) runConfigurationInitializationSucceeds() error {
 	if w.runConfigInitErr != nil {
 		return fmt.Errorf("expected run config initialization success, got: %w", w.runConfigInitErr)
@@ -582,5 +686,27 @@ func (w *harnessWorld) noDefaultStartConfigFilesExist() error {
 
 func (w *harnessWorld) noDefaultRunConfigFilesExist() error {
 	_ = os.Remove(filepath.Clean(config.DefaultRunConfigPath))
+	return nil
+}
+
+func (w *harnessWorld) assertEffectiveLogPath(expectedPath string) error {
+	if w.loggingInitErr != nil {
+		return fmt.Errorf("application logging initialization failed; %w", w.loggingInitErr)
+	}
+
+	expected, err := config.ExpandPath(expectedPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve expected log path %q; %w", expectedPath, err)
+	}
+
+	actual, err := logging.ActiveLogFilePath()
+	if err != nil {
+		return err
+	}
+
+	if actual != expected {
+		return fmt.Errorf("expected effective log path %q, got %q", expected, actual)
+	}
+
 	return nil
 }

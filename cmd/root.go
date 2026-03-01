@@ -1,7 +1,12 @@
 package cmd
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/leefowlercu/sigil/cmd/run"
+	"github.com/leefowlercu/sigil/internal/config"
+	"github.com/leefowlercu/sigil/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +26,8 @@ func NewRootCmd() *cobra.Command {
 			"  sigil --help\n\n" +
 			"# Show run command help\n" +
 			"  sigil run --help",
-		RunE: runRootCommand,
+		PersistentPreRunE: initializeRootApplication,
+		RunE:              runRootCommand,
 	}
 
 	rootCmd.AddCommand(run.NewRunCmd())
@@ -31,4 +37,35 @@ func NewRootCmd() *cobra.Command {
 
 func runRootCommand(cmd *cobra.Command, _ []string) error {
 	return cmd.Help()
+}
+
+func initializeRootApplication(cmd *cobra.Command, _ []string) error {
+	configPath := resolveApplicationConfigPath(cmd)
+	if err := config.InitFromPath(configPath); err != nil {
+		return fmt.Errorf("failed to initialize config; %w", err)
+	}
+
+	if err := logging.Init(config.MustGet()); err != nil {
+		return fmt.Errorf("failed to initialize application logging; %w", err)
+	}
+
+	return nil
+}
+
+func resolveApplicationConfigPath(cmd *cobra.Command) string {
+	for current := cmd; current != nil; current = current.Parent() {
+		configFlag := current.Flags().Lookup("config")
+		if configFlag == nil {
+			continue
+		}
+
+		value := strings.TrimSpace(configFlag.Value.String())
+		if value == "" {
+			return config.DefaultConfigPath
+		}
+
+		return value
+	}
+
+	return config.DefaultConfigPath
 }
