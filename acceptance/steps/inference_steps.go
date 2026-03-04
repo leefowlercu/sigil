@@ -30,6 +30,7 @@ func registerInferenceSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^inference execution runs$`, world.inferenceExecutionRuns)
 	ctx.Step(`^resolution occurs through gateway registry lookup$`, world.resolutionOccursThroughGatewayRegistryLookup)
 	ctx.Step(`^request targets OpenRouter Responses API in non-streaming mode$`, world.requestTargetsOpenRouterResponsesAPIInNonStreamingMode)
+	ctx.Step(`^request uses message-array input preserving role order$`, world.requestUsesMessagearrayInputPreservingRoleOrder)
 	ctx.Step(`^schema is resolved from central registry and applied to request$`, world.schemaIsResolvedFromCentralRegistryAndAppliedToRequest)
 	ctx.Step(`^strict json_schema structured output mode is required$`, world.strictJSONSchemaStructuredOutputModeIsRequired)
 	ctx.Step(`^response healing plugin is enabled$`, world.responseHealingPluginIsEnabled)
@@ -221,6 +222,31 @@ func (w *harnessWorld) requestTargetsOpenRouterResponsesAPIInNonStreamingMode() 
 	stream, ok := w.inferenceRequestBody["stream"].(bool)
 	if !ok || stream {
 		return fmt.Errorf("expected stream=false request payload, got %v", w.inferenceRequestBody["stream"])
+	}
+
+	return nil
+}
+
+func (w *harnessWorld) requestUsesMessagearrayInputPreservingRoleOrder() error {
+	if w.inferenceRequestBody == nil {
+		return fmt.Errorf("expected captured request payload")
+	}
+
+	input, ok := w.inferenceRequestBody["input"].([]any)
+	if !ok {
+		return fmt.Errorf("expected request input message array, got %T", w.inferenceRequestBody["input"])
+	}
+	if len(input) != 2 {
+		return fmt.Errorf("expected exactly 2 ordered messages (system,user), got %d", len(input))
+	}
+
+	first := asMapValue(input[0])
+	second := asMapValue(input[1])
+	if role, _ := first["role"].(string); role != "system" {
+		return fmt.Errorf("expected first message role system, got %q", role)
+	}
+	if role, _ := second["role"].(string); role != "user" {
+		return fmt.Errorf("expected second message role user, got %q", role)
 	}
 
 	return nil
@@ -471,8 +497,10 @@ func (w *harnessWorld) initializeInferenceHarness() error {
 	}
 	w.inferenceService = service
 	w.inferenceRequest = sigilinference.Request{
-		Prompt:   "test prompt",
-		Context:  "test context",
+		Messages: []sigilinference.Message{
+			{Role: sigilinference.MessageRoleSystem, Content: "test system prompt"},
+			{Role: sigilinference.MessageRoleUser, Content: "{\"query\":\"test prompt\"}"},
+		},
 		SchemaID: sigilschema.SigilRLMResponseV1SchemaID,
 		Gateway:  "openrouter",
 		Provider: "openai",
@@ -549,12 +577,22 @@ func responsesForFixture(fixture string) ([]mockGatewayResponse, error) {
 		return []mockGatewayResponse{{statusCode: 200, body: continueBranchInvalidGatewayResponseBody()}}, nil
 	case "final-branch-invalid":
 		return []mockGatewayResponse{{statusCode: 200, body: finalBranchInvalidGatewayResponseBody()}}, nil
+	case "continue-missing-intent":
+		return []mockGatewayResponse{{statusCode: 200, body: continueMissingIntentGatewayResponseBody()}}, nil
+	case "final-missing-evidence":
+		return []mockGatewayResponse{{statusCode: 200, body: finalMissingEvidenceGatewayResponseBody()}}, nil
+	case "final-invalid-confidence":
+		return []mockGatewayResponse{{statusCode: 200, body: finalInvalidConfidenceGatewayResponseBody()}}, nil
 	case "unknown-field":
 		return []mockGatewayResponse{{statusCode: 200, body: unknownFieldGatewayResponseBody()}}, nil
 	case "reasoning-artifacts":
 		return []mockGatewayResponse{{statusCode: 200, body: reasoningArtifactsGatewayResponseBody()}}, nil
 	case "reasoning-unsupported":
 		return []mockGatewayResponse{{statusCode: 400, body: map[string]any{"error": map[string]any{"code": "reasoning_not_supported", "message": "reasoning unsupported for selected model"}}}}, nil
+	case "llm-answer-valid":
+		return []mockGatewayResponse{{statusCode: 200, body: llmAnswerValidGatewayResponseBody()}}, nil
+	case "llm-answer-empty":
+		return []mockGatewayResponse{{statusCode: 200, body: llmAnswerEmptyGatewayResponseBody()}}, nil
 	default:
 		return nil, fmt.Errorf("unknown mock fixture %q", fixture)
 	}
@@ -567,7 +605,7 @@ func validFinalGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"__context_ref__"}],"confidence":"medium"}}`}}},
 		},
 		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
 	}
@@ -580,7 +618,7 @@ func validContinueGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"assistant_output":"next"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect context chunk","expected_observation":"needle-like token appears"}}`}}},
 		},
 	}
 }
@@ -604,7 +642,7 @@ func decisionInvalidGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"maybe","final":{"answer":"done"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"maybe","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]}}`}}},
 		},
 	}
 }
@@ -616,7 +654,19 @@ func continueBranchInvalidGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"assistant_output":"next"},"final":{"answer":"done"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"},"final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]}}`}}},
+		},
+	}
+}
+
+func continueMissingIntentGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":       "resp_continue_missing_intent",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","expected_observation":"match"}}`}}},
 		},
 	}
 }
@@ -628,7 +678,31 @@ func finalBranchInvalidGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done"},"continuation":{"assistant_output":"next"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]},"continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"}}`}}},
+		},
+	}
+}
+
+func finalMissingEvidenceGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":       "resp_final_missing_evidence",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done"}}`}}},
+		},
+	}
+}
+
+func finalInvalidConfidenceGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":       "resp_final_invalid_confidence",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}],"confidence":"certain"}}`}}},
 		},
 	}
 }
@@ -640,7 +714,7 @@ func unknownFieldGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done"},"unexpected":"value"}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]},"unexpected":"value"}`}}},
 		},
 	}
 }
@@ -652,7 +726,7 @@ func reasoningArtifactsGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"assistant_output":"next"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"}}`}}},
 		},
 		"reasoning": map[string]any{"summary": "trace", "encrypted_content": "blob"},
 		"usage": map[string]any{
@@ -663,6 +737,32 @@ func reasoningArtifactsGatewayResponseBody() map[string]any {
 				"reasoning_tokens": 7,
 			},
 		},
+	}
+}
+
+func llmAnswerValidGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":       "resp_llm_answer_valid",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"answer":"plain-answer"}`}}},
+		},
+		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+	}
+}
+
+func llmAnswerEmptyGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":       "resp_llm_answer_empty",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"answer":""}`}}},
+		},
+		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
 	}
 }
 

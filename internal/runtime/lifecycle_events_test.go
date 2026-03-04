@@ -206,3 +206,94 @@ func TestLifecycleTerminalTransitionsPersistTerminalRunEvents(t *testing.T) {
 		})
 	}
 }
+
+func TestLifecycleAppendsStepTurnAndActionEvents(t *testing.T) {
+	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
+		RunsBaseDir: filepath.Join(t.TempDir(), "sigil-runs"),
+		MaxDepth:    3,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = lifecycle.Close()
+	})
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected StartExecution success, got %v", err)
+	}
+
+	rootNode := lifecycle.Nodes()[0]
+	stepStarted, err := lifecycle.AppendNodeStepStarted(rootNode.ID)
+	if err != nil {
+		t.Fatalf("expected step started append success, got %v", err)
+	}
+
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleUser, stepStarted.StepID, "run-output://turn/user"); err != nil {
+		t.Fatalf("expected user turn append success, got %v", err)
+	}
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleModel, stepStarted.StepID, "run-output://turn/model"); err != nil {
+		t.Fatalf("expected model turn append success, got %v", err)
+	}
+	if err := lifecycle.AppendNodeSubcallExecuted(rootNode.ID, NodeSubcallExecutedPayload{
+		StepID:        stepStarted.StepID,
+		ActionIndex:   1,
+		SubcallIndex:  1,
+		SubcallType:   SubcallTypeLLMQuery,
+		ExecutionMode: SubcallExecutionModePlain,
+		Status:        ActionExecutionStatusCompleted,
+		Provider:      "openai",
+		Model:         "gpt-5.1",
+		PromptBytes:   3,
+		ContextBytes:  3,
+		AnswerBytes:   3,
+		DurationMS:    1,
+	}); err != nil {
+		t.Fatalf("expected subcall append success, got %v", err)
+	}
+
+	outputRef, err := BuildActionOutputRef(rootNode.ID, stepStarted.StepID, 1)
+	if err != nil {
+		t.Fatalf("expected output ref build success, got %v", err)
+	}
+	if err := lifecycle.AppendNodeActionExecuted(rootNode.ID, NodeActionExecutedPayload{
+		StepID:      stepStarted.StepID,
+		ActionIndex: 1,
+		ActionType:  "repl_code",
+		Language:    "go",
+		Status:      ActionExecutionStatusCompleted,
+		DurationMS:  1,
+		OutputRef:   outputRef,
+	}); err != nil {
+		t.Fatalf("expected action append success, got %v", err)
+	}
+
+	if err := lifecycle.AppendNodeStepCompleted(rootNode.ID, NodeStepCompletedPayload{
+		StepID:      stepStarted.StepID,
+		Decision:    StepDecisionContinue,
+		ActionCount: 1,
+		DurationMS:  1,
+	}); err != nil {
+		t.Fatalf("expected step completed append success, got %v", err)
+	}
+
+	events, err := lifecycle.PersistedEvents()
+	if err != nil {
+		t.Fatalf("expected persisted events read success, got %v", err)
+	}
+
+	lastSix := events[len(events)-6:]
+	expected := []EventType{
+		EventTypeNodeStepStarted,
+		EventTypeNodeTurnUser,
+		EventTypeNodeTurnModel,
+		EventTypeNodeSubcallExecuted,
+		EventTypeNodeActionExecuted,
+		EventTypeNodeStepCompleted,
+	}
+	for index, expectedType := range expected {
+		if lastSix[index].Type != expectedType {
+			t.Fatalf("expected type[%d]=%q, got %q", index, expectedType, lastSix[index].Type)
+		}
+	}
+}

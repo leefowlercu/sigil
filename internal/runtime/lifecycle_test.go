@@ -12,6 +12,7 @@ func TestNewLifecycleWithOptionsInitializesQueuedStateWithUUIDv7RunID(t *testing
 	runsDir := filepath.Join(t.TempDir(), "sigil-runs")
 	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
 		RunsBaseDir: runsDir,
+		MaxDepth:    3,
 	})
 	if err != nil {
 		t.Fatalf("expected lifecycle creation success, got %v", err)
@@ -106,6 +107,29 @@ func TestCreateChildNodeUsesParentDepthPlusOne(t *testing.T) {
 		t.Fatalf("expected child run_id %q, got %q", lifecycle.RunID(), childNode.RunID)
 	}
 	assertUUIDv7String(t, childNode.ID)
+}
+
+func TestCreateChildNodeRejectsWhenDepthWouldExceedMaxDepth(t *testing.T) {
+	runsDir := filepath.Join(t.TempDir(), "sigil-runs")
+	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
+		RunsBaseDir: runsDir,
+		MaxDepth:    0,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = lifecycle.Close()
+	})
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+	rootNode := lifecycle.Nodes()[0]
+
+	if _, err := lifecycle.CreateChildNode(rootNode.ID); !errors.Is(err, ErrDepthLimitExceeded) {
+		t.Fatalf("expected ErrDepthLimitExceeded, got %v", err)
+	}
 }
 
 func TestTransitionRulesFromQueuedAndRunning(t *testing.T) {
@@ -354,12 +378,29 @@ func TestNodesAndActivitiesReturnDefensiveCopies(t *testing.T) {
 	}
 }
 
+func TestRootNodeAndNodeByIDAccessors(t *testing.T) {
+	lifecycle := mustRunningLifecycle(t)
+	rootNode, err := lifecycle.RootNode()
+	if err != nil {
+		t.Fatalf("expected root node lookup success, got %v", err)
+	}
+
+	lookupNode, err := lifecycle.NodeByID(rootNode.ID)
+	if err != nil {
+		t.Fatalf("expected node-by-id lookup success, got %v", err)
+	}
+	if lookupNode.ID != rootNode.ID {
+		t.Fatalf("expected node id %q, got %q", rootNode.ID, lookupNode.ID)
+	}
+}
+
 func mustNewLifecycle(t *testing.T) *Lifecycle {
 	t.Helper()
 
 	runsDir := filepath.Join(t.TempDir(), "sigil-runs")
 	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
 		RunsBaseDir: runsDir,
+		MaxDepth:    3,
 	})
 	if err != nil {
 		t.Fatalf("expected lifecycle creation success, got %v", err)

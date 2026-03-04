@@ -53,8 +53,10 @@ func makeService(t *testing.T, gateway Gateway, options ...ServiceOption) *Servi
 
 func baseRequest() Request {
 	return Request{
-		Prompt:   "prompt",
-		Context:  "context",
+		Messages: []Message{
+			{Role: MessageRoleSystem, Content: "system"},
+			{Role: MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
 		SchemaID: schema.SigilRLMResponseV1SchemaID,
 		Gateway:  "openrouter",
 		Provider: "openai",
@@ -66,11 +68,32 @@ func baseRequest() Request {
 	}
 }
 
+func TestInferRejectsInvalidMessagesWithTypedGatewayResolutionError(t *testing.T) {
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{StructuredPayload: validFinalPayload()}}}}
+	service := makeService(t, gateway)
+
+	request := baseRequest()
+	request.Messages = nil
+	_, err := service.Infer(context.Background(), request)
+	if !IsCode(err, ErrorCodeGatewayResolution) {
+		t.Fatalf("expected gateway resolution error code for invalid messages, got %v", err)
+	}
+
+	request = baseRequest()
+	request.Messages = []Message{{Role: "invalid", Content: "hello"}}
+	_, err = service.Infer(context.Background(), request)
+	if !IsCode(err, ErrorCodeGatewayResolution) {
+		t.Fatalf("expected gateway resolution error code for invalid role, got %v", err)
+	}
+}
+
 func validFinalPayload() map[string]any {
 	return map[string]any{
 		"decision": "final",
 		"final": map[string]any{
-			"answer": "done",
+			"answer":     "done",
+			"evidence":   []any{map[string]any{"ref": "run-output://node/example/context.json"}},
+			"confidence": "medium",
 		},
 	}
 }

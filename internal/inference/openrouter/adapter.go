@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -59,23 +60,36 @@ func NewGateway(request inference.Request) (inference.Gateway, error) {
 
 // Infer executes one non-streaming OpenRouter Responses API call.
 func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (inference.GatewayResponse, error) {
+	logger := openrouterLogger().With(
+		"provider", request.Provider,
+		"model", request.Model,
+		"base_url", a.baseURL,
+	)
 	apiKey := strings.TrimSpace(os.Getenv(a.apiKeyEnv))
 	if apiKey == "" {
+		logger.Error("openrouter api key is not configured", "api_key_env", a.apiKeyEnv)
 		return inference.GatewayResponse{}, fmt.Errorf("openrouter api key environment variable %q is not set", a.apiKeyEnv)
 	}
 
 	requestBody, err := a.buildRequestBody(request)
 	if err != nil {
+		logger.Error("failed to build openrouter request body", "error", err)
 		return inference.GatewayResponse{}, err
 	}
 
 	encodedBody, err := json.Marshal(requestBody)
 	if err != nil {
+		logger.Error("failed to encode openrouter request", "error", err)
 		return inference.GatewayResponse{}, fmt.Errorf("failed to encode openrouter request payload; %w", err)
 	}
+	logger.Debug("sending openrouter request",
+		"request_bytes", len(encodedBody),
+		"reasoning_enabled", request.Reasoning.Enabled,
+	)
 
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+"/responses", bytes.NewReader(encodedBody))
 	if err != nil {
+		logger.Error("failed to construct openrouter http request", "error", err)
 		return inference.GatewayResponse{}, fmt.Errorf("failed to create openrouter request; %w", err)
 	}
 
@@ -85,18 +99,30 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 
 	httpResponse, err := a.client.Do(httpRequest)
 	if err != nil {
+		logger.Error("openrouter request transport failure", "error", err)
 		return inference.GatewayResponse{}, fmt.Errorf("openrouter request failed; %w", err)
 	}
 	defer httpResponse.Body.Close()
 
 	bodyBytes, err := io.ReadAll(httpResponse.Body)
 	if err != nil {
+		logger.Error("failed to read openrouter response body",
+			"status_code", httpResponse.StatusCode,
+			"error", err,
+		)
 		return inference.GatewayResponse{}, fmt.Errorf("failed to read openrouter response body; %w", err)
 	}
 
 	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
+		logger.Warn("openrouter request returned non-success status",
+			"status_code", httpResponse.StatusCode,
+			"response_bytes", len(bodyBytes),
+		)
 		httpErr := &inference.GatewayHTTPError{StatusCode: httpResponse.StatusCode, Body: strings.TrimSpace(string(bodyBytes))}
 		if request.Reasoning.Enabled && isReasoningCapabilityFailure(httpResponse.StatusCode, bodyBytes) {
+			logger.Warn("openrouter reasoning capability mismatch",
+				"status_code", httpResponse.StatusCode,
+			)
 			return inference.GatewayResponse{}, &inference.ReasoningCapabilityError{Message: "configured provider/model does not support required reasoning behavior", Cause: httpErr}
 		}
 
@@ -105,11 +131,13 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 
 	var decoded map[string]any
 	if err := json.Unmarshal(bodyBytes, &decoded); err != nil {
+		logger.Error("failed to decode openrouter response json", "error", err)
 		return inference.GatewayResponse{}, fmt.Errorf("failed to decode openrouter response JSON; %w", err)
 	}
 
 	structuredPayload, err := extractStructuredPayload(decoded)
 	if err != nil {
+		logger.Error("failed to extract structured response payload", "error", err)
 		return inference.GatewayResponse{}, fmt.Errorf("failed to extract structured response payload; %w", err)
 	}
 
@@ -120,6 +148,13 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 	responseProvider, _ := decoded["provider"].(string)
 	responseModel, _ := decoded["model"].(string)
 	status, _ := decoded["status"].(string)
+	logger.Info("openrouter request completed",
+		"status_code", httpResponse.StatusCode,
+		"gateway_response_id", strings.TrimSpace(responseID),
+		"response_provider", strings.TrimSpace(responseProvider),
+		"response_model", strings.TrimSpace(responseModel),
+		"finish_status", strings.TrimSpace(status),
+	)
 
 	return inference.GatewayResponse{
 		GatewayResponseID: strings.TrimSpace(responseID),
@@ -134,9 +169,8 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 }
 
 func (a *Adapter) buildRequestBody(request inference.GatewayRequest) (map[string]any, error) {
-	input := strings.TrimSpace(strings.Join([]string{strings.TrimSpace(request.Context), strings.TrimSpace(request.Prompt)}, "\n\n"))
-	if input == "" {
-		return nil, fmt.Errorf("request prompt/context input is required")
+	if len(request.Messages) == 0 {
+		return nil, fmt.Errorf("request messages are required")
 	}
 	provider := strings.TrimSpace(request.Provider)
 	if provider == "" {
@@ -145,6 +179,22 @@ func (a *Adapter) buildRequestBody(request inference.GatewayRequest) (map[string
 	model := strings.TrimSpace(request.Model)
 	if model == "" {
 		return nil, fmt.Errorf("request model is required")
+	}
+
+	input := make([]any, 0, len(request.Messages))
+	for index, message := range request.Messages {
+		role := strings.TrimSpace(string(message.Role))
+		content := strings.TrimSpace(message.Content)
+		if role == "" {
+			return nil, fmt.Errorf("request messages[%d].role is required", index)
+		}
+		if content == "" {
+			return nil, fmt.Errorf("request messages[%d].content is required", index)
+		}
+		input = append(input, map[string]any{
+			"role":    role,
+			"content": content,
+		})
 	}
 
 	requestBody := map[string]any{
@@ -305,6 +355,10 @@ func asMap(value any) map[string]any {
 	}
 
 	return mapValue
+}
+
+func openrouterLogger() *slog.Logger {
+	return slog.Default().With("component", "inference.openrouter")
 }
 
 func int64FromAny(value any) int64 {

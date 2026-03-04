@@ -188,6 +188,14 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 	runID := mustUUIDv7String(t)
 	nodeID := mustUUIDv7String(t)
 	parentID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+	contentRef := "run-output://node/turn/1"
+	errorCode := "action.failed"
+	errorMessage := "failed action execution"
+	outputRef, err := BuildActionOutputRef(nodeID, stepID, 1)
+	if err != nil {
+		t.Fatalf("failed to build output_ref fixture: %v", err)
+	}
 
 	testCases := []struct {
 		name      string
@@ -225,6 +233,120 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			payload: NodeCompletedPayload{
 				Status:     "completed",
 				DurationMS: 10,
+			},
+		},
+		{
+			name:      "node.step.started",
+			eventType: EventTypeNodeStepStarted,
+			payload: NodeStepStartedPayload{
+				StepID:    stepID,
+				StepIndex: 1,
+				SchemaID:  "sigil.rlm.response.v1",
+			},
+		},
+		{
+			name:      "node.step.completed continue",
+			eventType: EventTypeNodeStepCompleted,
+			payload: NodeStepCompletedPayload{
+				StepID:      stepID,
+				Decision:    StepDecisionContinue,
+				ActionCount: 1,
+				DurationMS:  9,
+			},
+		},
+		{
+			name:      "node.step.completed final",
+			eventType: EventTypeNodeStepCompleted,
+			payload: NodeStepCompletedPayload{
+				StepID:      stepID,
+				Decision:    StepDecisionFinal,
+				ActionCount: 0,
+				DurationMS:  9,
+			},
+		},
+		{
+			name:      "node.turn.user",
+			eventType: EventTypeNodeTurnUser,
+			payload: NodeTurnPayload{
+				StepID:     stepID,
+				Role:       TurnRoleUser,
+				ContentRef: contentRef,
+			},
+		},
+		{
+			name:      "node.turn.model",
+			eventType: EventTypeNodeTurnModel,
+			payload: NodeTurnPayload{
+				StepID:     stepID,
+				Role:       TurnRoleModel,
+				ContentRef: contentRef,
+			},
+		},
+		{
+			name:      "node.subcall.executed completed",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: NodeSubcallExecutedPayload{
+				StepID:        stepID,
+				ActionIndex:   1,
+				SubcallIndex:  1,
+				SubcallType:   SubcallTypeLLMQuery,
+				ExecutionMode: SubcallExecutionModePlain,
+				Status:        ActionExecutionStatusCompleted,
+				Provider:      "openai",
+				Model:         "gpt-5.1",
+				PromptBytes:   10,
+				ContextBytes:  20,
+				AnswerBytes:   12,
+				DurationMS:    2,
+			},
+		},
+		{
+			name:      "node.subcall.executed failed",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: NodeSubcallExecutedPayload{
+				StepID:        stepID,
+				ActionIndex:   1,
+				SubcallIndex:  2,
+				SubcallType:   SubcallTypeRLMQuery,
+				ExecutionMode: SubcallExecutionModeRecursive,
+				Status:        ActionExecutionStatusFailed,
+				Provider:      "openai",
+				Model:         "gpt-5.1",
+				PromptBytes:   10,
+				ContextBytes:  20,
+				AnswerBytes:   0,
+				DurationMS:    2,
+				ChildNodeID:   &parentID,
+				ErrorCode:     &errorCode,
+				ErrorMessage:  &errorMessage,
+			},
+		},
+		{
+			name:      "node.action.executed completed",
+			eventType: EventTypeNodeActionExecuted,
+			payload: NodeActionExecutedPayload{
+				StepID:      stepID,
+				ActionIndex: 1,
+				ActionType:  "repl_code",
+				Language:    "go",
+				Status:      ActionExecutionStatusCompleted,
+				DurationMS:  10,
+				OutputRef:   outputRef,
+			},
+		},
+		{
+			name:      "node.action.executed failed",
+			eventType: EventTypeNodeActionExecuted,
+			payload: NodeActionExecutedPayload{
+				StepID:       stepID,
+				ActionIndex:  1,
+				ActionType:   "repl_code",
+				Language:     "go",
+				Status:       ActionExecutionStatusFailed,
+				DurationMS:   10,
+				OutputRef:    outputRef,
+				ErrorCode:    &errorCode,
+				ErrorMessage: &errorMessage,
 			},
 		},
 		{
@@ -270,7 +392,7 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 				CorrelationID: runID,
 				Payload:       testCase.payload,
 			}
-			if testCase.eventType == EventTypeNodeStarted || testCase.eventType == EventTypeNodeCompleted {
+			if isNodeScopedEventType(testCase.eventType) {
 				event.NodeID = &nodeID
 				event.Seq = 2
 				event.CausationID = mustUUIDv7String(t)
@@ -324,6 +446,127 @@ func TestParseEventEnvelopeStrictRejectsInvalidPayloadInvariants(t *testing.T) {
 				"seq":            2,
 				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
 				"type":           EventTypeNodeStarted,
+				"node_id":        nodeID,
+				"causation_id":   mustUUIDv7String(t),
+				"correlation_id": runID,
+				"payload":        testCase.payload,
+			}
+
+			serialized, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("expected serialization success, got %v", err)
+			}
+
+			_, err = ParseEventEnvelopeStrict(serialized)
+			if !errors.Is(err, ErrInvalidEvent) {
+				t.Fatalf("expected ErrInvalidEvent, got %v", err)
+			}
+		})
+	}
+}
+
+func TestParseEventEnvelopeStrictRejectsInvalidStepTurnAndActionPayloadInvariants(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+
+	testCases := []struct {
+		name      string
+		eventType EventType
+		payload   map[string]any
+	}{
+		{
+			name:      "node step completed continue with action_count zero",
+			eventType: EventTypeNodeStepCompleted,
+			payload: map[string]any{
+				"step_id":      stepID,
+				"decision":     "continue",
+				"action_count": 0,
+				"duration_ms":  1,
+			},
+		},
+		{
+			name:      "node turn user with mismatched role",
+			eventType: EventTypeNodeTurnUser,
+			payload: map[string]any{
+				"step_id":     stepID,
+				"role":        "model",
+				"content_ref": "run-output://turn/1",
+			},
+		},
+		{
+			name:      "node action executed failed without errors",
+			eventType: EventTypeNodeActionExecuted,
+			payload: map[string]any{
+				"step_id":      stepID,
+				"action_index": 1,
+				"action_type":  "repl_code",
+				"language":     "go",
+				"status":       "failed",
+				"duration_ms":  1,
+				"output_ref":   "run-artifact://node/" + nodeID + "/step/" + stepID + "/action-1.json",
+			},
+		},
+		{
+			name:      "node action executed invalid output_ref identity mismatch",
+			eventType: EventTypeNodeActionExecuted,
+			payload: map[string]any{
+				"step_id":      stepID,
+				"action_index": 1,
+				"action_type":  "repl_code",
+				"language":     "go",
+				"status":       "completed",
+				"duration_ms":  1,
+				"output_ref":   "run-artifact://node/" + mustUUIDv7String(t) + "/step/" + stepID + "/action-1.json",
+			},
+		},
+		{
+			name:      "node subcall executed failed without error fields",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   "llm_query",
+				"execution_mode": "plain",
+				"status":         "failed",
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   0,
+				"duration_ms":    1,
+			},
+		},
+		{
+			name:      "node subcall executed recursive missing child node",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   "rlm_query",
+				"execution_mode": "recursive",
+				"status":         "completed",
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   1,
+				"duration_ms":    1,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := map[string]any{
+				"event_id":       mustUUIDv7String(t),
+				"schema_version": SchemaVersionV1,
+				"run_id":         runID,
+				"seq":            2,
+				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+				"type":           testCase.eventType,
 				"node_id":        nodeID,
 				"causation_id":   mustUUIDv7String(t),
 				"correlation_id": runID,

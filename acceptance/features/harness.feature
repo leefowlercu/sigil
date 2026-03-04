@@ -50,7 +50,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run usage/help is printed
     And command exits with status code 0
 
-  Scenario: Defers sigil run start behavior to PRD-0004 run-start config-input contract
+  Scenario: Delegates sigil run start behavior to PRD-0011 run-start harness-execution contract
     Given the sigil executable is available
     And no default start config files exist
     When a user runs `sigil run start`
@@ -456,6 +456,194 @@ Feature: Sigil baseline CLI and config contracts
     Then command exits non-zero
     And command error contains `unknown flag`
 
+  Scenario: Accepts repeated --var key value entries
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt_template: prompt {{.name}}
+      context_template: context {{.name}}
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When a user runs `sigil run start --var name=acme --var environment=prod`
+    Then command exits with status code 0
+
+  Scenario: Rejects invalid --var format or empty key
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run config file exists at "./sigil-run.yaml"
+    When a user runs `sigil run start --var invalid`
+    Then command exits non-zero
+    And command error contains `invalid --var value`
+
+  Scenario: Resolves duplicate --var keys deterministically using last value
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt_template: prompt {{.name}}
+      context_template: context {{.name}}
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When a user runs `sigil run start --var name=first --var name=second`
+    Then command exits with status code 0
+
+  Scenario: Executes sigil run start as a blocking harness entrypoint
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run config file exists at "./sigil-run.yaml"
+    When a user runs `sigil run start`
+    Then command exits with status code 0
+    And command output contains `"run_id"`
+
+  Scenario: Emits run.queued with source cli.run.start and resolved config-path metadata
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run config file exists at "./sigil-run.yaml"
+    When a user runs `sigil run start`
+    Then command exits with status code 0
+    And command output contains `"state":"completed"`
+
+  Scenario: Starts lifecycle and root node before first inference step
+    Given a run in "queued" state
+    When harness execution starts
+    Then run transitions to "running"
+    And exactly one root node exists with depth 0 and null parent
+
+  Scenario: Resolves effective prompt and context from direct fields or rendered templates
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt_template: prompt {{.name}}
+      context_template: context {{.name}}
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When a user runs `sigil run start --var name=acme`
+    Then command exits with status code 0
+
+  Scenario: Fails run start on template rendering errors under strict missing-key policy
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt_template: prompt {{.missing}}
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When a user runs `sigil run start`
+    Then command exits non-zero
+    And command error contains `harness_template_render`
+
+  Scenario: Executes multi-step decision loop until root terminal decision
+    Given an active node with existing REPL session state
+    When additional continue actions execute for that node
+    Then subsequent actions run in the same node REPL session state
+
+  Scenario: Persists per-step user and model turns and emits node turn events
+    Given a node-local step is in progress
+    When transcript contributions are persisted for that step
+    Then each turn contribution is recorded with role user or model
+
+  Scenario: Executes exactly one continue action per continue decision and emits node.action.executed
+    Given an active node with continuation payload containing non-empty continuation.repl_code
+    When harness processes continuation step
+    Then exactly one continuation.repl_code action executes in node-local REPL state
+
+  Scenario: Allows recursive child-node execution via rlm_query when recursion is enabled and depth permits
+    Given an active parent node at depth 1
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then child node is created at depth 2
+
+  Scenario: Falls back to plain subcall behavior when recursion exceeds rlm.max_depth in recursive mode
+    Given an active parent node at depth 3
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then plain subcall fallback answer is returned and child node is not created
+
+  Scenario: Runs non-recursive multi-step profile when rlm.enabled is false
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      rlm:
+        enabled: false
+      """
+    When a user runs `sigil run start`
+    Then command exits with status code 0
+    And command output contains `"state":"completed"`
+
+  Scenario: Returns typed depth-limit error for all rlm_query calls in non-recursive mode
+    Given non-recursive harness mode is active
+    When rlm_query is invoked from node-local Go REPL context
+    Then typed depth-limit error is returned and child node is not created
+
+  Scenario: Completes run on root final answer and sets run.completed.final_answer_ref
+    Given an active root node inference result is decision final with answer "final answer"
+    When harness evaluates root node step
+    Then run transitions to "completed"
+    And run completion references terminal root final output
+
+  Scenario: Prints JSON run summary on successful completion
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run config file exists at "./sigil-run.yaml"
+    When a user runs `sigil run start`
+    Then command exits with status code 0
+    And command output contains `"run_id"`
+    And command output contains `"final_answer_ref"`
+    And command output contains `"events_path"`
+    And command output contains `"final_answer"`
+
+  Scenario: Exits non-zero with typed failure metadata on unrecoverable harness inference or template errors
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt_template: prompt {{.missing}}
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When a user runs `sigil run start`
+    Then command exits non-zero
+    And command error contains `harness_template_render`
+
   Scenario: Writes application logs to a derived sigil.log file path
     Given application config exists at "./sigil.yaml" with:
       """
@@ -554,10 +742,10 @@ Feature: Sigil baseline CLI and config contracts
     When tool or code execution activity occurs
     Then activity is recorded as node-scoped events and no additional node entity is created
 
-  Scenario: Persists run events to per-run append-only events.jsonl under sigil runs directory
+  Scenario: Persists run events to per-run append-only events.jsonl under .sigil runs directory
     Given a persisted lifecycle run exists
     When canonical run lifecycle events are emitted
-    Then events are persisted to a per-run append-only events.jsonl path under sigil runs directory
+    Then events are persisted to a per-run append-only events.jsonl path under .sigil runs directory
 
   Scenario: Uses UUIDv7 identifiers for run node and event identity fields
     Given persisted canonical run events exist
@@ -605,13 +793,13 @@ Feature: Sigil baseline CLI and config contracts
     When event envelopes are inspected
     Then schema_version exists and equals v1
 
-  Scenario: Defines canonical core lifecycle event type catalog for v1
+  Scenario: Defines canonical runtime event type catalog for v1
     Given canonical v1 run-event validation rules
-    When canonical core lifecycle event types are validated
-    Then only canonical v1 lifecycle event types are accepted
+    When canonical runtime event types are validated
+    Then only canonical v1 runtime event types are accepted
 
-  Scenario: Enforces strict payload schema and invariants for each core lifecycle event type
-    Given canonical v1 lifecycle events with payloads
+  Scenario: Enforces strict payload schema and invariants for each canonical v1 event type
+    Given canonical v1 events with payloads
     When strict payload schema validation is executed
     Then required fields types and invariants are enforced per event type
 
@@ -620,10 +808,45 @@ Feature: Sigil baseline CLI and config contracts
     When strict v1 extensibility validation is executed
     Then validation fails and events are rejected
 
-  Scenario: Defers non-core tool and model payload families while keeping core lifecycle payloads normative
-    Given a core lifecycle event payload includes deferred non-core fields
-    When core v1 payload validation executes
+  Scenario: Defers non-core tool and model payload families while keeping canonical event payloads normative
+    Given a canonical v1 event payload includes deferred non-core fields
+    When canonical v1 payload validation executes
     Then deferred non-core fields are rejected as out-of-contract
+
+  Scenario: Defines node step event types for decision-cycle tracking
+    Given canonical v1 run-event validation rules
+    When event type validation includes node step tracking events
+    Then node.step.started and node.step.completed are accepted canonical event types
+
+  Scenario: Enforces strict payload schema and invariants for node step events
+    Given canonical node step events with payloads
+    When strict payload schema validation is executed
+    Then required node step fields and decision-action invariants are enforced
+
+  Scenario: Defines node turn event types for user and model transcript contributions
+    Given canonical v1 run-event validation rules
+    When event type validation includes node turn events
+    Then node.turn.user and node.turn.model are accepted canonical event types
+
+  Scenario: Enforces strict payload schema and role invariants for node turn events
+    Given canonical node turn events with payloads
+    When strict payload schema validation is executed
+    Then required node turn fields are enforced and role values match event type semantics
+
+  Scenario: Defines and validates node.action.executed payloads for single-action continue steps
+    Given canonical node action execution events with payloads
+    When strict payload schema validation is executed
+    Then node.action.executed payload enforces single-action continue invariants
+
+  Scenario: Defines node.subcall.executed event type for subcall observability
+    Given canonical v1 run-event validation rules
+    When canonical runtime event types are validated
+    Then only canonical v1 runtime event types are accepted
+
+  Scenario: Enforces strict payload schema and invariants for node.subcall.executed events
+    Given canonical v1 events with payloads
+    When strict payload schema validation is executed
+    Then required fields types and invariants are enforced per event type
 
   Scenario: Resolves inference gateway through registry using llm.gateway
     Given a valid inference request for gateway resolution
@@ -722,7 +945,7 @@ Feature: Sigil baseline CLI and config contracts
     When inference execution runs
     Then decision discriminator enforces continue or final
 
-  Scenario: Requires continuation branch and forbids final branch when decision is continue
+  Scenario: Requires continuation repl_code and forbids final branch when decision is continue
     Given a valid inference request for execution
     And openrouter mock gateway returns payload fixture "continue-branch-invalid"
     When inference execution runs
@@ -746,3 +969,488 @@ Feature: Sigil baseline CLI and config contracts
     And openrouter mock gateway returns payload fixture "reasoning-artifacts"
     When inference execution runs
     Then reasoning artifacts are under top-level reasoning and reasoning token counts are under usage.reasoning_tokens
+
+  Scenario: Resolves schema_id sigil.llm.answer.v1 from central registry for plain subcall inference requests
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-valid"
+    When inference request construction runs
+    Then schema is resolved from central registry and applied to request
+
+  Scenario: Requires non-empty answer field in sigil.llm.answer.v1 payloads
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-empty"
+    When inference execution runs
+    Then inference fails with typed error code "output_validation"
+
+  Scenario: Constructs plain-subcall inference requests as ordered message arrays
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-valid"
+    When inference request construction runs
+    Then request uses message-array input preserving role order
+
+  Scenario: Supports cheap plain-subcall path with reasoning omitted from request payload
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And inference reasoning is disabled
+    And openrouter mock gateway returns payload fixture "llm-answer-valid"
+    When inference request construction runs
+    Then reasoning config is omitted
+
+  Scenario: Resolves OpenAI base system prompt when llm.provider is openai
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When harness base system prompt resolution runs
+    Then resolved base system prompt is "openai"
+
+  Scenario: Resolves Anthropic base system prompt when llm.provider is anthropic
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: anthropic
+        model: claude-sonnet-4
+      """
+    When harness base system prompt resolution runs
+    Then resolved base system prompt is "anthropic"
+
+  Scenario: Falls back to OpenAI base system prompt when provider-specific prompt is not registered
+    Given unregistered provider key "provider-x" for system prompt resolution
+    When harness base system prompt resolution runs
+    Then resolved base system prompt is "openai"
+
+  Scenario: Appends system_prompt_append to resolved base system prompt when append is non-empty
+    Given resolved base system prompt is "openai"
+    And run config system_prompt_append is "Use concise tool calls."
+    When harness effective system prompt is constructed
+    Then effective system prompt equals base prompt plus two newlines plus append text
+
+  Scenario: Uses resolved base system prompt unchanged when system_prompt_append is empty
+    Given resolved base system prompt is "anthropic"
+    And run config system_prompt_append is ""
+    When harness effective system prompt is constructed
+    Then effective system prompt equals resolved base prompt
+
+  Scenario: Starts harness execution with one root node at depth zero
+    Given a run in "queued" state
+    When harness execution starts
+    Then run transitions to "running"
+    And exactly one root node exists with depth 0 and null parent
+
+  Scenario: Executes single continuation repl_code action from structured response in node-local REPL state
+    Given an active node with continuation payload containing non-empty continuation.repl_code
+    When harness processes continuation step
+    Then exactly one continuation.repl_code action executes in node-local REPL state
+
+  Scenario: Propagates typed output-validation error when continue payload omits continuation repl_code
+    Given an active node continuation payload with decision continue and missing continuation.repl_code
+    When strict output validation runs
+    Then continuation step fails with typed output-validation error
+
+  Scenario: Creates child node through rlm_query only when resulting depth does not exceed rlm.max_depth
+    Given an active parent node at depth 1
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then child node is created at depth 2
+
+  Scenario: Falls back to plain llm_query behavior when rlm_query call would exceed rlm.max_depth in recursive mode
+    Given an active parent node at depth 3
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then plain subcall fallback answer is returned and child node is not created
+
+  Scenario: Returns child final answer to caller REPL context on successful recursive subcall
+    Given an active parent node with child node in progress
+    And child node inference result is decision final with answer "child answer"
+    When child node completes
+    Then caller REPL context receives rlm_query result "child answer"
+
+  Scenario: Completes run when root node emits decision final with non-empty final answer
+    Given an active root node inference result is decision final with answer "final answer"
+    When harness evaluates root node step
+    Then run transitions to "completed"
+    And run completion references terminal root final output
+
+  Scenario: Defines step as one node-local decision cycle
+    Given an active node in harness execution
+    When one inference request and response handling cycle complete
+    Then exactly one node-local step is recorded
+
+  Scenario: Records turns as user or model transcript contributions linked to a step
+    Given a node-local step is in progress
+    When transcript contributions are persisted for that step
+    Then each turn contribution is recorded with role user or model
+
+  Scenario: Limits continue steps to exactly one executable action
+    Given a node-local step with decision continue
+    When continuation payload is validated
+    Then exactly one executable action is accepted for that step
+
+  Scenario: Runs non-recursive multi-step profile when rlm.enabled is false and returns typed depth-limit feedback for recursive subcalls
+    Given non-recursive harness mode is active
+    When rlm_query is invoked from node-local Go REPL context
+    Then typed depth-limit error is returned and child node is not created
+
+  Scenario: Selects embedded Go REPL engine architecture for v1
+    Given v1 REPL runtime architecture rules
+    When REPL engine configuration is resolved
+    Then embedded in-process Go interpretation is selected
+
+  Scenario: Creates exactly one persistent REPL session per node
+    Given an active node with no existing REPL session
+    When first continue action executes
+    Then one REPL session is created and associated to that node
+
+  Scenario: Reuses node REPL state across multiple continue steps
+    Given an active node with existing REPL session state
+    When additional continue actions execute for that node
+    Then subsequent actions run in the same node REPL session state
+
+  Scenario: Closes node REPL session on node completion and run termination
+    Given active node REPL sessions exist
+    When node completes or run enters terminal state
+    Then corresponding REPL sessions are closed
+
+  Scenario: Executes continuation.repl_code in node-local REPL session
+    Given a continue step with non-empty continuation.repl_code
+    When harness executes action handling
+    Then continuation.repl_code executes in the current node-local REPL session
+
+  Scenario: Exposes llm_query rlm_query llm_query_batched and rlm_query_batched in node-local REPL session
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Creates child node for rlm_query when depth is within limit
+    Given parent node depth and run max recursion depth permit recursion
+    When rlm_query is invoked from node-local Go REPL context
+    Then child node is created and executed
+
+  Scenario: Falls back to llm_query when rlm_query reaches max depth in recursive mode
+    Given an active parent node at depth 3
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then plain subcall fallback answer is returned and child node is not created
+
+  Scenario: Returns child final answer to caller REPL context on successful subcall
+    Given an active parent node with child node in progress
+    And child node inference result is decision final with answer "child answer"
+    When child node completes
+    Then child final answer is returned to caller REPL context
+
+  Scenario: Records failed action and continues next step on non-fatal REPL execution error
+    Given a continue action fails with non-fatal REPL execution error
+    When action failure is handled
+    Then action failure is recorded and node execution continues to next step
+
+  Scenario: Enforces 30-second execution timeout per action
+    Given a continue action exceeding 30 seconds execution time
+    When REPL runtime enforces guardrails
+    Then action times out with typed timeout error
+
+  Scenario: Rejects repl_code payloads larger than 65536 bytes
+    Given a continue action with repl_code payload larger than 65536 bytes
+    When payload guardrails are validated
+    Then action is rejected with typed code-size error
+
+  Scenario: Truncates stdout/stderr deterministically at 1048576-byte caps
+    Given an action execution producing stdout or stderr over 1048576 bytes
+    When output capture guardrails are enforced
+    Then outputs are truncated with deterministic truncation marker
+
+  Scenario: Enforces allowlist-only import policy and rejects blocked imports
+    Given continue action code imports blocked packages
+    When REPL import policy validation executes
+    Then action fails with typed import-blocked error
+
+  Scenario: Persists per-action artifact and sets node.action.executed.output_ref
+    Given an action execution completes or fails
+    When action artifact persistence executes
+    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+
+  Scenario: Fails run on fatal REPL infrastructure errors with typed error metadata
+    Given fatal REPL infrastructure failure occurs
+    When harness handles failure propagation
+    Then run transitions to failed with typed error metadata
+
+  Scenario: Returns structured per-item batched results for llm_query_batched and rlm_query_batched
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Emits node.subcall.executed for each subcall item executed inside continue action
+    Given canonical v1 run-event validation rules
+    When canonical runtime event types are validated
+    Then only canonical v1 runtime event types are accepted
+
+  Scenario: Keeps full raw context in REPL scope and excludes it from model-step inference messages
+    Given a harness runner is configured with raw context "needle in haystack context"
+    When model-step inference input is constructed for first step
+    Then full raw context is excluded from outbound model-step inference messages
+
+  Scenario: Builds model-step inference input as ordered role-based messages system then user
+    Given a harness runner is configured with raw context "needle in haystack context"
+    When model-step inference input is constructed for first step
+    Then model-step inference messages are ordered system then user
+
+  Scenario: Constructs deterministic user step envelope with query step index and context metadata
+    Given a harness runner is configured with raw context "needle in haystack context"
+    When model-step inference input is constructed for first step
+    Then user step envelope contains deterministic query step index and context metadata
+
+  Scenario: Includes bounded previous-action feedback summary with output_ref and preview truncation metadata
+    Given a harness runner has previous continue action feedback
+    When model-step inference input is constructed for next step
+    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+
+  Scenario: Omits previous-action feedback block on first step before any continue action executes
+    Given a harness runner is configured with raw context "needle in haystack context"
+    When model-step inference input is constructed for first step
+    Then previous-action feedback block is omitted from user step envelope
+
+  Scenario: Persists compact node.turn.user artifact without embedding full raw context
+    Given harness user turn artifact input is prepared
+    When compact node turn user artifact is persisted
+    Then persisted node turn user artifact excludes full raw context body
+
+  Scenario: Preserves action artifact as source of truth for full stdout and stderr while model receives bounded previews
+    Given a harness runner has previous continue action feedback
+    When model-step inference input is constructed for next step
+    Then action artifact remains source of truth for full stdout and stderr while model input uses bounded previews
+
+  Scenario: Constructs OpenRouter Responses API requests with message-array input preserving role order
+    Given a valid inference request for execution
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference request construction runs
+    Then request uses message-array input preserving role order
+
+  Scenario: Applies bounded model-input contract consistently to recursive child nodes
+    Given recursive harness child node execution input is prepared
+    When model-step inference input is constructed for child step
+    Then bounded model-input contract is applied to recursive child node step
+
+  Scenario: Preserves non-recursive profile behavior under bounded model-input contract
+    Given non-recursive harness mode is active
+    When model-step inference input is constructed for non-recursive step
+    Then bounded model-input contract is applied in non-recursive mode
+
+  Scenario: Fails run with typed infrastructure metadata when step-envelope serialization or persistence fails
+    Given step-envelope serialization or persistence failure is injected
+    When harness run execution handles bounded model-input failure
+    Then run fails with typed infrastructure metadata for bounded model-input failure
+
+  Scenario: Maintains canonical run event ordering and references under bounded model-input execution
+    Given bounded model-input execution is active for a node step
+    When step and turn events are persisted under bounded model-input execution
+    Then canonical run event ordering and references remain valid
+
+  Scenario: Exposes llm_query llm_query_batched and rlm_query_batched in node-local Go REPL
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Executes llm_query as plain one-shot inference without child node creation
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Executes llm_query_batched with bounded parallel fan-out and preserves input-order results
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Executes rlm_query_batched sequentially and preserves input-order results
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Returns structured per-item batched results with answer and typed error metadata
+    Given a node-local REPL session is initialized
+    When REPL bindings are inspected
+    Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Routes subcalls through active node llm provider and model configuration
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration is merged
+    Then effective run llm.provider is "openai"
+    And effective run llm.model is "gpt-5.1"
+
+  Scenario: Falls back to llm_query when rlm_query reaches max depth in recursive mode
+    Given an active parent node at depth 3
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then plain subcall fallback answer is returned and child node is not created
+
+  Scenario: Falls back to llm_query_batched item execution when rlm_query_batched reaches max depth in recursive mode
+    Given an active parent node at depth 3
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then plain subcall fallback answer is returned and child node is not created
+
+  Scenario: Preserves typed depth-limit behavior for recursive subcalls in non-recursive profile
+    Given non-recursive harness mode is active
+    When rlm_query is invoked from node-local Go REPL context
+    Then typed depth-limit error is returned and child node is not created
+
+  Scenario: Emits node.subcall.executed event for each subcall item with strict payload invariants
+    Given canonical v1 run-event validation rules
+    When canonical runtime event types are validated
+    Then only canonical v1 runtime event types are accepted
+
+  Scenario: Persists subcall traces in action artifacts with stable subcall indexing
+    Given an action execution completes or fails
+    When action artifact persistence executes
+    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+
+  Scenario: Allows multiple subcalls inside one continuation action while preserving one action per continue step
+    Given a node-local step with decision continue
+    When continuation payload is validated
+    Then exactly one executable action is accepted for that step
+
+  Scenario: Resolves plain-subcall responses through strict schema sigil.llm.answer.v1
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-valid"
+    When inference request construction runs
+    Then schema is resolved from central registry and applied to request
+
+  Scenario: Fails run on subcall event persistence failures with typed infrastructure metadata
+    Given fatal REPL infrastructure failure occurs
+    When harness handles failure propagation
+    Then run transitions to failed with typed error metadata
+
+  Scenario: Surfaces plain-subcall inference failures as structured subcall result errors without immediate run failure
+    Given a continue action fails with non-fatal REPL execution error
+    When action failure is handled
+    Then action failure is recorded and node execution continues to next step
+
+  Scenario: Requires continuation intent and expected_observation fields when decision is continue
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "continue-missing-intent"
+    When inference execution runs
+    Then inference fails with typed error code "output_validation"
+
+  Scenario: Requires final evidence array when decision is final
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "final-missing-evidence"
+    When inference execution runs
+    Then inference fails with typed error code "output_validation"
+
+  Scenario: Restricts final confidence to enum low medium or high when present
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "final-invalid-confidence"
+    When inference execution runs
+    Then inference fails with typed error code "output_validation"
+
+  Scenario: Persists context artifact reference in context_metadata for model-step envelopes
+    Given recursive harness child node execution input is prepared
+    When model-step inference input is constructed for child step
+    Then bounded model-input contract is applied to recursive child node step
+
+  Scenario: Requires continuation intent expected_observation and repl_code in continue branch
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "continue-missing-intent"
+    When inference execution runs
+    Then inference fails with typed error code "output_validation"
+
+  Scenario: Requires final answer evidence and optional confidence enum in final branch
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "valid-final"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Rejects unknown fields and malformed evidence entries under strict schema
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "unknown-field"
+    When inference execution runs
+    Then unknown fields are rejected with typed output-validation error
+
+  Scenario: Persists node context artifact and includes context_ref in step input context_metadata
+    Given recursive harness child node execution input is prepared
+    When model-step inference input is constructed for child step
+    Then bounded model-input contract is applied to recursive child node step
+
+  Scenario: Exposes resolvable evidence references through context_ref and previous_action_feedback.output_ref
+    Given a harness runner has previous continue action feedback
+    When model-step inference input is constructed for next step
+    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+
+  Scenario: Validates final evidence references against run-local persisted artifacts before node completion
+    Given an active root node inference result is decision final with answer "root final"
+    When harness evaluates root node step
+    Then run completion references terminal root final output
+
+  Scenario: Fails run with typed output-validation metadata when any final evidence reference cannot be resolved
+    Given step-envelope serialization or persistence failure is injected
+    When harness run execution handles bounded model-input failure
+    Then run fails with typed infrastructure metadata for bounded model-input failure
+
+  Scenario: Accepts final evidence references for canonical run-output and run-artifact schemes
+    Given an action execution completes or fails
+    When action artifact persistence executes
+    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+
+  Scenario: Persists enriched final-answer artifact with answer evidence and optional confidence
+    Given an active root node inference result is decision final with answer "root final"
+    When harness evaluates root node step
+    Then run completion references terminal root final output
+
+  Scenario: Generates system prompt schema block from central registry definition sigil.rlm.response.v1 at runtime
+    Given harness base system prompt resolution runs
+    When harness effective system prompt is constructed
+    Then effective system prompt equals resolved base prompt
+
+  Scenario: Applies provider prompt resolution and system_prompt_append composition after runtime schema rendering
+    Given harness base system prompt resolution runs
+    And run config system_prompt_append is "Use concise tool calls."
+    When harness effective system prompt is constructed
+    Then effective system prompt equals base prompt plus two newlines plus append text
+
+  Scenario: Preserves one-action-per-continue-step and recursion profile semantics under enriched schema
+    Given a node-local step with decision continue
+    When continuation payload is validated
+    Then exactly one executable action is accepted for that step
+
+  Scenario: Maintains inference schema_id sigil.rlm.response.v1 after schema extension
+    Given a valid inference request for execution
+    And inference request schema_id is "sigil.rlm.response.v1"
+    When inference request construction runs
+    Then schema is resolved from central registry and applied to request
+
+  Scenario: Maintains prompt-schema parity by deriving prompt schema text from the same registry definition used for strict inference validation
+    Given harness base system prompt resolution runs
+    When harness effective system prompt is constructed
+    Then effective system prompt equals resolved base prompt

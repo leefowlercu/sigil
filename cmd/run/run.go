@@ -11,7 +11,7 @@ func NewRunCmd() *cobra.Command {
 		Use:   "run",
 		Short: "Show run command usage and subcommands",
 		Long: "sigil run scopes run-related command entrypoints.\n\n" +
-			"This parent command provides usage discovery for start and stop run flows before full runtime execution behavior is implemented.",
+			"This parent command provides usage discovery for start and stop run flows, including blocking harness execution through run start.",
 		Example: "# Show run command usage\n" +
 			"  sigil run\n\n" +
 			"# Show start command usage\n" +

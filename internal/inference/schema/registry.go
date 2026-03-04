@@ -9,6 +9,8 @@ import (
 const (
 	// SigilRLMResponseV1SchemaID is the required v1 structured inference schema.
 	SigilRLMResponseV1SchemaID = "sigil.rlm.response.v1"
+	// SigilLLMAnswerV1SchemaID is the required v1 plain-subcall answer schema.
+	SigilLLMAnswerV1SchemaID = "sigil.llm.answer.v1"
 )
 
 // ValidateFunc validates a decoded structured payload map.
@@ -32,6 +34,7 @@ type Registry struct {
 func NewRegistry() *Registry {
 	registry := NewEmptyRegistry()
 	_ = registry.Register(newSigilRLMResponseV1Definition())
+	_ = registry.Register(newSigilLLMAnswerV1Definition())
 	return registry
 }
 

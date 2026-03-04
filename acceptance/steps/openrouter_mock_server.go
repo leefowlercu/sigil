@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 )
 
@@ -46,7 +47,12 @@ func newOpenRouterMockServer() *openRouterMockServer {
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(statusCode)
 
-		switch typedBody := response.body.(type) {
+		responseBody := response.body
+		if contextRef := extractContextRefFromRequest(body); contextRef != "" {
+			responseBody = replaceContextRefPlaceholders(responseBody, contextRef)
+		}
+
+		switch typedBody := responseBody.(type) {
 		case nil:
 			_, _ = writer.Write([]byte(`{"error":"mock response not configured"}`))
 		case string:
@@ -137,4 +143,89 @@ func cloneAnyMap(input map[string]any) map[string]any {
 	}
 
 	return cloned
+}
+
+func extractContextRefFromRequest(requestBody map[string]any) string {
+	input, ok := requestBody["input"].([]any)
+	if !ok {
+		return ""
+	}
+
+	for _, item := range input {
+		message, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+
+		contentRef := extractContextRefFromMessageContent(message["content"])
+		if strings.TrimSpace(contentRef) != "" {
+			return contentRef
+		}
+	}
+
+	return ""
+}
+
+func extractContextRefFromMessageContent(content any) string {
+	switch typed := content.(type) {
+	case string:
+		return extractContextRefFromJSONText(typed)
+	case []any:
+		for _, block := range typed {
+			blockMap, ok := block.(map[string]any)
+			if !ok {
+				continue
+			}
+			text, _ := blockMap["text"].(string)
+			if ref := extractContextRefFromJSONText(text); strings.TrimSpace(ref) != "" {
+				return ref
+			}
+		}
+	}
+
+	return ""
+}
+
+func extractContextRefFromJSONText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+
+	envelope := make(map[string]any)
+	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
+		return ""
+	}
+
+	contextMetadata, ok := envelope["context_metadata"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	ref, _ := contextMetadata["context_ref"].(string)
+	return strings.TrimSpace(ref)
+}
+
+func replaceContextRefPlaceholders(value any, contextRef string) any {
+	switch typed := value.(type) {
+	case string:
+		return strings.ReplaceAll(typed, "__context_ref__", contextRef)
+	case []any:
+		replaced := make([]any, 0, len(typed))
+		for _, item := range typed {
+			replaced = append(replaced, replaceContextRefPlaceholders(item, contextRef))
+		}
+		return replaced
+	case map[string]any:
+		replaced := make(map[string]any, len(typed))
+		for key, item := range typed {
+			replaced[key] = replaceContextRefPlaceholders(item, contextRef)
+		}
+		return replaced
+	default:
+		return value
+	}
 }

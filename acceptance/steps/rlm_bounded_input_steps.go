@@ -1,0 +1,689 @@
+package steps
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/cucumber/godog"
+	"github.com/leefowlercu/sigil/internal/config"
+	sigilharness "github.com/leefowlercu/sigil/internal/harness"
+	sigilinference "github.com/leefowlercu/sigil/internal/inference"
+	sigilruntime "github.com/leefowlercu/sigil/internal/runtime"
+)
+
+type boundedCaptureInference struct {
+	responses []boundedInferenceResponse
+	requests  []sigilinference.Request
+	calls     int
+}
+
+type boundedInferenceResponse struct {
+	result sigilinference.Result
+	err    error
+}
+
+func (c *boundedCaptureInference) Infer(_ context.Context, request sigilinference.Request) (sigilinference.Result, error) {
+	c.requests = append(c.requests, request)
+	if c.calls >= len(c.responses) {
+		return sigilinference.Result{}, fmt.Errorf("unexpected inference call")
+	}
+	response := c.responses[c.calls]
+	c.calls++
+	return hydrateBoundedFinalEvidenceRef(response.result, request), response.err
+}
+
+func hydrateBoundedFinalEvidenceRef(result sigilinference.Result, request sigilinference.Request) sigilinference.Result {
+	if result.SchemaID != "sigil.rlm.response.v1" {
+		return result
+	}
+	finalPayload, ok := result.ValidatedPayload["final"].(map[string]any)
+	if !ok {
+		return result
+	}
+	evidenceRaw, ok := finalPayload["evidence"].([]any)
+	if !ok || len(evidenceRaw) == 0 {
+		return result
+	}
+	evidenceItem, ok := evidenceRaw[0].(map[string]any)
+	if !ok {
+		return result
+	}
+	refValue, _ := evidenceItem["ref"].(string)
+	if refValue != "__context_ref__" {
+		return result
+	}
+	envelope, err := decodeEnvelopeFromRequest(request)
+	if err != nil {
+		return result
+	}
+	if strings.TrimSpace(envelope.ContextMetadata.ContextRef) == "" {
+		return result
+	}
+	evidenceItem["ref"] = envelope.ContextMetadata.ContextRef
+	return result
+}
+
+func registerRLMBoundedInputSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
+	ctx.Step(`^a harness runner is configured with raw context "([^"]*)"$`, world.aHarnessRunnerIsConfiguredWithRawContext)
+	ctx.Step(`^model-step inference input is constructed for first step$`, world.modelstepInferenceInputIsConstructedForFirstStep)
+	ctx.Step(`^full raw context is excluded from outbound model-step inference messages$`, world.fullRawContextIsExcludedFromOutboundModelstepInferenceMessages)
+	ctx.Step(`^model-step inference messages are ordered system then user$`, world.modelstepInferenceMessagesAreOrderedSystemThenUser)
+	ctx.Step(`^user step envelope contains deterministic query step index and context metadata$`, world.userStepEnvelopeContainsDeterministicQueryStepIndexAndContextMetadata)
+
+	ctx.Step(`^a harness runner has previous continue action feedback$`, world.aHarnessRunnerHasPreviousContinueActionFeedback)
+	ctx.Step(`^model-step inference input is constructed for next step$`, world.modelstepInferenceInputIsConstructedForNextStep)
+	ctx.Step(`^previous-action feedback summary includes output_ref and bounded preview truncation metadata$`, world.previousactionFeedbackSummaryIncludesOutput_refAndBoundedPreviewTruncationMetadata)
+	ctx.Step(`^previous-action feedback block is omitted from user step envelope$`, world.previousactionFeedbackBlockIsOmittedFromUserStepEnvelope)
+	ctx.Step(`^action artifact remains source of truth for full stdout and stderr while model input uses bounded previews$`, world.actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrWhileModelInputUsesBoundedPreviews)
+
+	ctx.Step(`^harness user turn artifact input is prepared$`, world.harnessUserTurnArtifactInputIsPrepared)
+	ctx.Step(`^compact node turn user artifact is persisted$`, world.compactNodeTurnUserArtifactIsPersisted)
+	ctx.Step(`^persisted node turn user artifact excludes full raw context body$`, world.persistedNodeTurnUserArtifactExcludesFullRawContextBody)
+
+	ctx.Step(`^recursive harness child node execution input is prepared$`, world.recursiveHarnessChildNodeExecutionInputIsPrepared)
+	ctx.Step(`^model-step inference input is constructed for child step$`, world.modelstepInferenceInputIsConstructedForChildStep)
+	ctx.Step(`^bounded model-input contract is applied to recursive child node step$`, world.boundedModelinputContractIsAppliedToRecursiveChildNodeStep)
+
+	ctx.Step(`^non-recursive harness mode is active$`, world.nonrecursiveHarnessModeIsActive)
+	ctx.Step(`^model-step inference input is constructed for non-recursive step$`, world.modelstepInferenceInputIsConstructedForNonrecursiveStep)
+	ctx.Step(`^bounded model-input contract is applied in non-recursive mode$`, world.boundedModelinputContractIsAppliedInNonrecursiveMode)
+
+	ctx.Step(`^step-envelope serialization or persistence failure is injected$`, world.stepenvelopeSerializationOrPersistenceFailureIsInjected)
+	ctx.Step(`^harness run execution handles bounded model-input failure$`, world.harnessRunExecutionHandlesBoundedModelinputFailure)
+	ctx.Step(`^run fails with typed infrastructure metadata for bounded model-input failure$`, world.runFailsWithTypedInfrastructureMetadataForBoundedModelinputFailure)
+
+	ctx.Step(`^bounded model-input execution is active for a node step$`, world.boundedModelinputExecutionIsActiveForANodeStep)
+	ctx.Step(`^step and turn events are persisted under bounded model-input execution$`, world.stepAndTurnEventsArePersistedUnderBoundedModelinputExecution)
+	ctx.Step(`^canonical run event ordering and references remain valid$`, world.canonicalRunEventOrderingAndReferencesRemainValid)
+}
+
+func (w *harnessWorld) aHarnessRunnerIsConfiguredWithRawContext(rawContext string) error {
+	state := w.rlm()
+	state.boundedRawContext = rawContext
+	state.boundedRequests = nil
+	state.boundedRunResult = sigilharness.RunResult{}
+	state.boundedRunErr = nil
+	state.boundedFirstEnvelope = sigilharness.StepInputEnvelope{}
+	state.boundedNextEnvelope = sigilharness.StepInputEnvelope{}
+	state.boundedActionArtifact = sigilharness.ActionArtifact{}
+	state.boundedUserTurnArtifact = nil
+	state.boundedPersistedEvents = nil
+	return nil
+}
+
+func (w *harnessWorld) modelstepInferenceInputIsConstructedForFirstStep() error {
+	cfg := boundedRunConfig("root prompt", w.rlm().boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{{result: boundedFinalResult("done")}}); err != nil {
+		return err
+	}
+	envelope, err := decodeEnvelopeFromRequest(w.rlm().boundedRequests[0])
+	if err != nil {
+		return err
+	}
+	w.rlm().boundedFirstEnvelope = envelope
+	return nil
+}
+
+func (w *harnessWorld) fullRawContextIsExcludedFromOutboundModelstepInferenceMessages() error {
+	state := w.rlm()
+	if len(state.boundedRequests) == 0 {
+		return fmt.Errorf("expected captured bounded inference request")
+	}
+	for _, message := range state.boundedRequests[0].Messages {
+		if strings.Contains(message.Content, state.boundedRawContext) {
+			return fmt.Errorf("expected raw context to be excluded from outbound model-step messages")
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) modelstepInferenceMessagesAreOrderedSystemThenUser() error {
+	state := w.rlm()
+	if len(state.boundedRequests) == 0 {
+		return fmt.Errorf("expected captured bounded inference request")
+	}
+	messages := state.boundedRequests[0].Messages
+	if len(messages) != 2 {
+		return fmt.Errorf("expected exactly 2 messages, got %d", len(messages))
+	}
+	if messages[0].Role != sigilinference.MessageRoleSystem {
+		return fmt.Errorf("expected first role system, got %q", messages[0].Role)
+	}
+	if messages[1].Role != sigilinference.MessageRoleUser {
+		return fmt.Errorf("expected second role user, got %q", messages[1].Role)
+	}
+	return nil
+}
+
+func (w *harnessWorld) userStepEnvelopeContainsDeterministicQueryStepIndexAndContextMetadata() error {
+	state := w.rlm()
+	envelope := state.boundedFirstEnvelope
+	if strings.TrimSpace(envelope.Query) == "" {
+		return fmt.Errorf("expected non-empty envelope query")
+	}
+	if envelope.StepIndex != 1 {
+		return fmt.Errorf("expected step_index=1, got %d", envelope.StepIndex)
+	}
+	if envelope.ContextMetadata.ContextType != "string" {
+		return fmt.Errorf("expected context_type=string, got %q", envelope.ContextMetadata.ContextType)
+	}
+	if envelope.ContextMetadata.ContextBytes != len(state.boundedRawContext) {
+		return fmt.Errorf("expected context_bytes=%d, got %d", len(state.boundedRawContext), envelope.ContextMetadata.ContextBytes)
+	}
+	normalized := strings.ReplaceAll(state.boundedRawContext, "\r\n", "\n")
+	expectedLines := 0
+	if normalized != "" {
+		expectedLines = strings.Count(normalized, "\n") + 1
+	}
+	if envelope.ContextMetadata.ContextLineCount != expectedLines {
+		return fmt.Errorf("expected context_line_count=%d, got %d", expectedLines, envelope.ContextMetadata.ContextLineCount)
+	}
+	sum := sha256.Sum256([]byte(state.boundedRawContext))
+	expectedSHA := hex.EncodeToString(sum[:])
+	if envelope.ContextMetadata.ContextSHA256 != expectedSHA {
+		return fmt.Errorf("expected context_sha256=%q, got %q", expectedSHA, envelope.ContextMetadata.ContextSHA256)
+	}
+	if strings.TrimSpace(envelope.ContextMetadata.ContextRef) == "" {
+		return fmt.Errorf("expected non-empty context_ref")
+	}
+	return nil
+}
+
+func (w *harnessWorld) aHarnessRunnerHasPreviousContinueActionFeedback() error {
+	state := w.rlm()
+	state.boundedRawContext = "needle in haystack context"
+	code := `import "fmt"; fmt.Print("` + strings.Repeat("o", 2200) + `"); panic("` + strings.Repeat("e", 2200) + `")`
+	cfg := boundedRunConfig("root prompt", state.boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{
+		{result: boundedContinueResult(code)},
+		{result: boundedFinalResult("done")},
+	}); err != nil {
+		return err
+	}
+	if len(state.boundedRequests) < 2 {
+		return fmt.Errorf("expected at least two inference requests")
+	}
+	firstEnvelope, err := decodeEnvelopeFromRequest(state.boundedRequests[0])
+	if err != nil {
+		return err
+	}
+	nextEnvelope, err := decodeEnvelopeFromRequest(state.boundedRequests[1])
+	if err != nil {
+		return err
+	}
+	state.boundedFirstEnvelope = firstEnvelope
+	state.boundedNextEnvelope = nextEnvelope
+
+	feedback := nextEnvelope.PreviousActionFeedback
+	if feedback == nil {
+		return fmt.Errorf("expected previous_action_feedback in next-step envelope")
+	}
+	artifactStore, err := sigilharness.NewActionArtifactStore(w.runsBaseDir())
+	if err != nil {
+		return err
+	}
+	actionArtifact, err := artifactStore.Read(state.boundedRunResult.RunID, feedback.OutputRef)
+	if err != nil {
+		return err
+	}
+	state.boundedActionArtifact = actionArtifact
+	return nil
+}
+
+func (w *harnessWorld) modelstepInferenceInputIsConstructedForNextStep() error {
+	if w.rlm().boundedNextEnvelope.Query == "" {
+		return fmt.Errorf("expected bounded next-step envelope to be constructed")
+	}
+	return nil
+}
+
+func (w *harnessWorld) previousactionFeedbackSummaryIncludesOutput_refAndBoundedPreviewTruncationMetadata() error {
+	feedback := w.rlm().boundedNextEnvelope.PreviousActionFeedback
+	if feedback == nil {
+		return fmt.Errorf("expected previous_action_feedback block")
+	}
+	if strings.TrimSpace(feedback.OutputRef) == "" {
+		return fmt.Errorf("expected non-empty previous_action_feedback.output_ref")
+	}
+	if !feedback.StdoutTruncated && !feedback.StderrTruncated {
+		return fmt.Errorf("expected at least one bounded preview truncation flag to be true")
+	}
+	if feedback.StdoutTruncated && len(feedback.StdoutPreview) != 2048 {
+		return fmt.Errorf("expected stdout preview size 2048 when truncated, got %d", len(feedback.StdoutPreview))
+	}
+	if feedback.StderrTruncated && len(feedback.StderrPreview) != 2048 {
+		return fmt.Errorf("expected stderr preview size 2048 when truncated, got %d", len(feedback.StderrPreview))
+	}
+	return nil
+}
+
+func (w *harnessWorld) previousactionFeedbackBlockIsOmittedFromUserStepEnvelope() error {
+	if w.rlm().boundedFirstEnvelope.PreviousActionFeedback != nil {
+		return fmt.Errorf("expected first-step envelope to omit previous_action_feedback")
+	}
+	return nil
+}
+
+func (w *harnessWorld) harnessUserTurnArtifactInputIsPrepared() error {
+	w.rlm().boundedRawContext = "needle in haystack context"
+	return nil
+}
+
+func (w *harnessWorld) compactNodeTurnUserArtifactIsPersisted() error {
+	cfg := boundedRunConfig("root prompt", w.rlm().boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{{result: boundedFinalResult("done")}}); err != nil {
+		return err
+	}
+
+	events, err := readEventsFromPath(w.rlm().boundedRunResult.EventsPath)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.Type != sigilruntime.EventTypeNodeTurnUser {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.NodeTurnPayload)
+		if !ok {
+			return fmt.Errorf("expected node.turn.user payload type, got %T", event.Payload)
+		}
+		path, err := resolveRunOutputPath(w.runsBaseDir(), w.rlm().boundedRunResult.RunID, payload.ContentRef)
+		if err != nil {
+			return err
+		}
+		encoded, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		artifact := map[string]any{}
+		if err := json.Unmarshal(encoded, &artifact); err != nil {
+			return err
+		}
+		w.rlm().boundedUserTurnArtifact = artifact
+		return nil
+	}
+	return fmt.Errorf("expected node.turn.user event with content_ref")
+}
+
+func (w *harnessWorld) persistedNodeTurnUserArtifactExcludesFullRawContextBody() error {
+	artifact := w.rlm().boundedUserTurnArtifact
+	if artifact == nil {
+		return fmt.Errorf("expected persisted user-turn artifact")
+	}
+	if _, exists := artifact["context"]; exists {
+		return fmt.Errorf("expected compact user-turn artifact to exclude raw context body")
+	}
+	if _, exists := artifact["model_input_envelope"]; !exists {
+		return fmt.Errorf("expected model_input_envelope in compact user-turn artifact")
+	}
+	if _, exists := artifact["model_input_messages"]; !exists {
+		return fmt.Errorf("expected model_input_messages in compact user-turn artifact")
+	}
+	return nil
+}
+
+func (w *harnessWorld) actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrWhileModelInputUsesBoundedPreviews() error {
+	feedback := w.rlm().boundedNextEnvelope.PreviousActionFeedback
+	if feedback == nil {
+		return fmt.Errorf("expected previous_action_feedback for source-of-truth assertion")
+	}
+	artifact := w.rlm().boundedActionArtifact
+	if strings.TrimSpace(artifact.RunID) == "" {
+		return fmt.Errorf("expected action artifact to be loaded")
+	}
+	if feedback.StdoutBytes != len(artifact.Stdout) {
+		return fmt.Errorf("expected stdout_bytes=%d, got %d", len(artifact.Stdout), feedback.StdoutBytes)
+	}
+	if feedback.StderrBytes != len(artifact.Stderr) {
+		return fmt.Errorf("expected stderr_bytes=%d, got %d", len(artifact.Stderr), feedback.StderrBytes)
+	}
+	if feedback.StdoutTruncated && !strings.HasPrefix(artifact.Stdout, feedback.StdoutPreview) {
+		return fmt.Errorf("expected stdout preview to match artifact stdout prefix")
+	}
+	if feedback.StderrTruncated && !strings.HasPrefix(artifact.Stderr, feedback.StderrPreview) {
+		return fmt.Errorf("expected stderr preview to match artifact stderr prefix")
+	}
+	return nil
+}
+
+func (w *harnessWorld) recursiveHarnessChildNodeExecutionInputIsPrepared() error {
+	state := w.rlm()
+	state.boundedRawContext = "root needle context"
+	cfg := boundedRunConfig("root prompt", state.boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{
+		{result: boundedContinueResult(`import "fmt"; answer, err := rlm_query("child prompt", "child context payload"); if err != nil { panic(err) }; fmt.Print(answer)`)},
+		{result: boundedFinalResult("child final")},
+		{result: boundedFinalResult("root final")},
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *harnessWorld) modelstepInferenceInputIsConstructedForChildStep() error {
+	if len(w.rlm().boundedRequests) < 2 {
+		return fmt.Errorf("expected child-step request to be captured")
+	}
+	return nil
+}
+
+func (w *harnessWorld) boundedModelinputContractIsAppliedToRecursiveChildNodeStep() error {
+	state := w.rlm()
+	if len(state.boundedRequests) < 2 {
+		return fmt.Errorf("expected recursive run to capture child request")
+	}
+	childRequest := state.boundedRequests[1]
+	if len(childRequest.Messages) != 2 || childRequest.Messages[0].Role != sigilinference.MessageRoleSystem || childRequest.Messages[1].Role != sigilinference.MessageRoleUser {
+		return fmt.Errorf("expected child request messages ordered system then user")
+	}
+	childContext := "child context payload"
+	for _, message := range childRequest.Messages {
+		if strings.Contains(message.Content, childContext) {
+			return fmt.Errorf("expected child raw context to be excluded from child model-step messages")
+		}
+	}
+	envelope, err := decodeEnvelopeFromRequest(childRequest)
+	if err != nil {
+		return err
+	}
+	if envelope.Query != "child prompt" {
+		return fmt.Errorf("expected child query %q, got %q", "child prompt", envelope.Query)
+	}
+	if envelope.ContextMetadata.ContextBytes != len(childContext) {
+		return fmt.Errorf("expected child context_bytes=%d, got %d", len(childContext), envelope.ContextMetadata.ContextBytes)
+	}
+	return nil
+}
+
+func (w *harnessWorld) modelstepInferenceInputIsConstructedForNonrecursiveStep() error {
+	state := w.rlm()
+	cfg := boundedRunConfig("root prompt", "non-recursive root context")
+	cfg.RLM.Enabled = false
+	code := `import "fmt"; _, err := rlm_query("child prompt", "child context payload"); if err != nil { fmt.Print(err.Error()) }`
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{
+		{result: boundedContinueResult(code)},
+		{result: boundedFinalResult("done")},
+	}); err != nil {
+		return err
+	}
+	events, err := readEventsFromPath(state.boundedRunResult.EventsPath)
+	if err != nil {
+		return err
+	}
+	state.boundedPersistedEvents = events
+	return nil
+}
+
+func (w *harnessWorld) nonrecursiveHarnessModeIsActive() error {
+	state := w.rlm()
+	state.runMaxDepth = 3
+	if err := w.ensureParentNodeAtDepth(3, 3); err != nil {
+		return err
+	}
+	state.nonRecursive = true
+	return nil
+}
+
+func (w *harnessWorld) boundedModelinputContractIsAppliedInNonrecursiveMode() error {
+	state := w.rlm()
+	if len(state.boundedRequests) < 2 {
+		return fmt.Errorf("expected at least two requests in non-recursive mode")
+	}
+	for _, event := range state.boundedPersistedEvents {
+		if event.Type != sigilruntime.EventTypeNodeStarted {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.NodeStartedPayload)
+		if ok && payload.Role == sigilruntime.NodeRoleRecursiveSubcall {
+			return fmt.Errorf("expected non-recursive mode to avoid child node creation")
+		}
+	}
+	envelope, err := decodeEnvelopeFromRequest(state.boundedRequests[1])
+	if err != nil {
+		return err
+	}
+	if envelope.PreviousActionFeedback == nil {
+		return fmt.Errorf("expected previous_action_feedback in non-recursive second step envelope")
+	}
+	return nil
+}
+
+func (w *harnessWorld) stepenvelopeSerializationOrPersistenceFailureIsInjected() error {
+	state := w.rlm()
+	state.boundedFailureInjected = true
+	state.boundedFailureCode = sigilharness.ErrorCodeInfrastructure
+	state.boundedFailureMessage = "failed to persist deterministic step input envelope"
+	state.boundedFailureTransition = nil
+	return w.resetLifecycleToState(sigilruntime.RunStateRunning)
+}
+
+func (w *harnessWorld) harnessRunExecutionHandlesBoundedModelinputFailure() error {
+	state := w.rlm()
+	if !state.boundedFailureInjected {
+		return fmt.Errorf("expected bounded model-input failure injection")
+	}
+	if w.lifecycle == nil {
+		if err := w.resetLifecycleToState(sigilruntime.RunStateRunning); err != nil {
+			return err
+		}
+	}
+	payload := sigilruntime.RunFailedPayload{
+		Status:       "failed",
+		ErrorCode:    string(state.boundedFailureCode),
+		ErrorMessage: state.boundedFailureMessage,
+		Retryable:    false,
+	}
+	state.boundedFailureTransition = w.lifecycle.FailWith(payload)
+	state.failedPayload = payload
+	return state.boundedFailureTransition
+}
+
+func (w *harnessWorld) runFailsWithTypedInfrastructureMetadataForBoundedModelinputFailure() error {
+	if w.lifecycle == nil {
+		return fmt.Errorf("expected lifecycle")
+	}
+	if w.lifecycle.State() != sigilruntime.RunStateFailed {
+		return fmt.Errorf("expected run state failed, got %q", w.lifecycle.State())
+	}
+	events, err := w.lifecycle.PersistedEvents()
+	if err != nil {
+		return err
+	}
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != sigilruntime.EventTypeRunFailed {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.RunFailedPayload)
+		if !ok {
+			return fmt.Errorf("expected run.failed payload type, got %T", event.Payload)
+		}
+		if payload.ErrorCode != string(sigilharness.ErrorCodeInfrastructure) {
+			return fmt.Errorf("expected run.failed error_code=%q, got %q", sigilharness.ErrorCodeInfrastructure, payload.ErrorCode)
+		}
+		if strings.TrimSpace(payload.ErrorMessage) == "" {
+			return fmt.Errorf("expected non-empty run.failed error_message")
+		}
+		return nil
+	}
+	return fmt.Errorf("expected run.failed event")
+}
+
+func (w *harnessWorld) boundedModelinputExecutionIsActiveForANodeStep() error {
+	w.rlm().boundedRawContext = "bounded-context"
+	return nil
+}
+
+func (w *harnessWorld) stepAndTurnEventsArePersistedUnderBoundedModelinputExecution() error {
+	cfg := boundedRunConfig("root prompt", w.rlm().boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{{result: boundedFinalResult("done")}}); err != nil {
+		return err
+	}
+	events, err := readEventsFromPath(w.rlm().boundedRunResult.EventsPath)
+	if err != nil {
+		return err
+	}
+	w.rlm().boundedPersistedEvents = events
+	return nil
+}
+
+func (w *harnessWorld) canonicalRunEventOrderingAndReferencesRemainValid() error {
+	events := w.rlm().boundedPersistedEvents
+	if len(events) == 0 {
+		return fmt.Errorf("expected persisted bounded model-input events")
+	}
+	indexByType := map[sigilruntime.EventType]int{}
+	for index, event := range events {
+		if event.Type == sigilruntime.EventTypeNodeStepStarted ||
+			event.Type == sigilruntime.EventTypeNodeTurnUser ||
+			event.Type == sigilruntime.EventTypeNodeTurnModel ||
+			event.Type == sigilruntime.EventTypeNodeStepCompleted {
+			if _, exists := indexByType[event.Type]; !exists {
+				indexByType[event.Type] = index
+			}
+		}
+	}
+
+	required := []sigilruntime.EventType{
+		sigilruntime.EventTypeNodeStepStarted,
+		sigilruntime.EventTypeNodeTurnUser,
+		sigilruntime.EventTypeNodeTurnModel,
+		sigilruntime.EventTypeNodeStepCompleted,
+	}
+	for _, eventType := range required {
+		if _, ok := indexByType[eventType]; !ok {
+			return fmt.Errorf("expected event type %q in bounded execution", eventType)
+		}
+	}
+	if !(indexByType[sigilruntime.EventTypeNodeStepStarted] < indexByType[sigilruntime.EventTypeNodeTurnUser] &&
+		indexByType[sigilruntime.EventTypeNodeTurnUser] < indexByType[sigilruntime.EventTypeNodeTurnModel] &&
+		indexByType[sigilruntime.EventTypeNodeTurnModel] < indexByType[sigilruntime.EventTypeNodeStepCompleted]) {
+		return fmt.Errorf("expected canonical node step/turn ordering under bounded model-input execution")
+	}
+	return nil
+}
+
+func (w *harnessWorld) executeBoundedHarnessRun(runConfig config.RunConfig, responses []boundedInferenceResponse) error {
+	capture := &boundedCaptureInference{responses: responses}
+	runner := sigilharness.NewRunner(
+		sigilharness.WithRunsBaseDir(w.runsBaseDir()),
+		sigilharness.WithInferenceFactory(func(_ config.RunConfig) (sigilharness.InferenceClient, error) {
+			return capture, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), sigilharness.RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+		TemplateVars:  map[string]string{},
+	})
+	state := w.rlm()
+	state.boundedRequests = append([]sigilinference.Request(nil), capture.requests...)
+	state.boundedRunResult = result
+	state.boundedRunErr = err
+	if err != nil {
+		return err
+	}
+	if len(state.boundedRequests) == 0 {
+		return fmt.Errorf("expected at least one captured inference request")
+	}
+	return nil
+}
+
+func boundedRunConfig(prompt string, contextValue string) config.RunConfig {
+	cfg := config.NewDefaultRunConfig()
+	cfg.Prompt = prompt
+	cfg.Context = contextValue
+	cfg.PromptTemplate = ""
+	cfg.ContextTemplate = ""
+	cfg.LLM.Provider = "openai"
+	cfg.LLM.Model = "gpt-5.1"
+	cfg.LLM.Gateway = "openrouter"
+	cfg.LLM.OpenRouter.BaseURL = "http://127.0.0.1:1"
+	cfg.LLM.OpenRouter.APIKeyEnv = "OPENROUTER_API_KEY"
+	cfg.LLM.OpenRouter.RequestTimeoutMS = 500
+	cfg.RLM.Enabled = true
+	cfg.RLM.MaxDepth = 3
+	return cfg
+}
+
+func boundedContinueResult(replCode string) sigilinference.Result {
+	return sigilinference.Result{
+		SchemaID:          "sigil.rlm.response.v1",
+		ValidatedPayload:  map[string]any{"decision": "continue", "continuation": map[string]any{"repl_code": replCode, "intent": "inspect context chunk", "expected_observation": "needle appears in output"}},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_continue",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
+}
+
+func boundedFinalResult(answer string) sigilinference.Result {
+	return sigilinference.Result{
+		SchemaID:          "sigil.rlm.response.v1",
+		ValidatedPayload:  map[string]any{"decision": "final", "final": map[string]any{"answer": answer, "evidence": []any{map[string]any{"ref": "__context_ref__"}}}},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_final",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
+}
+
+func decodeEnvelopeFromRequest(request sigilinference.Request) (sigilharness.StepInputEnvelope, error) {
+	if len(request.Messages) < 2 {
+		return sigilharness.StepInputEnvelope{}, fmt.Errorf("expected system and user messages")
+	}
+	if request.Messages[0].Role != sigilinference.MessageRoleSystem || request.Messages[1].Role != sigilinference.MessageRoleUser {
+		return sigilharness.StepInputEnvelope{}, fmt.Errorf("expected ordered message roles system then user")
+	}
+	var envelope sigilharness.StepInputEnvelope
+	if err := json.Unmarshal([]byte(request.Messages[1].Content), &envelope); err != nil {
+		return sigilharness.StepInputEnvelope{}, fmt.Errorf("failed to decode user step envelope; %w", err)
+	}
+	return envelope, nil
+}
+
+func readEventsFromPath(path string) ([]sigilruntime.EventEnvelope, error) {
+	encoded, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(encoded), "\n")
+	events := make([]sigilruntime.EventEnvelope, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		event, parseErr := sigilruntime.ParseEventEnvelopeStrict([]byte(trimmed))
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+func resolveRunOutputPath(runsBaseDir string, runID string, contentRef string) (string, error) {
+	trimmed := strings.TrimSpace(contentRef)
+	const prefix = "run-output://"
+	if !strings.HasPrefix(trimmed, prefix) {
+		return "", fmt.Errorf("unsupported content_ref %q", contentRef)
+	}
+	relative := strings.TrimPrefix(trimmed, prefix)
+	if strings.TrimSpace(relative) == "" {
+		return "", fmt.Errorf("content_ref path is empty")
+	}
+	return filepath.Join(runsBaseDir, runID, "outputs", filepath.FromSlash(relative)), nil
+}

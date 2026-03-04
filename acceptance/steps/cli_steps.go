@@ -57,6 +57,7 @@ type harnessWorld struct {
 	inferenceRetryDelays     []time.Duration
 	inferenceRequestBody     map[string]any
 	inferenceMockServer      *openRouterMockServer
+	rlmState                 *rlmAcceptanceState
 }
 
 // InitializeScenario wires all acceptance steps for harness.feature.
@@ -125,6 +126,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		world.inferenceRetryDelays = nil
 		world.inferenceRequestBody = nil
 		world.inferenceMockServer = nil
+		world.rlmState = nil
 
 		return ctx, nil
 	})
@@ -202,7 +204,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^activity is recorded as node-scoped events and no additional node entity is created$`, world.activityIsRecordedAsNodeScopedEventsAndNoAdditionalNodeEntityIsCreated)
 	ctx.Step(`^a persisted lifecycle run exists$`, world.aPersistedLifecycleRunExists)
 	ctx.Step(`^canonical run lifecycle events are emitted$`, world.canonicalRunLifecycleEventsAreEmitted)
-	ctx.Step(`^events are persisted to a per-run append-only events\.jsonl path under sigil runs directory$`, world.eventsArePersistedToAPerRunAppendOnlyEventsJSONLPathUnderSigilRunsDirectory)
+	ctx.Step(`^events are persisted to a per-run append-only events\.jsonl path under \.sigil runs directory$`, world.eventsArePersistedToAPerRunAppendOnlyEventsJSONLPathUnderDotSigilRunsDirectory)
 	ctx.Step(`^persisted canonical run events exist$`, world.persistedCanonicalRunEventsExist)
 	ctx.Step(`^persisted event identity fields are inspected$`, world.persistedEventIdentityFieldsAreInspected)
 	ctx.Step(`^run_id node_id when present and event_id are UUIDv7$`, world.runIDNodeIDWhenPresentAndEventIDAreUUIDv7)
@@ -225,16 +227,31 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^schema_version exists and equals v1$`, world.schemaVersionExistsAndEqualsV1)
 	ctx.Step(`^canonical v1 run-event validation rules$`, world.canonicalV1RunEventValidationRules)
 	ctx.Step(`^canonical core lifecycle event types are validated$`, world.canonicalCoreLifecycleEventTypesAreValidated)
+	ctx.Step(`^canonical runtime event types are validated$`, world.canonicalCoreLifecycleEventTypesAreValidated)
 	ctx.Step(`^only canonical v1 lifecycle event types are accepted$`, world.onlyCanonicalV1LifecycleEventTypesAreAccepted)
+	ctx.Step(`^only canonical v1 runtime event types are accepted$`, world.onlyCanonicalV1LifecycleEventTypesAreAccepted)
 	ctx.Step(`^canonical v1 lifecycle events with payloads$`, world.canonicalV1LifecycleEventsWithPayloads)
+	ctx.Step(`^canonical v1 events with payloads$`, world.canonicalV1LifecycleEventsWithPayloads)
 	ctx.Step(`^strict payload schema validation is executed$`, world.strictPayloadSchemaValidationIsExecuted)
 	ctx.Step(`^required fields types and invariants are enforced per event type$`, world.requiredFieldsTypesAndInvariantsAreEnforcedPerEventType)
 	ctx.Step(`^v1 event envelopes with unknown fields or unknown type$`, world.v1EventEnvelopesWithUnknownFieldsOrUnknownType)
 	ctx.Step(`^strict v1 extensibility validation is executed$`, world.strictV1ExtensibilityValidationIsExecuted)
 	ctx.Step(`^validation fails and events are rejected$`, world.validationFailsAndEventsAreRejected)
 	ctx.Step(`^a core lifecycle event payload includes deferred non-core fields$`, world.aCoreLifecycleEventPayloadIncludesDeferredNonCoreFields)
+	ctx.Step(`^a canonical v1 event payload includes deferred non-core fields$`, world.aCoreLifecycleEventPayloadIncludesDeferredNonCoreFields)
 	ctx.Step(`^core v1 payload validation executes$`, world.coreV1PayloadValidationExecutes)
+	ctx.Step(`^canonical v1 payload validation executes$`, world.coreV1PayloadValidationExecutes)
 	ctx.Step(`^deferred non-core fields are rejected as out-of-contract$`, world.deferredNonCoreFieldsAreRejectedAsOutOfContract)
+	ctx.Step(`^event type validation includes node step tracking events$`, world.eventTypeValidationIncludesNodeStepTrackingEvents)
+	ctx.Step(`^node.step.started and node.step.completed are accepted canonical event types$`, world.nodeStepStartedAndNodeStepCompletedAreAcceptedCanonicalEventTypes)
+	ctx.Step(`^canonical node step events with payloads$`, world.canonicalNodeStepEventsWithPayloads)
+	ctx.Step(`^required node step fields and decision-action invariants are enforced$`, world.requiredNodeStepFieldsAndDecisionActionInvariantsAreEnforced)
+	ctx.Step(`^event type validation includes node turn events$`, world.eventTypeValidationIncludesNodeTurnEvents)
+	ctx.Step(`^node.turn.user and node.turn.model are accepted canonical event types$`, world.nodeTurnUserAndNodeTurnModelAreAcceptedCanonicalEventTypes)
+	ctx.Step(`^canonical node turn events with payloads$`, world.canonicalNodeTurnEventsWithPayloads)
+	ctx.Step(`^required node turn fields are enforced and role values match event type semantics$`, world.requiredNodeTurnFieldsAreEnforcedAndRoleValuesMatchEventTypeSemantics)
+	ctx.Step(`^canonical node action execution events with payloads$`, world.canonicalNodeActionExecutionEventsWithPayloads)
+	ctx.Step(`^node.action.executed payload enforces single-action continue invariants$`, world.nodeActionExecutedPayloadEnforcesSingleActionContinueInvariants)
 	ctx.Step(`^effective run llm.provider is "([^"]*)"$`, world.effectiveRunLLMProviderIs)
 	ctx.Step(`^effective run llm.model is "([^"]*)"$`, world.effectiveRunLLMModelIs)
 	ctx.Step(`^effective run llm.gateway is "([^"]*)"$`, world.effectiveRunLLMGatewayIs)
@@ -261,6 +278,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^no default start config files exist$`, world.noDefaultStartConfigFilesExist)
 	ctx.Step(`^no default run config files exist$`, world.noDefaultRunConfigFilesExist)
 
+	registerRLMHarnessSteps(ctx, world)
 	registerInferenceSteps(ctx, world)
 }
 
@@ -272,6 +290,7 @@ func (w *harnessWorld) sigilConfigEnvironmentVariablesAreCleared() error {
 	keys := []string{
 		"SIGIL_LOG_LEVEL",
 		"SIGIL_LOG_DIR",
+		"OPENROUTER_API_KEY",
 		"SIGIL_RUN_LLM_PROVIDER",
 		"SIGIL_RUN_LLM_MODEL",
 		"SIGIL_RUN_LLM_GATEWAY",
@@ -833,13 +852,13 @@ func (w *harnessWorld) canonicalRunLifecycleEventsAreEmitted() error {
 	return w.capturePersistedEvents()
 }
 
-func (w *harnessWorld) eventsArePersistedToAPerRunAppendOnlyEventsJSONLPathUnderSigilRunsDirectory() error {
+func (w *harnessWorld) eventsArePersistedToAPerRunAppendOnlyEventsJSONLPathUnderDotSigilRunsDirectory() error {
 	if err := w.capturePersistedEvents(); err != nil {
 		return err
 	}
 
 	actualPath := filepath.Clean(w.eventLogPath)
-	expectedSegment := filepath.Join("sigil", "runs", w.lifecycle.RunID(), "events.jsonl")
+	expectedSegment := filepath.Join(".sigil", "runs", w.lifecycle.RunID(), "events.jsonl")
 	if !strings.Contains(actualPath, expectedSegment) {
 		return fmt.Errorf("expected events path to contain %q, got %q", expectedSegment, actualPath)
 	}
@@ -1385,6 +1404,141 @@ func (w *harnessWorld) deferredNonCoreFieldsAreRejectedAsOutOfContract() error {
 	return nil
 }
 
+func (w *harnessWorld) eventTypeValidationIncludesNodeStepTrackingEvents() error {
+	w.eventValidationErr = nil
+	return nil
+}
+
+func (w *harnessWorld) nodeStepStartedAndNodeStepCompletedAreAcceptedCanonicalEventTypes() error {
+	if err := validateCanonicalEventTypeFixtures(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *harnessWorld) canonicalNodeStepEventsWithPayloads() error {
+	w.eventValidationErr = nil
+	return nil
+}
+
+func (w *harnessWorld) requiredNodeStepFieldsAndDecisionActionInvariantsAreEnforced() error {
+	runID := mustUUIDv7StringOrPanic()
+	nodeID := mustUUIDv7StringOrPanic()
+	stepID := mustUUIDv7StringOrPanic()
+	raw, err := marshalEnvelope(map[string]any{
+		"event_id":       mustUUIDv7StringOrPanic(),
+		"schema_version": sigilruntime.SchemaVersionV1,
+		"run_id":         runID,
+		"seq":            2,
+		"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+		"type":           sigilruntime.EventTypeNodeStepCompleted,
+		"node_id":        nodeID,
+		"causation_id":   mustUUIDv7StringOrPanic(),
+		"correlation_id": runID,
+		"payload": map[string]any{
+			"step_id":      stepID,
+			"decision":     "continue",
+			"action_count": 0,
+			"duration_ms":  1,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := sigilruntime.ParseEventEnvelopeStrict(raw); !errors.Is(err, sigilruntime.ErrInvalidEvent) {
+		return fmt.Errorf("expected invalid node.step.completed invariants rejection, got %v", err)
+	}
+	return nil
+}
+
+func (w *harnessWorld) eventTypeValidationIncludesNodeTurnEvents() error {
+	w.eventValidationErr = nil
+	return nil
+}
+
+func (w *harnessWorld) nodeTurnUserAndNodeTurnModelAreAcceptedCanonicalEventTypes() error {
+	if err := validateCanonicalEventTypeFixtures(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *harnessWorld) canonicalNodeTurnEventsWithPayloads() error {
+	w.eventValidationErr = nil
+	return nil
+}
+
+func (w *harnessWorld) requiredNodeTurnFieldsAreEnforcedAndRoleValuesMatchEventTypeSemantics() error {
+	runID := mustUUIDv7StringOrPanic()
+	nodeID := mustUUIDv7StringOrPanic()
+	stepID := mustUUIDv7StringOrPanic()
+	raw, err := marshalEnvelope(map[string]any{
+		"event_id":       mustUUIDv7StringOrPanic(),
+		"schema_version": sigilruntime.SchemaVersionV1,
+		"run_id":         runID,
+		"seq":            2,
+		"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+		"type":           sigilruntime.EventTypeNodeTurnUser,
+		"node_id":        nodeID,
+		"causation_id":   mustUUIDv7StringOrPanic(),
+		"correlation_id": runID,
+		"payload": map[string]any{
+			"step_id":     stepID,
+			"role":        "model",
+			"content_ref": "run-output://node/turn/1",
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := sigilruntime.ParseEventEnvelopeStrict(raw); !errors.Is(err, sigilruntime.ErrInvalidEvent) {
+		return fmt.Errorf("expected node.turn role mismatch rejection, got %v", err)
+	}
+	return nil
+}
+
+func (w *harnessWorld) canonicalNodeActionExecutionEventsWithPayloads() error {
+	w.eventValidationErr = nil
+	return nil
+}
+
+func (w *harnessWorld) nodeActionExecutedPayloadEnforcesSingleActionContinueInvariants() error {
+	runID := mustUUIDv7StringOrPanic()
+	nodeID := mustUUIDv7StringOrPanic()
+	stepID := mustUUIDv7StringOrPanic()
+	outputRef, err := sigilruntime.BuildActionOutputRef(nodeID, stepID, 2)
+	if err != nil {
+		return err
+	}
+	raw, err := marshalEnvelope(map[string]any{
+		"event_id":       mustUUIDv7StringOrPanic(),
+		"schema_version": sigilruntime.SchemaVersionV1,
+		"run_id":         runID,
+		"seq":            2,
+		"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+		"type":           sigilruntime.EventTypeNodeActionExecuted,
+		"node_id":        nodeID,
+		"causation_id":   mustUUIDv7StringOrPanic(),
+		"correlation_id": runID,
+		"payload": map[string]any{
+			"step_id":      stepID,
+			"action_index": 2,
+			"action_type":  "repl_code",
+			"language":     "go",
+			"status":       "completed",
+			"duration_ms":  1,
+			"output_ref":   outputRef,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := sigilruntime.ParseEventEnvelopeStrict(raw); !errors.Is(err, sigilruntime.ErrInvalidEvent) {
+		return fmt.Errorf("expected node.action.executed single-action invariant rejection, got %v", err)
+	}
+	return nil
+}
+
 func (w *harnessWorld) effectiveRunLLMProviderIs(expected string) error {
 	cfg, err := w.activeRunConfig()
 	if err != nil {
@@ -1587,6 +1741,12 @@ func (w *harnessWorld) aUserRuns(commandLine string) error {
 		return fmt.Errorf("expected command to start with sigil, got %q", tokens[0])
 	}
 
+	if len(tokens) >= 3 && tokens[1] == "run" && tokens[2] == "start" {
+		if err := w.ensureRunStartMockGateway(); err != nil {
+			return err
+		}
+	}
+
 	rootCmd := cmd.NewRootCmd()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -1603,6 +1763,29 @@ func (w *harnessWorld) aUserRuns(commandLine string) error {
 	}
 
 	w.lastExitCode = 0
+	return nil
+}
+
+func (w *harnessWorld) ensureRunStartMockGateway() error {
+	if w.inferenceMockServer == nil {
+		w.inferenceMockServer = newOpenRouterMockServer()
+	}
+
+	w.inferenceMockServer.SetResponses(mockGatewayResponse{
+		statusCode: 200,
+		body:       validFinalGatewayResponseBody(),
+	})
+
+	if err := osSetEnv("OPENROUTER_API_KEY", "test-openrouter-key"); err != nil {
+		return err
+	}
+	if err := osSetEnv("SIGIL_RUN_LLM_OPENROUTER_BASE_URL", w.inferenceMockServer.URL()); err != nil {
+		return err
+	}
+	if err := osSetEnv("SIGIL_RUN_LLM_OPENROUTER_API_KEY_ENV", "OPENROUTER_API_KEY"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -1685,7 +1868,8 @@ func (w *harnessWorld) resetLifecycleToState(targetState sigilruntime.RunState) 
 	}
 
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
-		RunsBaseDir: "./sigil/runs",
+		RunsBaseDir: sigilruntime.DefaultRunsBaseDir,
+		MaxDepth:    3,
 	})
 	if err != nil {
 		return err
@@ -1759,6 +1943,12 @@ func validateCanonicalEventTypeFixtures() error {
 	runID := mustUUIDv7StringOrPanic()
 	nodeID := mustUUIDv7StringOrPanic()
 	parentID := mustUUIDv7StringOrPanic()
+	stepID := mustUUIDv7StringOrPanic()
+	contentRef := "run-output://node/turn/1"
+	outputRef, err := sigilruntime.BuildActionOutputRef(nodeID, stepID, 1)
+	if err != nil {
+		return err
+	}
 
 	fixtures := []map[string]any{
 		{
@@ -1818,6 +2008,116 @@ func validateCanonicalEventTypeFixtures() error {
 			"payload": map[string]any{
 				"status":      "completed",
 				"duration_ms": 0,
+			},
+		},
+		{
+			"event_id":       mustUUIDv7StringOrPanic(),
+			"schema_version": sigilruntime.SchemaVersionV1,
+			"run_id":         runID,
+			"seq":            2,
+			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+			"type":           sigilruntime.EventTypeNodeStepStarted,
+			"node_id":        nodeID,
+			"causation_id":   mustUUIDv7StringOrPanic(),
+			"correlation_id": runID,
+			"payload": map[string]any{
+				"step_id":    stepID,
+				"step_index": 1,
+				"schema_id":  "sigil.rlm.response.v1",
+			},
+		},
+		{
+			"event_id":       mustUUIDv7StringOrPanic(),
+			"schema_version": sigilruntime.SchemaVersionV1,
+			"run_id":         runID,
+			"seq":            2,
+			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+			"type":           sigilruntime.EventTypeNodeStepCompleted,
+			"node_id":        nodeID,
+			"causation_id":   mustUUIDv7StringOrPanic(),
+			"correlation_id": runID,
+			"payload": map[string]any{
+				"step_id":      stepID,
+				"decision":     string(sigilruntime.StepDecisionContinue),
+				"action_count": 1,
+				"duration_ms":  0,
+			},
+		},
+		{
+			"event_id":       mustUUIDv7StringOrPanic(),
+			"schema_version": sigilruntime.SchemaVersionV1,
+			"run_id":         runID,
+			"seq":            2,
+			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+			"type":           sigilruntime.EventTypeNodeTurnUser,
+			"node_id":        nodeID,
+			"causation_id":   mustUUIDv7StringOrPanic(),
+			"correlation_id": runID,
+			"payload": map[string]any{
+				"step_id":     stepID,
+				"role":        string(sigilruntime.TurnRoleUser),
+				"content_ref": contentRef,
+			},
+		},
+		{
+			"event_id":       mustUUIDv7StringOrPanic(),
+			"schema_version": sigilruntime.SchemaVersionV1,
+			"run_id":         runID,
+			"seq":            2,
+			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+			"type":           sigilruntime.EventTypeNodeSubcallExecuted,
+			"node_id":        nodeID,
+			"causation_id":   mustUUIDv7StringOrPanic(),
+			"correlation_id": runID,
+			"payload": map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   string(sigilruntime.SubcallTypeLLMQuery),
+				"execution_mode": string(sigilruntime.SubcallExecutionModePlain),
+				"status":         string(sigilruntime.ActionExecutionStatusCompleted),
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   1,
+				"duration_ms":    1,
+			},
+		},
+		{
+			"event_id":       mustUUIDv7StringOrPanic(),
+			"schema_version": sigilruntime.SchemaVersionV1,
+			"run_id":         runID,
+			"seq":            2,
+			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+			"type":           sigilruntime.EventTypeNodeTurnModel,
+			"node_id":        nodeID,
+			"causation_id":   mustUUIDv7StringOrPanic(),
+			"correlation_id": runID,
+			"payload": map[string]any{
+				"step_id":     stepID,
+				"role":        string(sigilruntime.TurnRoleModel),
+				"content_ref": contentRef,
+			},
+		},
+		{
+			"event_id":       mustUUIDv7StringOrPanic(),
+			"schema_version": sigilruntime.SchemaVersionV1,
+			"run_id":         runID,
+			"seq":            2,
+			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+			"type":           sigilruntime.EventTypeNodeActionExecuted,
+			"node_id":        nodeID,
+			"causation_id":   mustUUIDv7StringOrPanic(),
+			"correlation_id": runID,
+			"payload": map[string]any{
+				"step_id":      stepID,
+				"action_index": 1,
+				"action_type":  "repl_code",
+				"language":     "go",
+				"status":       string(sigilruntime.ActionExecutionStatusCompleted),
+				"duration_ms":  0,
+				"output_ref":   outputRef,
 			},
 		},
 		{

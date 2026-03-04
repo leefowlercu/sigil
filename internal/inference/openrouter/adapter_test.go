@@ -41,8 +41,10 @@ func TestInferBuildsStrictOpenRouterRequestWithHealingAndReasoning(t *testing.T)
 	}
 
 	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
-		Prompt:   "prompt",
-		Context:  "context",
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system prompt"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
 		Provider: "openai",
 		Model:    "gpt-5.1",
 		Schema:   schemaDefinition,
@@ -66,6 +68,18 @@ func TestInferBuildsStrictOpenRouterRequestWithHealingAndReasoning(t *testing.T)
 	}
 	if streamed, _ := capturedRequest["stream"].(bool); streamed {
 		t.Fatal("expected stream=false request")
+	}
+	input, ok := capturedRequest["input"].([]any)
+	if !ok || len(input) != 2 {
+		t.Fatalf("expected input message array length 2, got %T len=%d", capturedRequest["input"], len(input))
+	}
+	first := asMap(input[0])
+	second := asMap(input[1])
+	if role, _ := first["role"].(string); role != "system" {
+		t.Fatalf("expected first message role system, got %q", role)
+	}
+	if role, _ := second["role"].(string); role != "user" {
+		t.Fatalf("expected second message role user, got %q", role)
 	}
 
 	responseFormat := asMap(capturedRequest["response_format"])
@@ -133,8 +147,7 @@ func TestInferOmitsReasoningBlockWhenDisabled(t *testing.T) {
 	}
 
 	_, err = adapter.Infer(context.Background(), inference.GatewayRequest{
-		Prompt:    "prompt",
-		Context:   "context",
+		Messages:  []inference.Message{{Role: inference.MessageRoleSystem, Content: "system"}, {Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"}},
 		Provider:  "openai",
 		Model:     "gpt-5.1",
 		Schema:    schemaDefinition,
@@ -152,7 +165,7 @@ func TestInferOmitsReasoningBlockWhenDisabled(t *testing.T) {
 func TestInferMapsReasoningArtifactsAndReasoningTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_reasoning","status":"completed","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"assistant_output\":\"next\"}}"}]}],"reasoning":{"summary":"chain","encrypted_content":"blob"},"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30,"output_tokens_details":{"reasoning_tokens":7}}}`))
+		_, _ = w.Write([]byte(`{"id":"resp_reasoning","status":"completed","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"next\"}}"}]}],"reasoning":{"summary":"chain","encrypted_content":"blob"},"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30,"output_tokens_details":{"reasoning_tokens":7}}}`))
 	}))
 	defer server.Close()
 
@@ -168,8 +181,10 @@ func TestInferMapsReasoningArtifactsAndReasoningTokens(t *testing.T) {
 	}
 
 	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
-		Prompt:   "prompt",
-		Context:  "context",
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
 		Provider: "openai",
 		Model:    "gpt-5.1",
 		Schema:   schemaDefinition,
@@ -209,8 +224,10 @@ func TestInferReturnsReasoningCapabilityErrorForUnsupportedReasoning(t *testing.
 	}
 
 	_, runErr := adapter.Infer(context.Background(), inference.GatewayRequest{
-		Prompt:   "prompt",
-		Context:  "context",
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
 		Provider: "openai",
 		Model:    "gpt-5.1",
 		Schema:   schemaDefinition,
@@ -246,8 +263,10 @@ func TestInferFailsWhenAPIKeyEnvIsMissingAtCallTime(t *testing.T) {
 	}
 
 	_, runErr := adapter.Infer(context.Background(), inference.GatewayRequest{
-		Prompt:   "prompt",
-		Context:  "context",
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
 		Provider: "openai",
 		Model:    "gpt-5.1",
 		Schema:   schemaDefinition,
@@ -269,10 +288,18 @@ func TestBuildRequestBodyRejectsMissingProviderOrModel(t *testing.T) {
 		wantErr string
 	}{
 		{
+			name: "missing messages",
+			request: inference.GatewayRequest{
+				Provider: "openai",
+				Model:    "gpt-5.1",
+				Schema:   schemaDefinition,
+			},
+			wantErr: "request messages are required",
+		},
+		{
 			name: "missing provider",
 			request: inference.GatewayRequest{
-				Prompt:   "prompt",
-				Context:  "context",
+				Messages: []inference.Message{{Role: inference.MessageRoleSystem, Content: "system"}, {Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"}},
 				Provider: "   ",
 				Model:    "gpt-5.1",
 				Schema:   schemaDefinition,
@@ -282,8 +309,7 @@ func TestBuildRequestBodyRejectsMissingProviderOrModel(t *testing.T) {
 		{
 			name: "missing model",
 			request: inference.GatewayRequest{
-				Prompt:   "prompt",
-				Context:  "context",
+				Messages: []inference.Message{{Role: inference.MessageRoleSystem, Content: "system"}, {Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"}},
 				Provider: "openai",
 				Model:    "   ",
 				Schema:   schemaDefinition,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,12 @@ func NewEventStore(baseDir string, runID string) (*EventStore, error) {
 		_ = file.Close()
 		return nil, err
 	}
+
+	eventStoreLogger().Info("initialized event store",
+		"run_id", runID,
+		"base_dir", resolvedBaseDir,
+		"events_path", eventsPath,
+	)
 
 	return store, nil
 }
@@ -161,6 +168,10 @@ func (s *EventStore) Close() error {
 		return fmt.Errorf("failed to close events file %q; %w", s.eventsPath, err)
 	}
 	s.file = nil
+	eventStoreLogger().Debug("closed events file",
+		"run_id", s.runID,
+		"events_path", s.eventsPath,
+	)
 	return nil
 }
 
@@ -190,6 +201,12 @@ func (s *EventStore) appendLocked(event EventEnvelope) (EventEnvelope, error) {
 
 	s.syncCount++
 	s.state.consume(validated)
+	eventStoreLogger().Debug("appended event envelope",
+		"run_id", s.runID,
+		"seq", validated.Seq,
+		"type", validated.Type,
+		"node_id", valueOrEmptyString(validated.NodeID),
+	)
 	return validated, nil
 }
 
@@ -271,4 +288,8 @@ func cloneEventEnvelopes(events []EventEnvelope) []EventEnvelope {
 		cloned = append(cloned, eventClone)
 	}
 	return cloned
+}
+
+func eventStoreLogger() *slog.Logger {
+	return slog.Default().With("component", "runtime.event_store")
 }

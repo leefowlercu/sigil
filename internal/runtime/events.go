@@ -7,20 +7,26 @@ const (
 	SchemaVersionV1 = "v1"
 
 	// DefaultRunsBaseDir is the default durable runs base directory.
-	DefaultRunsBaseDir = "./sigil/runs"
+	DefaultRunsBaseDir = "./.sigil/runs"
 )
 
 // EventType identifies canonical v1 event types.
 type EventType string
 
 const (
-	EventTypeRunQueued      EventType = "run.queued"
-	EventTypeRunRunning     EventType = "run.running"
-	EventTypeNodeStarted    EventType = "node.started"
-	EventTypeNodeCompleted  EventType = "node.completed"
-	EventTypeRunCompleted   EventType = "run.completed"
-	EventTypeRunFailed      EventType = "run.failed"
-	EventTypeRunInterrupted EventType = "run.interrupted"
+	EventTypeRunQueued           EventType = "run.queued"
+	EventTypeRunRunning          EventType = "run.running"
+	EventTypeNodeStarted         EventType = "node.started"
+	EventTypeNodeCompleted       EventType = "node.completed"
+	EventTypeNodeStepStarted     EventType = "node.step.started"
+	EventTypeNodeStepCompleted   EventType = "node.step.completed"
+	EventTypeNodeTurnUser        EventType = "node.turn.user"
+	EventTypeNodeTurnModel       EventType = "node.turn.model"
+	EventTypeNodeSubcallExecuted EventType = "node.subcall.executed"
+	EventTypeNodeActionExecuted  EventType = "node.action.executed"
+	EventTypeRunCompleted        EventType = "run.completed"
+	EventTypeRunFailed           EventType = "run.failed"
+	EventTypeRunInterrupted      EventType = "run.interrupted"
 )
 
 // RunQueuedSource identifies run initiation source for run.queued payloads.
@@ -47,6 +53,49 @@ const (
 	RunInterruptedReasonUserRequest    RunInterruptedReason = "user_request"
 	RunInterruptedReasonPolicyStop     RunInterruptedReason = "policy_stop"
 	RunInterruptedReasonSystemShutdown RunInterruptedReason = "system_shutdown"
+)
+
+// StepDecision identifies node step decisions.
+type StepDecision string
+
+const (
+	StepDecisionContinue StepDecision = "continue"
+	StepDecisionFinal    StepDecision = "final"
+)
+
+// TurnRole identifies node turn payload roles.
+type TurnRole string
+
+const (
+	TurnRoleUser  TurnRole = "user"
+	TurnRoleModel TurnRole = "model"
+)
+
+// ActionExecutionStatus identifies node.action.executed status values.
+type ActionExecutionStatus string
+
+const (
+	ActionExecutionStatusCompleted ActionExecutionStatus = "completed"
+	ActionExecutionStatusFailed    ActionExecutionStatus = "failed"
+)
+
+// SubcallType identifies node.subcall.executed subcall API type values.
+type SubcallType string
+
+const (
+	SubcallTypeLLMQuery        SubcallType = "llm_query"
+	SubcallTypeLLMQueryBatched SubcallType = "llm_query_batched"
+	SubcallTypeRLMQuery        SubcallType = "rlm_query"
+	SubcallTypeRLMQueryBatched SubcallType = "rlm_query_batched"
+)
+
+// SubcallExecutionMode identifies node.subcall.executed execution mode values.
+type SubcallExecutionMode string
+
+const (
+	SubcallExecutionModePlain     SubcallExecutionMode = "plain"
+	SubcallExecutionModeRecursive SubcallExecutionMode = "recursive"
+	SubcallExecutionModeFallback  SubcallExecutionMode = "fallback"
 )
 
 // EventEnvelope defines the canonical persisted event envelope for v1.
@@ -89,6 +138,60 @@ type NodeCompletedPayload struct {
 	Status     string  `json:"status"`
 	DurationMS int     `json:"duration_ms"`
 	OutputRef  *string `json:"output_ref,omitempty"`
+}
+
+// NodeStepStartedPayload is the strict payload for node.step.started.
+type NodeStepStartedPayload struct {
+	StepID    string `json:"step_id"`
+	StepIndex int    `json:"step_index"`
+	SchemaID  string `json:"schema_id"`
+}
+
+// NodeStepCompletedPayload is the strict payload for node.step.completed.
+type NodeStepCompletedPayload struct {
+	StepID      string       `json:"step_id"`
+	Decision    StepDecision `json:"decision"`
+	ActionCount int          `json:"action_count"`
+	DurationMS  int          `json:"duration_ms"`
+}
+
+// NodeTurnPayload is the strict payload for node.turn.user and node.turn.model.
+type NodeTurnPayload struct {
+	StepID     string   `json:"step_id"`
+	Role       TurnRole `json:"role"`
+	ContentRef string   `json:"content_ref"`
+}
+
+// NodeSubcallExecutedPayload is the strict payload for node.subcall.executed.
+type NodeSubcallExecutedPayload struct {
+	StepID        string                `json:"step_id"`
+	ActionIndex   int                   `json:"action_index"`
+	SubcallIndex  int                   `json:"subcall_index"`
+	SubcallType   SubcallType           `json:"subcall_type"`
+	ExecutionMode SubcallExecutionMode  `json:"execution_mode"`
+	Status        ActionExecutionStatus `json:"status"`
+	Provider      string                `json:"provider"`
+	Model         string                `json:"model"`
+	PromptBytes   int                   `json:"prompt_bytes"`
+	ContextBytes  int                   `json:"context_bytes"`
+	AnswerBytes   int                   `json:"answer_bytes"`
+	DurationMS    int                   `json:"duration_ms"`
+	ChildNodeID   *string               `json:"child_node_id,omitempty"`
+	ErrorCode     *string               `json:"error_code,omitempty"`
+	ErrorMessage  *string               `json:"error_message,omitempty"`
+}
+
+// NodeActionExecutedPayload is the strict payload for node.action.executed.
+type NodeActionExecutedPayload struct {
+	StepID       string                `json:"step_id"`
+	ActionIndex  int                   `json:"action_index"`
+	ActionType   string                `json:"action_type"`
+	Language     string                `json:"language"`
+	Status       ActionExecutionStatus `json:"status"`
+	DurationMS   int                   `json:"duration_ms"`
+	OutputRef    string                `json:"output_ref"`
+	ErrorCode    *string               `json:"error_code,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
 }
 
 // RunCompletedPayload is the strict payload for run.completed.

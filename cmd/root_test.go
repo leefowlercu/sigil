@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +70,42 @@ func TestRunStartUsesDefaultPathsWhenFlagsOmitted(t *testing.T) {
 	_, _, err := executeRootCommand(t, workDir, nil, "run", "start")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestRunStartEmitsOperationalLogRecords(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\nlog_dir: ./logs\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
+
+	_, _, err := executeRootCommand(t, workDir, nil, "run", "start")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	logPath, err := logging.ActiveLogFilePath()
+	if err != nil {
+		t.Fatalf("expected active log path, got %v", err)
+	}
+	if err := logging.Close(); err != nil {
+		t.Fatalf("expected logging close success, got %v", err)
+	}
+
+	records := readJSONLogRecords(t, logPath)
+	if len(records) == 0 {
+		t.Fatal("expected non-empty log file after run start execution")
+	}
+
+	expectedMessages := []string{
+		"application logging initialized",
+		"run start command beginning",
+		"harness run completed",
+		"run start command completed",
+	}
+	for _, expectedMessage := range expectedMessages {
+		if !containsLogMessage(records, expectedMessage) {
+			t.Fatalf("expected log message %q, got records: %v", expectedMessage, records)
+		}
 	}
 }
 
@@ -313,6 +352,53 @@ func executeRootCommand(t *testing.T, workingDir string, env map[string]string, 
 		t.Setenv(key, value)
 	}
 
+	if isRunStartCommand(args) {
+		mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			var requestBody map[string]any
+			_ = json.NewDecoder(request.Body).Decode(&requestBody)
+			contextRef := extractContextRefFromOpenRouterRequest(requestBody)
+			if contextRef == "" {
+				contextRef = "__context_ref_missing__"
+			}
+
+			decisionPayload := map[string]any{
+				"decision": "final",
+				"final": map[string]any{
+					"answer": "done",
+					"evidence": []map[string]any{
+						{"ref": contextRef},
+					},
+				},
+			}
+			decisionPayloadBytes, _ := json.Marshal(decisionPayload)
+			responseBody := map[string]any{
+				"id":       "resp_test",
+				"status":   "completed",
+				"provider": "openai",
+				"model":    "gpt-5.1",
+				"output": []any{
+					map[string]any{
+						"content": []any{
+							map[string]any{
+								"type": "output_text",
+								"text": string(decisionPayloadBytes),
+							},
+						},
+					},
+				},
+				"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(responseBody)
+		}))
+		t.Cleanup(mockServer.Close)
+
+		t.Setenv("OPENROUTER_API_KEY", "test-key")
+		t.Setenv("SIGIL_RUN_LLM_OPENROUTER_BASE_URL", mockServer.URL)
+		t.Setenv("SIGIL_RUN_LLM_OPENROUTER_API_KEY_ENV", "OPENROUTER_API_KEY")
+	}
+
 	originalDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("failed to get current working directory: %v", err)
@@ -331,10 +417,96 @@ func executeRootCommand(t *testing.T, workingDir string, env map[string]string, 
 	return stdout.String(), stderr.String(), err
 }
 
+func isRunStartCommand(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+
+	return args[0] == "run" && args[1] == "start"
+}
+
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write %s: %v", path, err)
 	}
+}
+
+func readJSONLogRecords(t *testing.T, path string) []map[string]any {
+	t.Helper()
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read log file %q: %v", path, err)
+	}
+
+	rawLines := strings.Split(string(content), "\n")
+	records := make([]map[string]any, 0, len(rawLines))
+	for _, rawLine := range rawLines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+
+		record := make(map[string]any)
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("expected JSON log line, got parse error for %q: %v", line, err)
+		}
+		records = append(records, record)
+	}
+
+	return records
+}
+
+func containsLogMessage(records []map[string]any, message string) bool {
+	for _, record := range records {
+		value, ok := record["msg"].(string)
+		if !ok {
+			continue
+		}
+		if value == message {
+			return true
+		}
+	}
+
+	return false
+}
+
+func extractContextRefFromOpenRouterRequest(requestBody map[string]any) string {
+	input, ok := requestBody["input"].([]any)
+	if !ok {
+		return ""
+	}
+
+	for _, messageAny := range input {
+		message, ok := messageAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+
+		content, _ := message["content"].(string)
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+
+		envelope := make(map[string]any)
+		if err := json.Unmarshal([]byte(content), &envelope); err != nil {
+			continue
+		}
+		contextMetadata, ok := envelope["context_metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		contextRef, _ := contextMetadata["context_ref"].(string)
+		if strings.TrimSpace(contextRef) != "" {
+			return contextRef
+		}
+	}
+
+	return ""
 }

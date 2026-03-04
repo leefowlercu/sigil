@@ -1,0 +1,452 @@
+package repl
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"reflect"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/traefik/yaegi/interp"
+	"github.com/traefik/yaegi/stdlib"
+)
+
+const (
+	// OutputTruncationMarker is appended when output exceeds configured caps.
+	OutputTruncationMarker = "\n[TRUNCATED]\n"
+)
+
+var defaultAllowedImports = map[string]struct{}{
+	"fmt":           {},
+	"strings":       {},
+	"strconv":       {},
+	"sort":          {},
+	"regexp":        {},
+	"encoding/json": {},
+	"bytes":         {},
+	"math":          {},
+	"time":          {},
+	"slices":        {},
+}
+
+// Factory is the production session factory for an embedded Go REPL.
+type Factory struct {
+	actionTimeout  time.Duration
+	maxCodeBytes   int
+	stdoutCapBytes int
+	stderrCapBytes int
+	allowedImports map[string]struct{}
+}
+
+// FactoryOption mutates factory defaults.
+type FactoryOption func(*Factory)
+
+// WithActionTimeout sets per-action timeout.
+func WithActionTimeout(timeout time.Duration) FactoryOption {
+	return func(factory *Factory) {
+		factory.actionTimeout = timeout
+	}
+}
+
+// WithMaxCodeBytes sets maximum action code payload bytes.
+func WithMaxCodeBytes(maxBytes int) FactoryOption {
+	return func(factory *Factory) {
+		factory.maxCodeBytes = maxBytes
+	}
+}
+
+// WithOutputCaps sets stdout/stderr capture caps.
+func WithOutputCaps(stdoutCap int, stderrCap int) FactoryOption {
+	return func(factory *Factory) {
+		factory.stdoutCapBytes = stdoutCap
+		factory.stderrCapBytes = stderrCap
+	}
+}
+
+// NewFactory constructs a Yaegi-backed session factory.
+func NewFactory(options ...FactoryOption) *Factory {
+	factory := &Factory{
+		actionTimeout:  30 * time.Second,
+		maxCodeBytes:   65536,
+		stdoutCapBytes: 1048576,
+		stderrCapBytes: 1048576,
+		allowedImports: cloneImportSet(defaultAllowedImports),
+	}
+	for _, option := range options {
+		if option != nil {
+			option(factory)
+		}
+	}
+
+	return factory
+}
+
+// NewSession validates options and returns a node-local Yaegi session.
+func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session, error) {
+	if f == nil {
+		return nil, WrapError(ErrorCodeSessionInit, "session factory is required", nil)
+	}
+	if err := ValidateSessionOptions(options); err != nil {
+		return nil, err
+	}
+	if f.actionTimeout <= 0 {
+		return nil, WrapError(ErrorCodeSessionInit, "action timeout must be > 0", nil)
+	}
+	if f.maxCodeBytes < 1 {
+		return nil, WrapError(ErrorCodeSessionInit, "max code bytes must be >= 1", nil)
+	}
+	if f.stdoutCapBytes < 1 || f.stderrCapBytes < 1 {
+		return nil, WrapError(ErrorCodeSessionInit, "output caps must be >= 1", nil)
+	}
+
+	stdout := newCappedBuffer(f.stdoutCapBytes)
+	stderr := newCappedBuffer(f.stderrCapBytes)
+	interpreter := interp.New(interp.Options{
+		Stdout: stdout,
+		Stderr: stderr,
+	})
+
+	if err := interpreter.Use(stdlib.Symbols); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to register stdlib symbols", err)
+	}
+
+	session := &yaegiSession{
+		interpreter:    interpreter,
+		stdout:         stdout,
+		stderr:         stderr,
+		actionTimeout:  f.actionTimeout,
+		maxCodeBytes:   f.maxCodeBytes,
+		allowedImports: cloneImportSet(f.allowedImports),
+		runID:          options.RunID,
+		nodeID:         options.NodeID,
+		nodeDepth:      options.Depth,
+	}
+
+	exports := interp.Exports{
+		"sigil/repl/repl": map[string]reflect.Value{
+			"LLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
+				execCtx := session.currentExecContext
+				if execCtx == nil {
+					execCtx = context.Background()
+				}
+				answer, err := options.LLMQuery(execCtx, QueryRequest{Prompt: prompt, Context: subContext})
+				if err != nil {
+					if _, ok := CodeOf(err); ok {
+						return "", err
+					}
+					return "", WrapError(ErrorCodeSubcallInference, "llm_query failed", err)
+				}
+				return answer, nil
+			}),
+			"RLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
+				execCtx := session.currentExecContext
+				if execCtx == nil {
+					execCtx = context.Background()
+				}
+				answer, err := options.RLMQuery(execCtx, QueryRequest{Prompt: prompt, Context: subContext})
+				if err != nil {
+					if _, ok := CodeOf(err); ok {
+						return "", err
+					}
+					return "", WrapError(ErrorCodeSubcallInference, "rlm_query failed", err)
+				}
+				return answer, nil
+			}),
+			"LLMQueryBatched": reflect.ValueOf(func(calls []map[string]string) ([]map[string]string, error) {
+				execCtx := session.currentExecContext
+				if execCtx == nil {
+					execCtx = context.Background()
+				}
+				requests, err := ParseBatchedCalls(calls)
+				if err != nil {
+					return nil, WrapError(ErrorCodeSubcallInvalidInput, "llm_query_batched input is invalid", err)
+				}
+				results, err := options.LLMQueryBatched(execCtx, requests)
+				if err != nil {
+					if _, ok := CodeOf(err); ok {
+						return nil, err
+					}
+					return nil, WrapError(ErrorCodeSubcallInference, "llm_query_batched failed", err)
+				}
+				if len(results) != len(requests) {
+					return nil, WrapError(ErrorCodeSubcallInference, "llm_query_batched returned mismatched result length", nil)
+				}
+				return EncodeBatchedResults(results), nil
+			}),
+			"RLMQueryBatched": reflect.ValueOf(func(calls []map[string]string) ([]map[string]string, error) {
+				execCtx := session.currentExecContext
+				if execCtx == nil {
+					execCtx = context.Background()
+				}
+				requests, err := ParseBatchedCalls(calls)
+				if err != nil {
+					return nil, WrapError(ErrorCodeSubcallInvalidInput, "rlm_query_batched input is invalid", err)
+				}
+				results, err := options.RLMQueryBatched(execCtx, requests)
+				if err != nil {
+					if _, ok := CodeOf(err); ok {
+						return nil, err
+					}
+					return nil, WrapError(ErrorCodeSubcallInference, "rlm_query_batched failed", err)
+				}
+				if len(results) != len(requests) {
+					return nil, WrapError(ErrorCodeSubcallInference, "rlm_query_batched returned mismatched result length", nil)
+				}
+				return EncodeBatchedResults(results), nil
+			}),
+		},
+	}
+	if err := interpreter.Use(exports); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to register repl exports", err)
+	}
+
+	if _, err := interpreter.Eval(`import . "sigil/repl"`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to import repl exports", err)
+	}
+	if _, err := interpreter.Eval(`var llm_query = LLMQuery`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to expose llm_query binding", err)
+	}
+	if _, err := interpreter.Eval(`var rlm_query = RLMQuery`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to expose rlm_query binding", err)
+	}
+	if _, err := interpreter.Eval(`var llm_query_batched = LLMQueryBatched`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to expose llm_query_batched binding", err)
+	}
+	if _, err := interpreter.Eval(`var rlm_query_batched = RLMQueryBatched`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to expose rlm_query_batched binding", err)
+	}
+	if _, err := interpreter.Eval(`var context string`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to declare context binding", err)
+	}
+	if _, err := interpreter.Eval("context = " + strconv.Quote(options.Context)); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to initialize context binding", err)
+	}
+
+	factoryLogger().Info("initialized yaegi repl session",
+		"run_id", options.RunID,
+		"node_id", options.NodeID,
+		"node_depth", options.Depth,
+		"action_timeout", f.actionTimeout.String(),
+		"max_code_bytes", f.maxCodeBytes,
+		"stdout_cap_bytes", f.stdoutCapBytes,
+		"stderr_cap_bytes", f.stderrCapBytes,
+		"allowlist_import_count", len(f.allowedImports),
+	)
+
+	return session, nil
+}
+
+type yaegiSession struct {
+	mu                 sync.Mutex
+	interpreter        *interp.Interpreter
+	stdout             *cappedBuffer
+	stderr             *cappedBuffer
+	currentExecContext context.Context
+	closed             bool
+	actionTimeout      time.Duration
+	maxCodeBytes       int
+	allowedImports     map[string]struct{}
+	runID              string
+	nodeID             string
+	nodeDepth          int
+}
+
+func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	logger := factoryLogger().With(
+		"run_id", s.runID,
+		"node_id", s.nodeID,
+		"node_depth", s.nodeDepth,
+	)
+
+	if s.closed {
+		logger.Warn("repl execution rejected because session is closed")
+		return ExecResult{}, ErrSessionClosed
+	}
+
+	codeBytes := len([]byte(code))
+	if codeBytes > s.maxCodeBytes {
+		logger.Warn("repl code exceeded max size",
+			"code_bytes", codeBytes,
+			"max_code_bytes", s.maxCodeBytes,
+		)
+		return ExecResult{}, WrapError(ErrorCodeCodeSizeExceeded, fmt.Sprintf("repl_code exceeds max bytes (%d > %d)", codeBytes, s.maxCodeBytes), nil)
+	}
+
+	imports, err := extractImports(code)
+	if err != nil {
+		logger.Warn("repl import extraction failed", "error", err)
+		return ExecResult{}, WrapError(ErrorCodeImportBlocked, "failed to parse imports", err)
+	}
+	for _, importPath := range imports {
+		if _, ok := s.allowedImports[importPath]; !ok {
+			logger.Warn("blocked repl import",
+				"import_path", importPath,
+			)
+			return ExecResult{}, WrapError(ErrorCodeImportBlocked, fmt.Sprintf("import %q is not allowed", importPath), nil)
+		}
+	}
+	logger.Debug("executing repl code",
+		"code_bytes", codeBytes,
+		"import_count", len(imports),
+	)
+
+	s.stdout.Reset()
+	s.stderr.Reset()
+
+	execCtx, cancel := context.WithTimeout(ctx, s.actionTimeout)
+	defer cancel()
+	s.currentExecContext = execCtx
+	defer func() {
+		s.currentExecContext = nil
+	}()
+
+	start := time.Now().UTC()
+	var evalErr error
+	for _, importPath := range imports {
+		_, evalErr = s.interpreter.EvalWithContext(execCtx, fmt.Sprintf(`import %q`, importPath))
+		if evalErr != nil {
+			break
+		}
+	}
+	if evalErr == nil {
+		body := stripImportDecls(code)
+		if body != "" {
+			_, evalErr = s.interpreter.EvalWithContext(execCtx, body)
+		}
+	}
+
+	durationMS := int(time.Since(start).Milliseconds())
+	if durationMS < 0 {
+		durationMS = 0
+	}
+
+	result := ExecResult{
+		Stdout:     s.stdout.String(),
+		Stderr:     s.stderr.String(),
+		DurationMS: durationMS,
+	}
+
+	if evalErr == nil {
+		logger.Info("repl execution completed",
+			"duration_ms", result.DurationMS,
+			"stdout_bytes", len(result.Stdout),
+			"stderr_bytes", len(result.Stderr),
+			"stdout_truncated", s.stdout.truncated,
+			"stderr_truncated", s.stderr.truncated,
+		)
+		return result, nil
+	}
+	if errors.Is(evalErr, context.DeadlineExceeded) || errors.Is(evalErr, context.Canceled) || errors.Is(execCtx.Err(), context.DeadlineExceeded) || errors.Is(execCtx.Err(), context.Canceled) {
+		logger.Warn("repl execution timed out",
+			"duration_ms", result.DurationMS,
+			"timeout", s.actionTimeout.String(),
+		)
+		return result, WrapError(ErrorCodeExecutionTimeout, "repl execution timed out", evalErr)
+	}
+
+	classification := classifyEvalError(evalErr)
+	if classification == ErrorCodeExecutionRuntime {
+		logger.Warn("repl runtime error",
+			"duration_ms", result.DurationMS,
+			"error", evalErr,
+		)
+		return result, WrapError(ErrorCodeExecutionRuntime, "repl execution failed at runtime", evalErr)
+	}
+
+	logger.Warn("repl compile error",
+		"duration_ms", result.DurationMS,
+		"error", evalErr,
+	)
+	return result, WrapError(ErrorCodeExecutionCompile, "repl execution failed at compile stage", evalErr)
+}
+
+func (s *yaegiSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.closed = true
+	s.currentExecContext = nil
+	factoryLogger().Info("closed yaegi repl session",
+		"run_id", s.runID,
+		"node_id", s.nodeID,
+		"node_depth", s.nodeDepth,
+	)
+	return nil
+}
+
+func classifyEvalError(err error) ErrorCode {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "panic") || strings.Contains(message, "runtime error") {
+		return ErrorCodeExecutionRuntime
+	}
+	return ErrorCodeExecutionCompile
+}
+
+type cappedBuffer struct {
+	limit     int
+	buffer    bytes.Buffer
+	truncated bool
+}
+
+func newCappedBuffer(limit int) *cappedBuffer {
+	return &cappedBuffer{limit: limit}
+}
+
+func (b *cappedBuffer) Reset() {
+	b.buffer.Reset()
+	b.truncated = false
+}
+
+func (b *cappedBuffer) Write(data []byte) (int, error) {
+	if b.limit <= 0 {
+		b.truncated = true
+		return len(data), nil
+	}
+
+	remaining := b.limit - b.buffer.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return len(data), nil
+	}
+
+	if len(data) <= remaining {
+		_, err := b.buffer.Write(data)
+		return len(data), err
+	}
+
+	_, err := b.buffer.Write(data[:remaining])
+	b.truncated = true
+	if err != nil {
+		return 0, err
+	}
+
+	return len(data), nil
+}
+
+func (b *cappedBuffer) String() string {
+	output := b.buffer.String()
+	if !b.truncated {
+		return output
+	}
+	return output + OutputTruncationMarker
+}
+
+func cloneImportSet(source map[string]struct{}) map[string]struct{} {
+	cloned := make(map[string]struct{}, len(source))
+	for key := range source {
+		cloned[key] = struct{}{}
+	}
+	return cloned
+}
+
+func factoryLogger() *slog.Logger {
+	return slog.Default().With("component", "repl.yaegi")
+}

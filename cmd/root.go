@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/leefowlercu/sigil/cmd/run"
@@ -36,6 +37,7 @@ func NewRootCmd() *cobra.Command {
 }
 
 func runRootCommand(cmd *cobra.Command, _ []string) error {
+	rootLogger().Debug("rendering root usage help")
 	return cmd.Help()
 }
 
@@ -45,9 +47,28 @@ func initializeRootApplication(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to initialize config; %w", err)
 	}
 
-	if err := logging.Init(config.MustGet()); err != nil {
+	cfg := config.MustGet()
+	if err := logging.Init(cfg); err != nil {
 		return fmt.Errorf("failed to initialize application logging; %w", err)
 	}
+
+	logPath, pathErr := logging.ActiveLogFilePath()
+	if pathErr != nil {
+		rootLogger().Warn("application logging initialized without active path",
+			"config_path", configPath,
+			"log_level", cfg.LogLevel,
+			"log_dir", cfg.LogDir,
+			"error", pathErr,
+		)
+		return nil
+	}
+
+	rootLogger().Info("application logging initialized",
+		"config_path", configPath,
+		"log_level", cfg.LogLevel,
+		"log_dir", cfg.LogDir,
+		"log_path", logPath,
+	)
 
 	return nil
 }
@@ -68,4 +89,8 @@ func resolveApplicationConfigPath(cmd *cobra.Command) string {
 	}
 
 	return config.DefaultConfigPath
+}
+
+func rootLogger() *slog.Logger {
+	return slog.Default().With("component", "cmd.root")
 }

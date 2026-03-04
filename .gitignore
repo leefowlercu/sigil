@@ -9,7 +9,7 @@ coverage.txt
 
 # Local runtime data
 /sigil/logs/
-/sigil/runs/
+/.sigil/runs/
 
 # Local configuration and environment files
 /sigil.yaml

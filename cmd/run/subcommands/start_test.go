@@ -67,6 +67,45 @@ func TestValidateStartInputsDoesNotSilenceUsageOnValidationError(t *testing.T) {
 	}
 }
 
+func TestValidateStartInputsRejectsInvalidVarEntry(t *testing.T) {
+	workDir := t.TempDir()
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeStartTestFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	startCmd := NewStartCmd()
+	if err := startCmd.Flags().Set("var", "invalid"); err != nil {
+		t.Fatalf("failed to set var flag: %v", err)
+	}
+
+	if err := validateStartInputs(startCmd, nil); err == nil {
+		t.Fatal("expected validation failure for invalid --var entry")
+	}
+}
+
+func TestParseTemplateVarsUsesLastValueForDuplicateKey(t *testing.T) {
+	resolved, err := parseTemplateVars([]string{"a=1", "a=2", "b=3"})
+	if err != nil {
+		t.Fatalf("expected parse success, got %v", err)
+	}
+	if resolved["a"] != "2" {
+		t.Fatalf("expected duplicate key to keep last value %q, got %q", "2", resolved["a"])
+	}
+	if resolved["b"] != "3" {
+		t.Fatalf("expected value %q for key b, got %q", "3", resolved["b"])
+	}
+}
+
 func writeStartTestFile(t *testing.T, path string, content string) {
 	t.Helper()
 

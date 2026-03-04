@@ -13,6 +13,8 @@ var (
 	ErrParentNodeNotFound = errors.New("parent node not found")
 	// ErrNodeNotFound is returned when node-scoped activity references a missing node.
 	ErrNodeNotFound = errors.New("node not found")
+	// ErrDepthLimitExceeded is returned when child-node creation exceeds max_depth.
+	ErrDepthLimitExceeded = errors.New("depth limit exceeded")
 	// ErrInvalidEvent is returned when an event envelope fails contract validation.
 	ErrInvalidEvent = errors.New("invalid event")
 	// ErrInvalidSchemaVersion is returned when schema_version is unsupported.

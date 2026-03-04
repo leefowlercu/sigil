@@ -6,10 +6,24 @@ import (
 	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
 
+// MessageRole identifies ordered model-input message roles.
+type MessageRole string
+
+const (
+	MessageRoleSystem    MessageRole = "system"
+	MessageRoleUser      MessageRole = "user"
+	MessageRoleAssistant MessageRole = "assistant"
+)
+
+// Message is one ordered model-input message.
+type Message struct {
+	Role    MessageRole `json:"role"`
+	Content string      `json:"content"`
+}
+
 // Request is the gateway-agnostic inference input contract.
 type Request struct {
-	Prompt        string          `json:"prompt"`
-	Context       string          `json:"context"`
+	Messages      []Message       `json:"messages"`
 	SchemaID      string          `json:"schema_id"`
 	Gateway       string          `json:"gateway"`
 	Provider      string          `json:"provider"`
@@ -62,8 +76,7 @@ type Result struct {
 
 // GatewayRequest is the normalized request sent from inference core to gateway adapters.
 type GatewayRequest struct {
-	Prompt    string
-	Context   string
+	Messages  []Message
 	Provider  string
 	Model     string
 	Schema    schema.Definition

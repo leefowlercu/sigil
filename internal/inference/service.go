@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/leefowlercu/sigil/internal/inference/schema"
@@ -53,19 +54,37 @@ func NewService(registry *Registry, schemas *schema.Registry, options ...Service
 
 // Infer executes gateway inference and returns canonical normalized output.
 func (s *Service) Infer(ctx context.Context, request Request) (Result, error) {
+	if err := validateMessages(request.Messages); err != nil {
+		return Result{}, WrapError(ErrorCodeGatewayResolution, "invalid inference messages", err)
+	}
+
+	logger := inferenceServiceLogger().With(
+		"gateway", request.Gateway,
+		"provider", request.Provider,
+		"model", request.Model,
+		"schema_id", request.SchemaID,
+	)
+	logger.Info("starting inference request",
+		"message_count", len(request.Messages),
+		"message_bytes", totalMessageBytes(request.Messages),
+		"reasoning_enabled", request.Reasoning.Enabled,
+		"reasoning_effort", request.Reasoning.Effort,
+	)
+
 	schemaDefinition, err := s.schemas.Resolve(request.SchemaID)
 	if err != nil {
+		logger.Error("failed to resolve schema definition", "error", err)
 		return Result{}, WrapError(ErrorCodeSchemaLookup, "failed to resolve inference schema", err)
 	}
 
 	gateway, err := s.registry.Resolve(request)
 	if err != nil {
+		logger.Error("failed to resolve gateway adapter", "error", err)
 		return Result{}, WrapError(ErrorCodeGatewayResolution, "failed to resolve inference gateway", err)
 	}
 
 	gatewayRequest := GatewayRequest{
-		Prompt:    request.Prompt,
-		Context:   request.Context,
+		Messages:  cloneMessages(request.Messages),
 		Provider:  request.Provider,
 		Model:     request.Model,
 		Schema:    schemaDefinition,
@@ -79,31 +98,55 @@ func (s *Service) Infer(ctx context.Context, request Request) (Result, error) {
 
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		logger.Debug("executing inference attempt", "attempt", attempt, "max_attempts", maxAttempts)
 		response, runErr := gateway.Infer(ctx, gatewayRequest)
 		if runErr == nil {
 			result, normalizeErr := s.normalizeResult(request, response, schemaDefinition)
 			if normalizeErr != nil {
+				logger.Error("failed to normalize gateway response", "attempt", attempt, "error", normalizeErr)
 				return Result{}, normalizeErr
 			}
+			logger.Info("inference request completed",
+				"attempt", attempt,
+				"gateway_response_id", result.GatewayResponseID,
+				"finish_status", result.FinishStatus,
+			)
 			return result, nil
 		}
 
 		lastErr = runErr
 		var reasoningErr *ReasoningCapabilityError
 		if errors.As(runErr, &reasoningErr) {
+			logger.Warn("reasoning capability mismatch", "attempt", attempt, "error", runErr)
 			return Result{}, WrapError(ErrorCodeReasoningCapability, "reasoning capability mismatch", runErr)
 		}
 
 		if !isTransientGatewayFailure(runErr) || attempt >= maxAttempts {
+			logger.Error("inference attempt failed without retry",
+				"attempt", attempt,
+				"retryable", isTransientGatewayFailure(runErr),
+				"error", runErr,
+			)
 			break
 		}
 
 		delay := s.retry.DelayForAttempt(attempt)
+		logger.Warn("transient inference failure; retrying",
+			"attempt", attempt,
+			"max_attempts", maxAttempts,
+			"retry_delay", delay.String(),
+			"error", runErr,
+		)
 		if sleepErr := s.retry.Sleep(ctx, delay); sleepErr != nil {
+			logger.Error("inference retry interrupted", "attempt", attempt, "error", sleepErr)
 			return Result{}, WrapError(ErrorCodeGatewayFailure, "inference retry interrupted", sleepErr)
 		}
 	}
 
+	logger.Error("inference request failed",
+		"max_attempts", maxAttempts,
+		"error", lastErr,
+	)
 	return Result{}, WrapError(ErrorCodeGatewayFailure, "gateway inference failed", lastErr)
 }
 
@@ -188,4 +231,45 @@ func cloneStringPointer(value *string) *string {
 
 	copied := *value
 	return &copied
+}
+
+func validateMessages(messages []Message) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages must contain at least one entry")
+	}
+
+	for index, message := range messages {
+		switch message.Role {
+		case MessageRoleSystem, MessageRoleUser, MessageRoleAssistant:
+		default:
+			return fmt.Errorf("messages[%d].role %q is not supported", index, message.Role)
+		}
+		if strings.TrimSpace(message.Content) == "" {
+			return fmt.Errorf("messages[%d].content must be non-empty", index)
+		}
+	}
+
+	return nil
+}
+
+func totalMessageBytes(messages []Message) int {
+	total := 0
+	for _, message := range messages {
+		total += len(message.Content)
+	}
+	return total
+}
+
+func cloneMessages(messages []Message) []Message {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	cloned := make([]Message, len(messages))
+	copy(cloned, messages)
+	return cloned
+}
+
+func inferenceServiceLogger() *slog.Logger {
+	return slog.Default().With("component", "inference.service")
 }

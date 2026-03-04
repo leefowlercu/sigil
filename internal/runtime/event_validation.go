@@ -12,13 +12,19 @@ import (
 
 var (
 	canonicalEventTypes = map[EventType]struct{}{
-		EventTypeRunQueued:      {},
-		EventTypeRunRunning:     {},
-		EventTypeNodeStarted:    {},
-		EventTypeNodeCompleted:  {},
-		EventTypeRunCompleted:   {},
-		EventTypeRunFailed:      {},
-		EventTypeRunInterrupted: {},
+		EventTypeRunQueued:           {},
+		EventTypeRunRunning:          {},
+		EventTypeNodeStarted:         {},
+		EventTypeNodeCompleted:       {},
+		EventTypeNodeStepStarted:     {},
+		EventTypeNodeStepCompleted:   {},
+		EventTypeNodeTurnUser:        {},
+		EventTypeNodeTurnModel:       {},
+		EventTypeNodeSubcallExecuted: {},
+		EventTypeNodeActionExecuted:  {},
+		EventTypeRunCompleted:        {},
+		EventTypeRunFailed:           {},
+		EventTypeRunInterrupted:      {},
 	}
 
 	runQueuedSources = map[RunQueuedSource]struct{}{
@@ -32,6 +38,35 @@ var (
 		RunInterruptedReasonPolicyStop:     {},
 		RunInterruptedReasonSystemShutdown: {},
 	}
+
+	stepDecisions = map[StepDecision]struct{}{
+		StepDecisionContinue: {},
+		StepDecisionFinal:    {},
+	}
+
+	actionExecutionStatuses = map[ActionExecutionStatus]struct{}{
+		ActionExecutionStatusCompleted: {},
+		ActionExecutionStatusFailed:    {},
+	}
+
+	subcallTypes = map[SubcallType]struct{}{
+		SubcallTypeLLMQuery:        {},
+		SubcallTypeLLMQueryBatched: {},
+		SubcallTypeRLMQuery:        {},
+		SubcallTypeRLMQueryBatched: {},
+	}
+
+	subcallExecutionModes = map[SubcallExecutionMode]struct{}{
+		SubcallExecutionModePlain:     {},
+		SubcallExecutionModeRecursive: {},
+		SubcallExecutionModeFallback:  {},
+	}
+)
+
+const (
+	nodeStepSchemaIDV1     = "sigil.rlm.response.v1"
+	nodeActionTypeReplCode = "repl_code"
+	nodeActionLanguageGo   = "go"
 )
 
 type eventEnvelopeWire struct {
@@ -320,6 +355,253 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			return nil, fmt.Errorf("node.completed output_ref must be non-empty when present; %w", ErrInvalidEvent)
 		}
 		return payload, nil
+	case EventTypeNodeStepStarted:
+		allowed := map[string]struct{}{
+			"step_id":    {},
+			"step_index": {},
+			"schema_id":  {},
+		}
+		required := map[string]struct{}{
+			"step_id":    {},
+			"step_index": {},
+			"schema_id":  {},
+		}
+		var payload NodeStepStartedPayload
+		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
+			return nil, err
+		}
+		if err := validateUUIDv7String(payload.StepID); err != nil {
+			return nil, fmt.Errorf("node.step.started step_id must be UUIDv7; %w", ErrInvalidEvent)
+		}
+		if payload.StepIndex < 1 {
+			return nil, fmt.Errorf("node.step.started step_index must be >= 1; %w", ErrInvalidEvent)
+		}
+		if payload.SchemaID != nodeStepSchemaIDV1 {
+			return nil, fmt.Errorf("node.step.started schema_id must be %q; %w", nodeStepSchemaIDV1, ErrInvalidEvent)
+		}
+		return payload, nil
+	case EventTypeNodeStepCompleted:
+		allowed := map[string]struct{}{
+			"step_id":      {},
+			"decision":     {},
+			"action_count": {},
+			"duration_ms":  {},
+		}
+		required := map[string]struct{}{
+			"step_id":      {},
+			"decision":     {},
+			"action_count": {},
+			"duration_ms":  {},
+		}
+		var payload NodeStepCompletedPayload
+		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
+			return nil, err
+		}
+		if err := validateUUIDv7String(payload.StepID); err != nil {
+			return nil, fmt.Errorf("node.step.completed step_id must be UUIDv7; %w", ErrInvalidEvent)
+		}
+		if _, ok := stepDecisions[payload.Decision]; !ok {
+			return nil, fmt.Errorf("node.step.completed decision %q is not supported; %w", payload.Decision, ErrInvalidEvent)
+		}
+		if payload.ActionCount < 0 {
+			return nil, fmt.Errorf("node.step.completed action_count must be >= 0; %w", ErrInvalidEvent)
+		}
+		if payload.DurationMS < 0 {
+			return nil, fmt.Errorf("node.step.completed duration_ms must be >= 0; %w", ErrInvalidEvent)
+		}
+		if payload.Decision == StepDecisionContinue && payload.ActionCount != 1 {
+			return nil, fmt.Errorf("node.step.completed decision=continue requires action_count=1; %w", ErrInvalidEvent)
+		}
+		if payload.Decision == StepDecisionFinal && payload.ActionCount != 0 {
+			return nil, fmt.Errorf("node.step.completed decision=final requires action_count=0; %w", ErrInvalidEvent)
+		}
+		return payload, nil
+	case EventTypeNodeTurnUser, EventTypeNodeTurnModel:
+		allowed := map[string]struct{}{
+			"step_id":     {},
+			"role":        {},
+			"content_ref": {},
+		}
+		required := map[string]struct{}{
+			"step_id":     {},
+			"role":        {},
+			"content_ref": {},
+		}
+		var payload NodeTurnPayload
+		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
+			return nil, err
+		}
+		if err := validateUUIDv7String(payload.StepID); err != nil {
+			return nil, fmt.Errorf("node.turn step_id must be UUIDv7; %w", ErrInvalidEvent)
+		}
+		expectedRole := TurnRoleUser
+		if eventType == EventTypeNodeTurnModel {
+			expectedRole = TurnRoleModel
+		}
+		if payload.Role != expectedRole {
+			return nil, fmt.Errorf("node.turn payload role must be %q for event type %q; %w", expectedRole, eventType, ErrInvalidEvent)
+		}
+		if strings.TrimSpace(payload.ContentRef) == "" {
+			return nil, fmt.Errorf("node.turn content_ref must be non-empty; %w", ErrInvalidEvent)
+		}
+		return payload, nil
+	case EventTypeNodeSubcallExecuted:
+		allowed := map[string]struct{}{
+			"step_id":        {},
+			"action_index":   {},
+			"subcall_index":  {},
+			"subcall_type":   {},
+			"execution_mode": {},
+			"status":         {},
+			"provider":       {},
+			"model":          {},
+			"prompt_bytes":   {},
+			"context_bytes":  {},
+			"answer_bytes":   {},
+			"duration_ms":    {},
+			"child_node_id":  {},
+			"error_code":     {},
+			"error_message":  {},
+		}
+		required := map[string]struct{}{
+			"step_id":        {},
+			"action_index":   {},
+			"subcall_index":  {},
+			"subcall_type":   {},
+			"execution_mode": {},
+			"status":         {},
+			"provider":       {},
+			"model":          {},
+			"prompt_bytes":   {},
+			"context_bytes":  {},
+			"answer_bytes":   {},
+			"duration_ms":    {},
+		}
+		var payload NodeSubcallExecutedPayload
+		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
+			return nil, err
+		}
+		if err := validateUUIDv7String(payload.StepID); err != nil {
+			return nil, fmt.Errorf("node.subcall.executed step_id must be UUIDv7; %w", ErrInvalidEvent)
+		}
+		if payload.ActionIndex != 1 {
+			return nil, fmt.Errorf("node.subcall.executed action_index must be 1 in v1; %w", ErrInvalidEvent)
+		}
+		if payload.SubcallIndex < 1 {
+			return nil, fmt.Errorf("node.subcall.executed subcall_index must be >= 1; %w", ErrInvalidEvent)
+		}
+		if _, ok := subcallTypes[payload.SubcallType]; !ok {
+			return nil, fmt.Errorf("node.subcall.executed subcall_type %q is not supported; %w", payload.SubcallType, ErrInvalidEvent)
+		}
+		if _, ok := subcallExecutionModes[payload.ExecutionMode]; !ok {
+			return nil, fmt.Errorf("node.subcall.executed execution_mode %q is not supported; %w", payload.ExecutionMode, ErrInvalidEvent)
+		}
+		if _, ok := actionExecutionStatuses[payload.Status]; !ok {
+			return nil, fmt.Errorf("node.subcall.executed status %q is not supported; %w", payload.Status, ErrInvalidEvent)
+		}
+		if strings.TrimSpace(payload.Provider) == "" {
+			return nil, fmt.Errorf("node.subcall.executed provider must be non-empty; %w", ErrInvalidEvent)
+		}
+		if strings.TrimSpace(payload.Model) == "" {
+			return nil, fmt.Errorf("node.subcall.executed model must be non-empty; %w", ErrInvalidEvent)
+		}
+		if payload.PromptBytes < 0 {
+			return nil, fmt.Errorf("node.subcall.executed prompt_bytes must be >= 0; %w", ErrInvalidEvent)
+		}
+		if payload.ContextBytes < 0 {
+			return nil, fmt.Errorf("node.subcall.executed context_bytes must be >= 0; %w", ErrInvalidEvent)
+		}
+		if payload.AnswerBytes < 0 {
+			return nil, fmt.Errorf("node.subcall.executed answer_bytes must be >= 0; %w", ErrInvalidEvent)
+		}
+		if payload.DurationMS < 0 {
+			return nil, fmt.Errorf("node.subcall.executed duration_ms must be >= 0; %w", ErrInvalidEvent)
+		}
+		if payload.ExecutionMode == SubcallExecutionModeRecursive {
+			if payload.ChildNodeID == nil {
+				return nil, fmt.Errorf("node.subcall.executed recursive mode requires child_node_id; %w", ErrInvalidEvent)
+			}
+			if err := validateUUIDv7String(*payload.ChildNodeID); err != nil {
+				return nil, fmt.Errorf("node.subcall.executed child_node_id must be UUIDv7 when present; %w", ErrInvalidEvent)
+			}
+		} else if payload.ChildNodeID != nil {
+			return nil, fmt.Errorf("node.subcall.executed child_node_id is only allowed for recursive mode; %w", ErrInvalidEvent)
+		}
+		if payload.Status == ActionExecutionStatusCompleted {
+			if payload.ErrorCode != nil || payload.ErrorMessage != nil {
+				return nil, fmt.Errorf("node.subcall.executed completed status forbids error_code and error_message; %w", ErrInvalidEvent)
+			}
+			return payload, nil
+		}
+		if payload.ErrorCode == nil || strings.TrimSpace(*payload.ErrorCode) == "" {
+			return nil, fmt.Errorf("node.subcall.executed failed status requires non-empty error_code; %w", ErrInvalidEvent)
+		}
+		if payload.ErrorMessage == nil || strings.TrimSpace(*payload.ErrorMessage) == "" {
+			return nil, fmt.Errorf("node.subcall.executed failed status requires non-empty error_message; %w", ErrInvalidEvent)
+		}
+		return payload, nil
+	case EventTypeNodeActionExecuted:
+		allowed := map[string]struct{}{
+			"step_id":       {},
+			"action_index":  {},
+			"action_type":   {},
+			"language":      {},
+			"status":        {},
+			"duration_ms":   {},
+			"output_ref":    {},
+			"error_code":    {},
+			"error_message": {},
+		}
+		required := map[string]struct{}{
+			"step_id":      {},
+			"action_index": {},
+			"action_type":  {},
+			"language":     {},
+			"status":       {},
+			"duration_ms":  {},
+			"output_ref":   {},
+		}
+		var payload NodeActionExecutedPayload
+		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
+			return nil, err
+		}
+		if err := validateUUIDv7String(payload.StepID); err != nil {
+			return nil, fmt.Errorf("node.action.executed step_id must be UUIDv7; %w", ErrInvalidEvent)
+		}
+		if payload.ActionIndex != 1 {
+			return nil, fmt.Errorf("node.action.executed action_index must be 1 in v1; %w", ErrInvalidEvent)
+		}
+		if payload.ActionType != nodeActionTypeReplCode {
+			return nil, fmt.Errorf("node.action.executed action_type must be %q; %w", nodeActionTypeReplCode, ErrInvalidEvent)
+		}
+		if payload.Language != nodeActionLanguageGo {
+			return nil, fmt.Errorf("node.action.executed language must be %q; %w", nodeActionLanguageGo, ErrInvalidEvent)
+		}
+		if _, ok := actionExecutionStatuses[payload.Status]; !ok {
+			return nil, fmt.Errorf("node.action.executed status %q is not supported; %w", payload.Status, ErrInvalidEvent)
+		}
+		if payload.DurationMS < 0 {
+			return nil, fmt.Errorf("node.action.executed duration_ms must be >= 0; %w", ErrInvalidEvent)
+		}
+		if strings.TrimSpace(payload.OutputRef) == "" {
+			return nil, fmt.Errorf("node.action.executed output_ref must be non-empty; %w", ErrInvalidEvent)
+		}
+		if _, err := ParseActionOutputRef(payload.OutputRef); err != nil {
+			return nil, fmt.Errorf("node.action.executed output_ref is invalid; %w", err)
+		}
+		if payload.Status == ActionExecutionStatusCompleted {
+			if payload.ErrorCode != nil || payload.ErrorMessage != nil {
+				return nil, fmt.Errorf("node.action.executed completed status forbids error_code and error_message; %w", ErrInvalidEvent)
+			}
+			return payload, nil
+		}
+		if payload.ErrorCode == nil || strings.TrimSpace(*payload.ErrorCode) == "" {
+			return nil, fmt.Errorf("node.action.executed failed status requires non-empty error_code; %w", ErrInvalidEvent)
+		}
+		if payload.ErrorMessage == nil || strings.TrimSpace(*payload.ErrorMessage) == "" {
+			return nil, fmt.Errorf("node.action.executed failed status requires non-empty error_message; %w", ErrInvalidEvent)
+		}
+		return payload, nil
 	case EventTypeRunCompleted:
 		allowed := map[string]struct{}{
 			"status":           {},
@@ -494,6 +776,25 @@ func validateEventShape(event EventEnvelope) error {
 	if isNodeScopedEventType(event.Type) {
 		if event.NodeID == nil {
 			return fmt.Errorf("node-scoped event type %q requires node_id; %w", event.Type, ErrInvalidEvent)
+		}
+	}
+	if event.Type == EventTypeNodeActionExecuted {
+		payload, ok := event.Payload.(NodeActionExecutedPayload)
+		if !ok {
+			return fmt.Errorf("node.action.executed payload type is invalid; %w", ErrInvalidEvent)
+		}
+		parsedRef, err := ParseActionOutputRef(payload.OutputRef)
+		if err != nil {
+			return fmt.Errorf("node.action.executed output_ref is invalid; %w", err)
+		}
+		if event.NodeID == nil || parsedRef.NodeID != *event.NodeID {
+			return fmt.Errorf("node.action.executed output_ref node id must match event node_id; %w", ErrInvalidEvent)
+		}
+		if parsedRef.StepID != payload.StepID {
+			return fmt.Errorf("node.action.executed output_ref step id must match payload step_id; %w", ErrInvalidEvent)
+		}
+		if parsedRef.ActionIndex != payload.ActionIndex {
+			return fmt.Errorf("node.action.executed output_ref action index must match payload action_index; %w", ErrInvalidEvent)
 		}
 	}
 
