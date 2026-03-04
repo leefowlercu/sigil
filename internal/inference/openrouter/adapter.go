@@ -298,8 +298,13 @@ func decodePayloadText(text string) (map[string]any, error) {
 	}
 
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(trimmed))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
 		return nil, fmt.Errorf("failed to parse structured payload JSON; %w", err)
+	}
+	if payload == nil {
+		return nil, fmt.Errorf("structured payload must be a JSON object")
 	}
 
 	return payload, nil

@@ -341,3 +341,23 @@ func asReasoningCapabilityError(err error, target **inference.ReasoningCapabilit
 	*target = typed
 	return true
 }
+
+func TestDecodePayloadTextAcceptsTrailingContentAfterFirstJSONObject(t *testing.T) {
+	payload, err := decodePayloadText(`{"decision":"final","final":{"answer":"done"}}{"unexpected":"trailing"}`)
+	if err != nil {
+		t.Fatalf("expected payload decode success, got %v", err)
+	}
+	if payload["decision"] != "final" {
+		t.Fatalf("expected decision final, got %+v", payload)
+	}
+}
+
+func TestDecodePayloadTextRejectsInvalidJSONPrefix(t *testing.T) {
+	_, err := decodePayloadText(`not-json {"decision":"final"}`)
+	if err == nil {
+		t.Fatal("expected decode failure for invalid json prefix")
+	}
+	if !strings.Contains(err.Error(), "failed to parse structured payload JSON") {
+		t.Fatalf("expected structured payload parse failure, got %v", err)
+	}
+}

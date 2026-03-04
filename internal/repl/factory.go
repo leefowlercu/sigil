@@ -122,6 +122,7 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 		actionTimeout:  f.actionTimeout,
 		maxCodeBytes:   f.maxCodeBytes,
 		allowedImports: cloneImportSet(f.allowedImports),
+		imported:       make(map[string]struct{}, len(f.allowedImports)),
 		runID:          options.RunID,
 		nodeID:         options.NodeID,
 		nodeDepth:      options.Depth,
@@ -130,9 +131,9 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 	exports := interp.Exports{
 		"sigil/repl/repl": map[string]reflect.Value{
 			"LLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
-				execCtx := session.currentExecContext
-				if execCtx == nil {
-					execCtx = context.Background()
+				execCtx, ctxErr := session.activeExecContext()
+				if ctxErr != nil {
+					return "", ctxErr
 				}
 				answer, err := options.LLMQuery(execCtx, QueryRequest{Prompt: prompt, Context: subContext})
 				if err != nil {
@@ -144,9 +145,9 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				return answer, nil
 			}),
 			"RLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
-				execCtx := session.currentExecContext
-				if execCtx == nil {
-					execCtx = context.Background()
+				execCtx, ctxErr := session.activeExecContext()
+				if ctxErr != nil {
+					return "", ctxErr
 				}
 				answer, err := options.RLMQuery(execCtx, QueryRequest{Prompt: prompt, Context: subContext})
 				if err != nil {
@@ -158,9 +159,9 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				return answer, nil
 			}),
 			"LLMQueryBatched": reflect.ValueOf(func(calls []map[string]string) ([]map[string]string, error) {
-				execCtx := session.currentExecContext
-				if execCtx == nil {
-					execCtx = context.Background()
+				execCtx, ctxErr := session.activeExecContext()
+				if ctxErr != nil {
+					return nil, ctxErr
 				}
 				requests, err := ParseBatchedCalls(calls)
 				if err != nil {
@@ -179,9 +180,9 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				return EncodeBatchedResults(results), nil
 			}),
 			"RLMQueryBatched": reflect.ValueOf(func(calls []map[string]string) ([]map[string]string, error) {
-				execCtx := session.currentExecContext
-				if execCtx == nil {
-					execCtx = context.Background()
+				execCtx, ctxErr := session.activeExecContext()
+				if ctxErr != nil {
+					return nil, ctxErr
 				}
 				requests, err := ParseBatchedCalls(calls)
 				if err != nil {
@@ -243,6 +244,7 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 
 type yaegiSession struct {
 	mu                 sync.Mutex
+	ctxMu              sync.RWMutex
 	interpreter        *interp.Interpreter
 	stdout             *cappedBuffer
 	stderr             *cappedBuffer
@@ -251,6 +253,7 @@ type yaegiSession struct {
 	actionTimeout      time.Duration
 	maxCodeBytes       int
 	allowedImports     map[string]struct{}
+	imported           map[string]struct{}
 	runID              string
 	nodeID             string
 	nodeDepth          int
@@ -303,18 +306,22 @@ func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error
 
 	execCtx, cancel := context.WithTimeout(ctx, s.actionTimeout)
 	defer cancel()
-	s.currentExecContext = execCtx
+	s.setCurrentExecContext(execCtx)
 	defer func() {
-		s.currentExecContext = nil
+		s.setCurrentExecContext(nil)
 	}()
 
 	start := time.Now().UTC()
 	var evalErr error
 	for _, importPath := range imports {
+		if _, imported := s.imported[importPath]; imported {
+			continue
+		}
 		_, evalErr = s.interpreter.EvalWithContext(execCtx, fmt.Sprintf(`import %q`, importPath))
 		if evalErr != nil {
 			break
 		}
+		s.imported[importPath] = struct{}{}
 	}
 	if evalErr == nil {
 		body := stripImportDecls(code)
@@ -373,7 +380,7 @@ func (s *yaegiSession) Close() error {
 	defer s.mu.Unlock()
 
 	s.closed = true
-	s.currentExecContext = nil
+	s.setCurrentExecContext(nil)
 	factoryLogger().Info("closed yaegi repl session",
 		"run_id", s.runID,
 		"node_id", s.nodeID,
@@ -388,6 +395,27 @@ func classifyEvalError(err error) ErrorCode {
 		return ErrorCodeExecutionRuntime
 	}
 	return ErrorCodeExecutionCompile
+}
+
+func (s *yaegiSession) activeExecContext() (context.Context, error) {
+	s.ctxMu.RLock()
+	execCtx := s.currentExecContext
+	s.ctxMu.RUnlock()
+
+	if execCtx == nil {
+		return nil, WrapError(ErrorCodeExecutionTimeout, "repl action context is unavailable", context.Canceled)
+	}
+	if err := execCtx.Err(); err != nil {
+		return nil, WrapError(ErrorCodeExecutionTimeout, "repl action context is canceled", err)
+	}
+
+	return execCtx, nil
+}
+
+func (s *yaegiSession) setCurrentExecContext(ctx context.Context) {
+	s.ctxMu.Lock()
+	s.currentExecContext = ctx
+	s.ctxMu.Unlock()
 }
 
 type cappedBuffer struct {

@@ -44,7 +44,7 @@ func NewStartCmd() *cobra.Command {
 
 	startCmd.Flags().StringVar(&startConfigPath, "config", defaultStartConfigPath, "Path to Sigil application config file")
 	startCmd.Flags().StringVar(&startRunConfigPath, "run-config", defaultStartRunConfigPath, "Path to Sigil run config file")
-	startCmd.Flags().StringSliceVar(&startTemplateVarRaw, "var", nil, "Template variable in key=value format (repeatable)")
+	startCmd.Flags().StringArrayVar(&startTemplateVarRaw, "var", nil, "Template variable in key=value format (repeatable)")
 
 	return startCmd
 }

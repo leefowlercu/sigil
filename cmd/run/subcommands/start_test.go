@@ -106,6 +106,41 @@ func TestParseTemplateVarsUsesLastValueForDuplicateKey(t *testing.T) {
 	}
 }
 
+func TestValidateStartInputsPreservesMultilineVarValues(t *testing.T) {
+	workDir := t.TempDir()
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeStartTestFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt_template: '{{.question}}'\ncontext_template: '{{.external_context}}'\nllm:\n  provider: openai\n  model: gpt-5.1\n")
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	contextValue := "line1\nline2,with,commas\nline3"
+
+	startCmd := NewStartCmd()
+	if err := startCmd.Flags().Set("var", "question=test"); err != nil {
+		t.Fatalf("failed to set question var: %v", err)
+	}
+	if err := startCmd.Flags().Set("var", "external_context="+contextValue); err != nil {
+		t.Fatalf("failed to set external context var: %v", err)
+	}
+
+	if err := validateStartInputs(startCmd, nil); err != nil {
+		t.Fatalf("expected validation success, got %v", err)
+	}
+
+	if got := startTemplateVars["external_context"]; got != contextValue {
+		t.Fatalf("expected multiline context var to be preserved, got %q", got)
+	}
+}
+
 func writeStartTestFile(t *testing.T, path string, content string) {
 	t.Helper()
 

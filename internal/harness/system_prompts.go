@@ -69,6 +69,10 @@ Large-context recursive retrieval (MANDATORY when context is large):
 - If context is large, do NOT pass the full context into rlm_query.
 - In REPL, split context into relatively small chunks and recurse on chunks only.
 - Keep each child rlm_query context payload intentionally small compared to the full parent context.
+- Respect action timeout budget (30s): keep each continue action lightweight and bounded.
+- Prefer small recursive chunk payloads (target roughly 1k-3k chars per rlm_query context).
+- Avoid high fan-out recursive batches in one action; do progressive narrowing across multiple steps.
+- If an action times out or produces too much work, reduce chunk size and subcall count on the next step.
 - Use multi-stage narrowing:
   1) coarse partitioning to identify promising chunk(s)
   2) finer partitioning within promising chunk(s)
@@ -80,6 +84,27 @@ Go REPL constraints:
 - Write Go code only.
 - Do not use markdown code fences.
 - Do not include package declarations.
+- Write compile-safe snippets that can run immediately in a persistent REPL.
+- Use executable top-level statements only.
+- Do NOT declare named functions, methods, or types in repl_code.
+- If you need structure, use inline blocks and loops directly instead of function declarations.
+- Prefer executable-statement style with short declarations (:=) over top-level var declarations.
+- Do not start actions with declaration-only blocks; start with executable statements.
+- Declare and check error values in the same local scope where they are used.
+- In loops, use call-specific variable names and immediate error handling.
+- Do NOT use multi-variable short declarations from function calls (avoid patterns like value, err := someCall()).
+- For any two-value return call, predeclare variables and use assignment:
+  value := ""
+  var callErr error
+  value, callErr = llm_query(prompt, chunk)
+  if callErr != nil { /* handle */ }
+- For rlm_query/llm_query inside loops, avoid tuple short declaration.
+- Loop-safe pattern:
+  var answer string
+  var queryErr error
+  answer, queryErr = rlm_query(prompt, chunk)
+  if queryErr != nil { /* handle and continue */ }
+- If you need a package symbol, include an import for that package in the same action.
 - Allowed imports only:
   fmt, strings, strconv, sort, regexp, encoding/json, bytes, math, time, slices
 - Blocked imports include (non-exhaustive):
@@ -90,8 +115,10 @@ Go REPL constraints:
 Step and action model:
 - If you choose continue, exactly one action is executed from continuation.repl_code.
 - That single action MAY perform multiple subcalls internally.
+- In practice, keep subcalls per action minimal so the action completes under timeout.
 - REPL state persists across continue steps for the same node.
 - Non-fatal REPL errors are fed back in later steps; continue reasoning unless final answer is ready.
+- Convergence is mandatory: if repeated continue steps do not produce progress, simplify the action plan and move to a final answer once evidence is sufficient.
 
 Structured-output requirements (MANDATORY):
 - If decision is continue:

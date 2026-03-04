@@ -154,6 +154,26 @@ func TestYaegiSessionExecPersistsStateAcrossSteps(t *testing.T) {
 	}
 }
 
+func TestYaegiSessionExecAllowsRepeatedImportsAcrossSteps(t *testing.T) {
+	session := mustNewSession(t)
+
+	result, err := session.Exec(context.Background(), `import "fmt"; fmt.Print("first")`)
+	if err != nil {
+		t.Fatalf("expected first exec success, got %v", err)
+	}
+	if result.Stdout != "first" {
+		t.Fatalf("expected stdout first, got %q", result.Stdout)
+	}
+
+	result, err = session.Exec(context.Background(), `import "fmt"; fmt.Print("second")`)
+	if err != nil {
+		t.Fatalf("expected second exec success with repeated import, got %v", err)
+	}
+	if result.Stdout != "second" {
+		t.Fatalf("expected stdout second, got %q", result.Stdout)
+	}
+}
+
 func TestYaegiSessionExposesContextBinding(t *testing.T) {
 	session := mustNewSessionWithContext(t, "ctx-value")
 
@@ -177,6 +197,70 @@ func TestYaegiSessionExposesRLMQueryBinding(t *testing.T) {
 	}
 	if result.Stdout != "prompt|subctx" {
 		t.Fatalf("expected rlm_query output prompt|subctx, got %q", result.Stdout)
+	}
+}
+
+func TestYaegiSessionExecSupportsRLMQueryAssignmentInsideLoop(t *testing.T) {
+	session := mustNewSessionWithQuery(t, func(_ context.Context, request QueryRequest) (string, error) {
+		return request.Prompt + "|" + request.Context, nil
+	})
+
+	code := `
+import (
+	"fmt"
+	"strings"
+)
+
+for i := 0; i < 1; i++ {
+	prompt := "p"
+	var ans string
+	var queryErr error
+	ans, queryErr = rlm_query(prompt, context)
+	if queryErr != nil {
+		fmt.Println("err", queryErr)
+		continue
+	}
+	a := strings.TrimSpace(ans)
+	fmt.Println(a)
+}
+`
+	result, err := session.Exec(context.Background(), code)
+	if err != nil {
+		t.Fatalf("expected looped rlm_query exec success, got %v", err)
+	}
+	if !strings.Contains(result.Stdout, "p|context") {
+		t.Fatalf("expected stdout to contain looped answer, got %q", result.Stdout)
+	}
+}
+
+func TestYaegiSessionExecRejectsRLMQueryTupleDeclarationInsideLoop(t *testing.T) {
+	session := mustNewSessionWithQuery(t, func(_ context.Context, request QueryRequest) (string, error) {
+		return request.Prompt + "|" + request.Context, nil
+	})
+
+	code := `
+import (
+	"fmt"
+	"strings"
+)
+
+for i := 0; i < 1; i++ {
+	prompt := "p"
+	ans, err := rlm_query(prompt, context)
+	if err != nil {
+		fmt.Println("err", err)
+	} else {
+		a := strings.TrimSpace(ans)
+		fmt.Println(a)
+	}
+}
+`
+	_, err := session.Exec(context.Background(), code)
+	if !IsCode(err, ErrorCodeExecutionCompile) {
+		t.Fatalf("expected compile error for tuple declaration inside loop, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "undefined: err") {
+		t.Fatalf("expected undefined err compile detail, got %v", err)
 	}
 }
 
