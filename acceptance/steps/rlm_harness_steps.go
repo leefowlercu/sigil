@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/google/uuid"
 	"github.com/leefowlercu/sigil/internal/config"
 	sigilharness "github.com/leefowlercu/sigil/internal/harness"
 	sigilinference "github.com/leefowlercu/sigil/internal/inference"
@@ -72,6 +73,14 @@ type rlmAcceptanceState struct {
 	boundedFailureMessage    string
 	boundedFailureInjected   bool
 	boundedFailureTransition error
+
+	recursiveSubcallTimeoutSeconds int
+	actionTimeoutSeconds           int
+	observedRecursiveDeadline      time.Duration
+	recursiveCancel                context.CancelFunc
+	recursiveCancelSubcallErrCh    chan error
+	recursiveCancelExecErrCh       chan error
+	recursiveCancelExecErr         error
 }
 
 type acceptanceSubcalls struct {
@@ -189,6 +198,13 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^a continue action exceeding (\d+) seconds execution time$`, world.aContinueActionExceedingSecondsExecutionTime)
 	ctx.Step(`^REPL runtime enforces guardrails$`, world.rEPLRuntimeEnforcesGuardrails)
 	ctx.Step(`^action times out with typed timeout error$`, world.actionTimesOutWithTypedTimeoutError)
+	ctx.Step(`^recursive subcall timeout budget is configured to (\d+) seconds$`, world.recursiveSubcallTimeoutBudgetIsConfiguredToSeconds)
+	ctx.Step(`^action timeout budget is configured to (\d+) seconds$`, world.actionTimeoutBudgetIsConfiguredToSeconds)
+	ctx.Step(`^recursive subcall timeout budgets are observed$`, world.recursiveSubcallTimeoutBudgetsAreObserved)
+	ctx.Step(`^recursive subcall timeout budget is independent of parent action and recursive-level elapsed deadlines$`, world.recursiveSubcallTimeoutBudgetIsIndependentOfParentActionElapsedTime)
+	ctx.Step(`^recursive subcall execution is in progress$`, world.recursiveSubcallExecutionIsInProgress)
+	ctx.Step(`^run context is canceled during recursive subcall$`, world.runContextIsCanceledDuringRecursiveSubcall)
+	ctx.Step(`^recursive subcall execution is canceled by run context$`, world.recursiveSubcallExecutionIsCanceledByRunContext)
 
 	ctx.Step(`^a continue action with repl_code payload larger than (\d+) bytes$`, world.aContinueActionWithRepl_codePayloadLargerThanBytes)
 	ctx.Step(`^payload guardrails are validated$`, world.payloadGuardrailsAreValidated)
@@ -1160,6 +1176,219 @@ func (w *harnessWorld) rEPLRuntimeEnforcesGuardrails() error {
 func (w *harnessWorld) actionTimesOutWithTypedTimeoutError() error {
 	if w.rlm().actionPayload.ErrorCode == nil || *w.rlm().actionPayload.ErrorCode != string(sigilrepl.ErrorCodeExecutionTimeout) {
 		return fmt.Errorf("expected timeout error code %q, got %v", sigilrepl.ErrorCodeExecutionTimeout, w.rlm().actionPayload.ErrorCode)
+	}
+	return nil
+}
+
+func (w *harnessWorld) recursiveSubcallTimeoutBudgetIsConfiguredToSeconds(seconds int) error {
+	if seconds < 1 {
+		return fmt.Errorf("recursive subcall timeout seconds must be >= 1")
+	}
+	w.rlm().recursiveSubcallTimeoutSeconds = seconds
+	return nil
+}
+
+func (w *harnessWorld) actionTimeoutBudgetIsConfiguredToSeconds(seconds int) error {
+	if seconds < 1 {
+		return fmt.Errorf("action timeout seconds must be >= 1")
+	}
+	w.rlm().actionTimeoutSeconds = seconds
+	return nil
+}
+
+func (w *harnessWorld) recursiveSubcallTimeoutBudgetsAreObserved() error {
+	subcallSeconds := w.rlm().recursiveSubcallTimeoutSeconds
+	if subcallSeconds < 1 {
+		subcallSeconds = 90
+	}
+	actionSeconds := w.rlm().actionTimeoutSeconds
+	if actionSeconds < 1 {
+		actionSeconds = 180
+	}
+
+	factory := sigilrepl.NewFactory(
+		sigilrepl.WithActionTimeout(time.Duration(actionSeconds)*time.Second),
+		sigilrepl.WithRecursiveSubcallTimeout(time.Duration(subcallSeconds)*time.Second),
+	)
+	runID, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate run id; %w", err)
+	}
+	nodeID, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate node id; %w", err)
+	}
+
+	session, err := factory.NewSession(context.Background(), sigilrepl.SessionOptions{
+		RunID:   runID.String(),
+		NodeID:  nodeID.String(),
+		Depth:   0,
+		Context: "root-context",
+		LLMQuery: func(_ context.Context, request sigilrepl.QueryRequest) (string, error) {
+			return request.Prompt + "|" + request.Context, nil
+		},
+		RLMQuery: func(ctx context.Context, request sigilrepl.QueryRequest) (string, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				return "", fmt.Errorf("recursive subcall context missing deadline")
+			}
+			w.rlm().observedRecursiveDeadline = time.Until(deadline)
+			return request.Prompt + "|" + request.Context, nil
+		},
+		LLMQueryBatched: func(_ context.Context, requests []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
+			results := make([]sigilrepl.BatchedQueryResult, len(requests))
+			for index, request := range requests {
+				results[index] = sigilrepl.BatchedQueryResult{Answer: request.Prompt + "|" + request.Context}
+			}
+			return results, nil
+		},
+		RLMQueryBatched: func(ctx context.Context, requests []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
+			results := make([]sigilrepl.BatchedQueryResult, len(requests))
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				return nil, fmt.Errorf("recursive subcall context missing deadline")
+			}
+			w.rlm().observedRecursiveDeadline = time.Until(deadline)
+			for index, request := range requests {
+				results[index] = sigilrepl.BatchedQueryResult{Answer: request.Prompt + "|" + request.Context}
+			}
+			return results, nil
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create repl session; %w", err)
+	}
+	defer session.Close()
+
+	if _, err := session.Exec(context.Background(), `_, _ = rlm_query("prompt", "subctx")`); err != nil {
+		return fmt.Errorf("failed to execute recursive subcall observation action; %w", err)
+	}
+	return nil
+}
+
+func (w *harnessWorld) recursiveSubcallTimeoutBudgetIsIndependentOfParentActionElapsedTime() error {
+	if w.rlm().observedRecursiveDeadline <= 0 {
+		return fmt.Errorf("expected observed recursive deadline to be > 0, got %s", w.rlm().observedRecursiveDeadline)
+	}
+	if w.rlm().recursiveSubcallTimeoutSeconds > 0 {
+		target := time.Duration(w.rlm().recursiveSubcallTimeoutSeconds) * time.Second
+		if w.rlm().observedRecursiveDeadline < target-15*time.Second || w.rlm().observedRecursiveDeadline > target+2*time.Second {
+			return fmt.Errorf("expected recursive deadline near %s, got %s", target, w.rlm().observedRecursiveDeadline)
+		}
+		if w.rlm().actionTimeoutSeconds > 0 {
+			actionBudget := time.Duration(w.rlm().actionTimeoutSeconds) * time.Second
+			if target > actionBudget && w.rlm().observedRecursiveDeadline <= actionBudget+2*time.Second {
+				return fmt.Errorf(
+					"expected recursive deadline %s to exceed action budget %s when recursive budget is larger",
+					w.rlm().observedRecursiveDeadline,
+					actionBudget,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) recursiveSubcallExecutionIsInProgress() error {
+	factory := sigilrepl.NewFactory(
+		sigilrepl.WithActionTimeout(180*time.Second),
+		sigilrepl.WithRecursiveSubcallTimeout(300*time.Second),
+	)
+	runID, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate run id; %w", err)
+	}
+	nodeID, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate node id; %w", err)
+	}
+
+	started := make(chan struct{})
+	subcallErrCh := make(chan error, 1)
+	execErrCh := make(chan error, 1)
+	session, err := factory.NewSession(context.Background(), sigilrepl.SessionOptions{
+		RunID:   runID.String(),
+		NodeID:  nodeID.String(),
+		Depth:   0,
+		Context: "root-context",
+		LLMQuery: func(_ context.Context, request sigilrepl.QueryRequest) (string, error) {
+			return request.Prompt + "|" + request.Context, nil
+		},
+		RLMQuery: func(ctx context.Context, _ sigilrepl.QueryRequest) (string, error) {
+			close(started)
+			<-ctx.Done()
+			subcallErrCh <- ctx.Err()
+			return "", ctx.Err()
+		},
+		LLMQueryBatched: func(_ context.Context, requests []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
+			results := make([]sigilrepl.BatchedQueryResult, len(requests))
+			for index := range requests {
+				results[index] = sigilrepl.BatchedQueryResult{}
+			}
+			return results, nil
+		},
+		RLMQueryBatched: func(_ context.Context, requests []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
+			results := make([]sigilrepl.BatchedQueryResult, len(requests))
+			for index := range requests {
+				results[index] = sigilrepl.BatchedQueryResult{}
+			}
+			return results, nil
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create repl session; %w", err)
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	w.rlm().recursiveCancel = cancel
+	w.rlm().recursiveCancelSubcallErrCh = subcallErrCh
+	w.rlm().recursiveCancelExecErrCh = execErrCh
+	go func() {
+		_, execErr := session.Exec(runCtx, `_, _ = rlm_query("prompt", "subctx")`)
+		execErrCh <- execErr
+		_ = session.Close()
+	}()
+
+	select {
+	case <-started:
+		return nil
+	case <-time.After(1 * time.Second):
+		_ = session.Close()
+		cancel()
+		return fmt.Errorf("recursive subcall did not start")
+	}
+}
+
+func (w *harnessWorld) runContextIsCanceledDuringRecursiveSubcall() error {
+	if w.rlm().recursiveCancel == nil {
+		return fmt.Errorf("expected recursive cancel function to be initialized")
+	}
+	w.rlm().recursiveCancel()
+	return nil
+}
+
+func (w *harnessWorld) recursiveSubcallExecutionIsCanceledByRunContext() error {
+	if w.rlm().recursiveCancelSubcallErrCh == nil || w.rlm().recursiveCancelExecErrCh == nil {
+		return fmt.Errorf("expected recursive cancel channels to be initialized")
+	}
+
+	select {
+	case subcallErr := <-w.rlm().recursiveCancelSubcallErrCh:
+		if !errors.Is(subcallErr, context.Canceled) {
+			return fmt.Errorf("expected recursive subcall context canceled error, got %v", subcallErr)
+		}
+	case <-time.After(1 * time.Second):
+		return fmt.Errorf("timed out waiting for recursive subcall cancellation")
+	}
+
+	select {
+	case execErr := <-w.rlm().recursiveCancelExecErrCh:
+		w.rlm().recursiveCancelExecErr = execErr
+	case <-time.After(1 * time.Second):
+		return fmt.Errorf("timed out waiting for REPL execution completion")
+	}
+	if w.rlm().recursiveCancelExecErr != nil && !sigilrepl.IsCode(w.rlm().recursiveCancelExecErr, sigilrepl.ErrorCodeExecutionTimeout) {
+		return fmt.Errorf("expected nil or execution-timeout after run cancel, got %v", w.rlm().recursiveCancelExecErr)
 	}
 	return nil
 }

@@ -25,16 +25,17 @@ type StepContextMetadata struct {
 
 // PreviousActionFeedback is bounded feedback included in subsequent model-step input.
 type PreviousActionFeedback struct {
-	OutputRef       string  `json:"output_ref"`
-	Status          string  `json:"status"`
-	ErrorCode       *string `json:"error_code,omitempty"`
-	ErrorMessage    *string `json:"error_message,omitempty"`
-	StdoutPreview   string  `json:"stdout_preview"`
-	StdoutBytes     int     `json:"stdout_bytes"`
-	StdoutTruncated bool    `json:"stdout_truncated"`
-	StderrPreview   string  `json:"stderr_preview"`
-	StderrBytes     int     `json:"stderr_bytes"`
-	StderrTruncated bool    `json:"stderr_truncated"`
+	OutputRef       string             `json:"output_ref"`
+	Status          string             `json:"status"`
+	ErrorCode       *string            `json:"error_code,omitempty"`
+	ErrorMessage    *string            `json:"error_message,omitempty"`
+	ErrorDetail     *ActionErrorDetail `json:"error_detail,omitempty"`
+	StdoutPreview   string             `json:"stdout_preview"`
+	StdoutBytes     int                `json:"stdout_bytes"`
+	StdoutTruncated bool               `json:"stdout_truncated"`
+	StderrPreview   string             `json:"stderr_preview"`
+	StderrBytes     int                `json:"stderr_bytes"`
+	StderrTruncated bool               `json:"stderr_truncated"`
 }
 
 // StepInputEnvelope is the deterministic user message payload sent to model-step inference.
@@ -125,6 +126,7 @@ func buildPreviousActionFeedback(runID string, artifacts *ActionArtifactStore, p
 		Status:          string(payload.Status),
 		ErrorCode:       cloneOptional(payload.ErrorCode),
 		ErrorMessage:    cloneOptional(payload.ErrorMessage),
+		ErrorDetail:     cloneActionErrorDetail(artifact.ErrorDetail),
 		StdoutPreview:   stdoutPreview,
 		StdoutBytes:     stdoutBytes,
 		StdoutTruncated: stdoutTruncated,
@@ -149,4 +151,28 @@ func cloneOptional(value *string) *string {
 	}
 	copyValue := *value
 	return &copyValue
+}
+
+func cloneActionErrorDetail(detail *ActionErrorDetail) *ActionErrorDetail {
+	if detail == nil {
+		return nil
+	}
+
+	cloned := &ActionErrorDetail{
+		Stage:      detail.Stage,
+		Message:    detail.Message,
+		Line:       cloneOptionalIntValue(detail.Line),
+		Column:     cloneOptionalIntValue(detail.Column),
+		Symbol:     cloneOptional(detail.Symbol),
+		SourceLine: cloneOptional(detail.SourceLine),
+	}
+	return cloned
+}
+
+func cloneOptionalIntValue(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }

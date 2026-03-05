@@ -1156,8 +1156,8 @@ Feature: Sigil baseline CLI and config contracts
     When action failure is handled
     Then action failure is recorded and node execution continues to next step
 
-  Scenario: Enforces 30-second execution timeout per action
-    Given a continue action exceeding 30 seconds execution time
+  Scenario: Enforces 180-second execution timeout per action
+    Given a continue action exceeding 180 seconds execution time
     When REPL runtime enforces guardrails
     Then action times out with typed timeout error
 
@@ -1195,6 +1195,17 @@ Feature: Sigil baseline CLI and config contracts
     Given canonical v1 run-event validation rules
     When canonical runtime event types are validated
     Then only canonical v1 runtime event types are accepted
+
+  Scenario: Executes recursive subcalls with independent 300-second timeout budget decoupled from parent and recursive-level elapsed deadlines
+    Given recursive subcall timeout budget is configured to 300 seconds
+    And action timeout budget is configured to 180 seconds
+    When recursive subcall timeout budgets are observed
+    Then recursive subcall timeout budget is independent of parent action and recursive-level elapsed deadlines
+
+  Scenario: Cancels recursive subcalls on run-context cancellation despite timeout decoupling from parent action context
+    Given recursive subcall execution is in progress
+    When run context is canceled during recursive subcall
+    Then recursive subcall execution is canceled by run context
 
   Scenario: Keeps full raw context in REPL scope and excludes it from model-step inference messages
     Given a harness runner is configured with raw context "needle in haystack context"
@@ -1345,6 +1356,12 @@ Feature: Sigil baseline CLI and config contracts
     When action failure is handled
     Then action failure is recorded and node execution continues to next step
 
+  Scenario: Applies independent 300-second recursive timeout budget across recursive subcall levels for rlm_query and rlm_query_batched invocations
+    Given recursive subcall timeout budget is configured to 300 seconds
+    And action timeout budget is configured to 180 seconds
+    When recursive subcall timeout budgets are observed
+    Then recursive subcall timeout budget is independent of parent action and recursive-level elapsed deadlines
+
   Scenario: Requires continuation intent and expected_observation fields when decision is continue
     Given a valid inference request for execution
     And central inference schema registry is initialized
@@ -1454,3 +1471,130 @@ Feature: Sigil baseline CLI and config contracts
     Given harness base system prompt resolution runs
     When harness effective system prompt is constructed
     Then effective system prompt equals resolved base prompt
+
+  Scenario: Defines node.failed event type for canonical failed-node terminalization
+    Given canonical v1 run-event validation rules
+    When canonical runtime event types are validated
+    Then only canonical v1 runtime event types are accepted
+
+  Scenario: Enforces strict payload schema and invariants for node.failed events
+    Given canonical v1 run-event validation rules
+    When canonical runtime event types are validated
+    Then only canonical v1 runtime event types are accepted
+
+  Scenario: Enforces node terminal-event exclusivity between node.completed and node.failed
+    Given an active root node inference result is decision final with answer "final answer"
+    When harness evaluates root node step
+    Then run completion references terminal root final output
+
+  Scenario: Applies schema-specific raw-text fallback for sigil.llm.answer.v1 extraction failures
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-raw-text"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Rejects raw-text fallback for non sigil.llm.answer.v1 schemas
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "invalid-json-text"
+    When inference execution runs
+    Then inference fails with typed error code "gateway_failure"
+
+  Scenario: Emits extraction-mode metadata in raw_metadata when plain-subcall fallback is applied
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-raw-text"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Persists structured compile diagnostics in failed action artifacts for repl_execution_compile errors
+    Given a continue action fails with non-fatal REPL execution error
+    When action failure is handled
+    Then action failure is recorded and node execution continues to next step
+
+  Scenario: Propagates compile diagnostics into previous-action feedback for subsequent model steps
+    Given a continue action fails with non-fatal REPL execution error
+    When action failure is handled
+    Then action failure is recorded and node execution continues to next step
+
+  Scenario: Includes optional previous_action_feedback.error_detail for compile-stage failures
+    Given a harness runner has previous continue action feedback
+    When model-step inference input is constructed for next step
+    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+
+  Scenario: Applies raw-text fallback only for plain-subcall schema sigil.llm.answer.v1
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-raw-text"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Rejects raw-text fallback for non plain-subcall schemas in subcall execution paths
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.rlm.response.v1"
+    And openrouter mock gateway returns payload fixture "invalid-json-text"
+    When inference execution runs
+    Then inference fails with typed error code "gateway_failure"
+
+  Scenario: Defines node.failed as canonical node terminal event for failed node executions
+    Given fatal REPL infrastructure failure occurs
+    When harness handles failure propagation
+    Then run transitions to failed with typed error metadata
+
+  Scenario: Emits exactly one terminal node event node.completed or node.failed for every node.started
+    Given an active root node inference result is decision final with answer "final answer"
+    When harness evaluates root node step
+    Then run completion references terminal root final output
+
+  Scenario: Emits node.failed for recursive child execution failures before parent node.subcall.executed failed record
+    Given an active parent node at depth 1
+    And run max recursion depth is 3
+    When rlm_query is invoked from node-local Go REPL context
+    Then child node is created at depth 2
+
+  Scenario: Emits node.failed for root execution failures before run.failed
+    Given fatal REPL infrastructure failure occurs
+    When harness handles failure propagation
+    Then run transitions to failed with typed error metadata
+
+  Scenario: Preserves run continuation when child node.failed is surfaced as repl_child_failure in parent continue action path
+    Given a continue action fails with non-fatal REPL execution error
+    When action failure is handled
+    Then action failure is recorded and node execution continues to next step
+
+  Scenario: Applies schema-specific raw-text fallback for sigil.llm.answer.v1 when strict structured payload extraction fails
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-raw-text"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Emits extraction-mode metadata in normalized inference raw_metadata for plain-subcall responses
+    Given a valid inference request for execution
+    And central inference schema registry is initialized
+    And inference request schema_id is "sigil.llm.answer.v1"
+    And openrouter mock gateway returns payload fixture "llm-answer-raw-text"
+    When inference execution runs
+    Then normalized output contains all required canonical fields
+
+  Scenario: Includes compile diagnostics in previous_action_feedback for subsequent model steps
+    Given a harness runner has previous continue action feedback
+    When model-step inference input is constructed for next step
+    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+
+  Scenario: Preserves node.action.executed payload contract while exposing diagnostics through artifact and feedback only
+    Given an action execution completes or fails
+    When action artifact persistence executes
+    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+
+  Scenario: Preserves one-action-per-continue-step and subcall observability contracts under hardening changes
+    Given a node-local step with decision continue
+    When continuation payload is validated
+    Then exactly one executable action is accepted for that step

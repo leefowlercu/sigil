@@ -37,6 +37,7 @@ type SessionOptions struct {
 	NodeID          string
 	Depth           int
 	Context         string
+	RunContext      context.Context
 	LLMQuery        QueryFunc
 	RLMQuery        QueryFunc
 	LLMQueryBatched BatchedQueryFunc

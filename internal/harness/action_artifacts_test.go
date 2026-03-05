@@ -31,6 +31,10 @@ func TestActionArtifactStorePersistWritesArtifactAndReturnsOutputRef(t *testing.
 		Stdout:      "hello",
 		Stderr:      "",
 		DurationMS:  1,
+		ErrorDetail: &ActionErrorDetail{
+			Stage:   "compile",
+			Message: "undefined: hello",
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected artifact persist success, got %v", err)
@@ -50,6 +54,9 @@ func TestActionArtifactStorePersistWritesArtifactAndReturnsOutputRef(t *testing.
 	}
 	if loaded.Stdout != "hello" {
 		t.Fatalf("expected loaded stdout %q, got %q", "hello", loaded.Stdout)
+	}
+	if loaded.ErrorDetail == nil || loaded.ErrorDetail.Stage != "compile" {
+		t.Fatalf("expected persisted error_detail stage compile, got %+v", loaded.ErrorDetail)
 	}
 }
 

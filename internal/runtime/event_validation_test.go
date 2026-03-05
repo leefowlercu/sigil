@@ -189,6 +189,7 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 	nodeID := mustUUIDv7String(t)
 	parentID := mustUUIDv7String(t)
 	stepID := mustUUIDv7String(t)
+	failedStepID := mustUUIDv7String(t)
 	contentRef := "run-output://node/turn/1"
 	errorCode := "action.failed"
 	errorMessage := "failed action execution"
@@ -233,6 +234,17 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			payload: NodeCompletedPayload{
 				Status:     "completed",
 				DurationMS: 10,
+			},
+		},
+		{
+			name:      "node.failed",
+			eventType: EventTypeNodeFailed,
+			payload: NodeFailedPayload{
+				Status:       "failed",
+				DurationMS:   10,
+				ErrorCode:    "repl_child_failure",
+				ErrorMessage: "child failed",
+				FailedStepID: &failedStepID,
 			},
 		},
 		{

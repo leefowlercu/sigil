@@ -10,15 +10,16 @@ import (
 
 // Lifecycle encapsulates mutable run lifecycle state and node-scoped activity.
 type Lifecycle struct {
-	runID      string
-	state      RunState
-	rootNodeID string
-	nodes      []Node
-	nodeByID   map[string]Node
-	stepByNode map[string]int
-	activities []NodeActivity
-	options    LifecycleOptions
-	eventStore *EventStore
+	runID            string
+	state            RunState
+	rootNodeID       string
+	nodes            []Node
+	nodeByID         map[string]Node
+	nodeTerminalByID map[string]EventType
+	stepByNode       map[string]int
+	activities       []NodeActivity
+	options          LifecycleOptions
+	eventStore       *EventStore
 }
 
 // NewLifecycle creates a new lifecycle in queued state with default persistent event storage.
@@ -46,14 +47,15 @@ func NewLifecycleWithOptions(opts LifecycleOptions) (*Lifecycle, error) {
 	}
 
 	lifecycle := &Lifecycle{
-		runID:      runID,
-		state:      RunStateQueued,
-		nodes:      make([]Node, 0, 4),
-		nodeByID:   make(map[string]Node),
-		stepByNode: make(map[string]int),
-		activities: make([]NodeActivity, 0, 8),
-		options:    normalizedOpts,
-		eventStore: store,
+		runID:            runID,
+		state:            RunStateQueued,
+		nodes:            make([]Node, 0, 4),
+		nodeByID:         make(map[string]Node),
+		nodeTerminalByID: make(map[string]EventType),
+		stepByNode:       make(map[string]int),
+		activities:       make([]NodeActivity, 0, 8),
+		options:          normalizedOpts,
+		eventStore:       store,
 	}
 
 	queuedPayload := RunQueuedPayload{
@@ -391,6 +393,12 @@ func (l *Lifecycle) MaxDepth() int {
 	return l.options.MaxDepth
 }
 
+// NodeTerminalEvent returns terminal event type for a node when terminalized.
+func (l *Lifecycle) NodeTerminalEvent(nodeID string) (EventType, bool) {
+	eventType, ok := l.nodeTerminalByID[nodeID]
+	return eventType, ok
+}
+
 // AppendNodeStepStarted appends node.step.started and returns generated payload.
 func (l *Lifecycle) AppendNodeStepStarted(nodeID string) (NodeStepStartedPayload, error) {
 	if l.state != RunStateRunning {
@@ -561,6 +569,9 @@ func (l *Lifecycle) CompleteNode(nodeID string, outputRef *string) error {
 	if _, ok := l.nodeByID[nodeID]; !ok {
 		return fmt.Errorf("node %q does not exist in run %q; %w", nodeID, l.runID, ErrNodeNotFound)
 	}
+	if err := l.ensureNodeTerminalAvailable(nodeID); err != nil {
+		return err
+	}
 
 	payload := NodeCompletedPayload{
 		Status:     "completed",
@@ -576,7 +587,41 @@ func (l *Lifecycle) CompleteNode(nodeID string, outputRef *string) error {
 		"node_id", nodeID,
 		"output_ref", valueOrEmptyString(outputRef),
 	)
+	l.nodeTerminalByID[nodeID] = EventTypeNodeCompleted
 
+	return nil
+}
+
+// AppendNodeFailed appends node.failed for an existing node.
+func (l *Lifecycle) AppendNodeFailed(nodeID string, payload NodeFailedPayload) error {
+	if l.state != RunStateRunning {
+		return fmt.Errorf("cannot fail node while run state is %q; %w", l.state, ErrRunNotRunning)
+	}
+	if _, ok := l.nodeByID[nodeID]; !ok {
+		return fmt.Errorf("node %q does not exist in run %q; %w", nodeID, l.runID, ErrNodeNotFound)
+	}
+	if err := l.ensureNodeTerminalAvailable(nodeID); err != nil {
+		return err
+	}
+
+	if _, err := l.eventStore.AppendNext(EventTypeNodeFailed, &nodeID, payload); err != nil {
+		return fmt.Errorf("failed to persist node.failed event; %w", err)
+	}
+
+	lifecycleLogger().Warn("appended node.failed",
+		"run_id", l.runID,
+		"node_id", nodeID,
+		"error_code", payload.ErrorCode,
+	)
+	l.nodeTerminalByID[nodeID] = EventTypeNodeFailed
+
+	return nil
+}
+
+func (l *Lifecycle) ensureNodeTerminalAvailable(nodeID string) error {
+	if prior, exists := l.nodeTerminalByID[nodeID]; exists {
+		return fmt.Errorf("node %q already has terminal event %q; %w", nodeID, prior, ErrInvalidTransition)
+	}
 	return nil
 }
 

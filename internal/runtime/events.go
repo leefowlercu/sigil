@@ -18,6 +18,7 @@ const (
 	EventTypeRunRunning          EventType = "run.running"
 	EventTypeNodeStarted         EventType = "node.started"
 	EventTypeNodeCompleted       EventType = "node.completed"
+	EventTypeNodeFailed          EventType = "node.failed"
 	EventTypeNodeStepStarted     EventType = "node.step.started"
 	EventTypeNodeStepCompleted   EventType = "node.step.completed"
 	EventTypeNodeTurnUser        EventType = "node.turn.user"
@@ -138,6 +139,15 @@ type NodeCompletedPayload struct {
 	Status     string  `json:"status"`
 	DurationMS int     `json:"duration_ms"`
 	OutputRef  *string `json:"output_ref,omitempty"`
+}
+
+// NodeFailedPayload is the strict payload for node.failed.
+type NodeFailedPayload struct {
+	Status       string  `json:"status"`
+	DurationMS   int     `json:"duration_ms"`
+	ErrorCode    string  `json:"error_code"`
+	ErrorMessage string  `json:"error_message"`
+	FailedStepID *string `json:"failed_step_id,omitempty"`
 }
 
 // NodeStepStartedPayload is the strict payload for node.step.started.

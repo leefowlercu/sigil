@@ -1,2 +1,2 @@
 log_level: info
-log_dir: ./examples/run-start-templated/logs
+log_dir: ./.sigil/logs

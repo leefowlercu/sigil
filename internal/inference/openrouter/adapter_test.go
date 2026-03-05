@@ -361,3 +361,77 @@ func TestDecodePayloadTextRejectsInvalidJSONPrefix(t *testing.T) {
 		t.Fatalf("expected structured payload parse failure, got %v", err)
 	}
 }
+
+func TestExtractStructuredPayloadUsesRawTextFallbackForLLMAnswerSchema(t *testing.T) {
+	decoded := map[string]any{
+		"output_text": "  plain fallback answer  ",
+	}
+
+	payload, metadata, err := extractStructuredPayload(decoded, schema.SigilLLMAnswerV1SchemaID)
+	if err != nil {
+		t.Fatalf("expected extraction success, got %v", err)
+	}
+	if payload["answer"] != "plain fallback answer" {
+		t.Fatalf("expected normalized answer payload, got %+v", payload)
+	}
+	if metadata["mode"] != "raw_text_fallback" {
+		t.Fatalf("expected raw_text_fallback mode, got %+v", metadata)
+	}
+	if metadata["source"] != "output_text" {
+		t.Fatalf("expected fallback source output_text, got %+v", metadata)
+	}
+}
+
+func TestExtractStructuredPayloadRejectsRawTextFallbackForNonLLMAnswerSchemas(t *testing.T) {
+	decoded := map[string]any{
+		"output_text": "plain fallback answer",
+	}
+
+	_, _, err := extractStructuredPayload(decoded, schema.SigilRLMResponseV1SchemaID)
+	if err == nil {
+		t.Fatal("expected extraction failure for non-llm schema fallback attempt")
+	}
+}
+
+func TestInferEmitsExtractionMetadataWhenRawTextFallbackApplies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_fallback","status":"completed","provider":"openai","model":"gpt-5.1","output_text":"plain subcall answer","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OPENROUTER_API_KEY", "test-api-key")
+	adapter, err := NewGateway(inference.Request{GatewayConfig: inference.GatewayConfig{BaseURL: server.URL, RequestTimeoutMS: 30000, APIKeyEnv: "OPENROUTER_API_KEY"}})
+	if err != nil {
+		t.Fatalf("expected adapter construction success, got %v", err)
+	}
+
+	schemaDefinition, err := schema.NewRegistry().Resolve(schema.SigilLLMAnswerV1SchemaID)
+	if err != nil {
+		t.Fatalf("failed to resolve schema definition: %v", err)
+	}
+
+	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: `{"prompt":"p","context":"c"}`},
+		},
+		Provider: "openai",
+		Model:    "gpt-5.1",
+		Schema:   schemaDefinition,
+	})
+	if err != nil {
+		t.Fatalf("expected inference success, got %v", err)
+	}
+
+	if response.StructuredPayload["answer"] != "plain subcall answer" {
+		t.Fatalf("expected fallback answer payload, got %+v", response.StructuredPayload)
+	}
+	extraction := asMap(response.RawMetadata["extraction"])
+	if extraction == nil {
+		t.Fatalf("expected extraction metadata in raw metadata, got %+v", response.RawMetadata)
+	}
+	if extraction["mode"] != "raw_text_fallback" {
+		t.Fatalf("expected raw_text_fallback mode, got %+v", extraction)
+	}
+}

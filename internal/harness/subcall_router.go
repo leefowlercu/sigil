@@ -23,7 +23,8 @@ const (
 
 const plainSubcallSystemPrompt = "" +
 	"You are a lightweight subcall helper. " +
-	"Use the provided prompt and context and return only the answer field."
+	"Use the provided prompt and context. " +
+	"Return exactly one strict JSON object with key answer and no extra keys."
 
 type childNodeExecutor func(ctx context.Context, child runtime.Node, prompt string, subContext string) (nodeExecutionResult, error)
 

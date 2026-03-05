@@ -16,6 +16,7 @@ var (
 		EventTypeRunRunning:          {},
 		EventTypeNodeStarted:         {},
 		EventTypeNodeCompleted:       {},
+		EventTypeNodeFailed:          {},
 		EventTypeNodeStepStarted:     {},
 		EventTypeNodeStepCompleted:   {},
 		EventTypeNodeTurnUser:        {},
@@ -353,6 +354,42 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		}
 		if payload.OutputRef != nil && strings.TrimSpace(*payload.OutputRef) == "" {
 			return nil, fmt.Errorf("node.completed output_ref must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		return payload, nil
+	case EventTypeNodeFailed:
+		allowed := map[string]struct{}{
+			"status":         {},
+			"duration_ms":    {},
+			"error_code":     {},
+			"error_message":  {},
+			"failed_step_id": {},
+		}
+		required := map[string]struct{}{
+			"status":        {},
+			"duration_ms":   {},
+			"error_code":    {},
+			"error_message": {},
+		}
+		var payload NodeFailedPayload
+		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
+			return nil, err
+		}
+		if payload.Status != "failed" {
+			return nil, fmt.Errorf("node.failed status must be failed; %w", ErrInvalidEvent)
+		}
+		if payload.DurationMS < 0 {
+			return nil, fmt.Errorf("node.failed duration_ms must be >= 0; %w", ErrInvalidEvent)
+		}
+		if strings.TrimSpace(payload.ErrorCode) == "" {
+			return nil, fmt.Errorf("node.failed error_code must be non-empty; %w", ErrInvalidEvent)
+		}
+		if strings.TrimSpace(payload.ErrorMessage) == "" {
+			return nil, fmt.Errorf("node.failed error_message must be non-empty; %w", ErrInvalidEvent)
+		}
+		if payload.FailedStepID != nil {
+			if err := validateUUIDv7String(*payload.FailedStepID); err != nil {
+				return nil, fmt.Errorf("node.failed failed_step_id must be UUIDv7 when present; %w", ErrInvalidEvent)
+			}
 		}
 		return payload, nil
 	case EventTypeNodeStepStarted:

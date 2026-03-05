@@ -59,6 +59,12 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 		DurationMS:   5,
 		ErrorCode:    &errorCode,
 		ErrorMessage: &errorMessage,
+		ErrorDetail: &ActionErrorDetail{
+			Stage:   "compile",
+			Message: "undefined: missing",
+			Line:    intPointer(3),
+			Column:  intPointer(4),
+		},
 	}
 	outputRef, err := store.Persist(artifact)
 	if err != nil {
@@ -101,4 +107,18 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 	if len(feedback.StderrPreview) != stepInputPreviewCapBytes {
 		t.Fatalf("expected stderr preview size=%d, got %d", stepInputPreviewCapBytes, len(feedback.StderrPreview))
 	}
+	if feedback.ErrorDetail == nil {
+		t.Fatal("expected compile error_detail to be propagated")
+	}
+	if feedback.ErrorDetail.Stage != "compile" {
+		t.Fatalf("expected compile error stage, got %q", feedback.ErrorDetail.Stage)
+	}
+	if feedback.ErrorDetail.Line == nil || *feedback.ErrorDetail.Line != 3 {
+		t.Fatalf("expected line=3, got %+v", feedback.ErrorDetail.Line)
+	}
+}
+
+func intPointer(value int) *int {
+	copied := value
+	return &copied
 }

@@ -69,7 +69,7 @@ Large-context recursive retrieval (MANDATORY when context is large):
 - If context is large, do NOT pass the full context into rlm_query.
 - In REPL, split context into relatively small chunks and recurse on chunks only.
 - Keep each child rlm_query context payload intentionally small compared to the full parent context.
-- Respect action timeout budget (30s): keep each continue action lightweight and bounded.
+- Respect action timeout budget (180s): keep each continue action lightweight and bounded.
 - Prefer small recursive chunk payloads (target roughly 1k-3k chars per rlm_query context).
 - Avoid high fan-out recursive batches in one action; do progressive narrowing across multiple steps.
 - If an action times out or produces too much work, reduce chunk size and subcall count on the next step.
@@ -110,7 +110,9 @@ Go REPL constraints:
 - Blocked imports include (non-exhaustive):
   os, os/exec, net, syscall
 - REPL execution guardrails:
-  timeout 30s, code size <= 65536 bytes, stdout/stderr truncation at 1048576 bytes each.
+  action timeout 180s, code size <= 65536 bytes, stdout/stderr truncation at 1048576 bytes each.
+  recursive subcalls (rlm_query/rlm_query_batched) use an independent 300s timeout budget.
+  recursive subcall time budgets are depth-stable and do not inherit ancestor recursive elapsed deadlines.
 
 Step and action model:
 - If you choose continue, exactly one action is executed from continuation.repl_code.

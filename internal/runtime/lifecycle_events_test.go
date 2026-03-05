@@ -297,3 +297,45 @@ func TestLifecycleAppendsStepTurnAndActionEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestLifecycleAppendsNodeFailedEvent(t *testing.T) {
+	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
+		RunsBaseDir: filepath.Join(t.TempDir(), "sigil-runs"),
+		MaxDepth:    3,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = lifecycle.Close()
+	})
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected StartExecution success, got %v", err)
+	}
+
+	rootNode := lifecycle.Nodes()[0]
+	stepStarted, err := lifecycle.AppendNodeStepStarted(rootNode.ID)
+	if err != nil {
+		t.Fatalf("expected step append success, got %v", err)
+	}
+
+	if err := lifecycle.AppendNodeFailed(rootNode.ID, NodeFailedPayload{
+		Status:       "failed",
+		DurationMS:   2,
+		ErrorCode:    "harness_inference",
+		ErrorMessage: "inference failed",
+		FailedStepID: &stepStarted.StepID,
+	}); err != nil {
+		t.Fatalf("expected node.failed append success, got %v", err)
+	}
+
+	events, err := lifecycle.PersistedEvents()
+	if err != nil {
+		t.Fatalf("expected persisted events read success, got %v", err)
+	}
+	last := events[len(events)-1]
+	if last.Type != EventTypeNodeFailed {
+		t.Fatalf("expected terminal node event %q, got %q", EventTypeNodeFailed, last.Type)
+	}
+}

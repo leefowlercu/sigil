@@ -9,10 +9,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
+	"github.com/leefowlercu/sigil/internal/repl"
 	"github.com/leefowlercu/sigil/internal/runtime"
 )
 
@@ -42,6 +44,25 @@ type subcallAwareInference struct {
 	mu       sync.Mutex
 	root     []queuedInferenceResponse
 	rootCall int
+	requests []inference.Request
+}
+
+type recursiveTimeoutInference struct {
+	mu            sync.Mutex
+	callCount     int
+	childDeadline time.Duration
+}
+
+type recursiveLevelTimeoutInference struct {
+	mu             sync.Mutex
+	callCount      int
+	depth1Deadline time.Duration
+	depth2Deadline time.Duration
+}
+
+type childFailureInference struct {
+	mu       sync.Mutex
+	call     int
 	requests []inference.Request
 }
 
@@ -77,6 +98,80 @@ func (s *subcallAwareInference) Infer(_ context.Context, request inference.Reque
 	response := s.root[s.rootCall]
 	s.rootCall++
 	return hydrateFinalEvidenceRef(response.result, request), response.err
+}
+
+func (s *recursiveTimeoutInference) Infer(ctx context.Context, request inference.Request) (inference.Result, error) {
+	s.mu.Lock()
+	s.callCount++
+	call := s.callCount
+	s.mu.Unlock()
+
+	switch call {
+	case 1:
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; _, err := rlm_query("child prompt", "child context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+	case 2:
+		if deadline, ok := ctx.Deadline(); ok {
+			s.mu.Lock()
+			s.childDeadline = time.Until(deadline)
+			s.mu.Unlock()
+		}
+		<-ctx.Done()
+		return inference.Result{}, ctx.Err()
+	case 3:
+		return hydrateFinalEvidenceRef(finalResult("done"), request), nil
+	default:
+		return inference.Result{}, errors.New("unexpected inference call")
+	}
+}
+
+func (s *recursiveLevelTimeoutInference) Infer(ctx context.Context, request inference.Request) (inference.Result, error) {
+	s.mu.Lock()
+	s.callCount++
+	call := s.callCount
+	s.mu.Unlock()
+
+	switch call {
+	case 1:
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; _, err := rlm_query("depth1 prompt", "depth1 context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+	case 2:
+		if deadline, ok := ctx.Deadline(); ok {
+			s.mu.Lock()
+			s.depth1Deadline = time.Until(deadline)
+			s.mu.Unlock()
+		}
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; import "time"; time.Sleep(220 * time.Millisecond); _, err := rlm_query("depth2 prompt", "depth2 context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+	case 3:
+		if deadline, ok := ctx.Deadline(); ok {
+			s.mu.Lock()
+			s.depth2Deadline = time.Until(deadline)
+			s.mu.Unlock()
+		}
+		return hydrateFinalEvidenceRef(finalResult("depth2 final"), request), nil
+	case 4:
+		return hydrateFinalEvidenceRef(finalResult("depth1 final"), request), nil
+	case 5:
+		return hydrateFinalEvidenceRef(finalResult("root final"), request), nil
+	default:
+		return inference.Result{}, errors.New("unexpected inference call")
+	}
+}
+
+func (s *childFailureInference) Infer(_ context.Context, request inference.Request) (inference.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.call++
+	s.requests = append(s.requests, request)
+	switch s.call {
+	case 1:
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; _, err := rlm_query("child prompt", "child context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+	case 2:
+		return inference.Result{}, inference.NewError(inference.ErrorCodeGatewayFailure, "child inference failure")
+	case 3:
+		return hydrateFinalEvidenceRef(finalResult("done"), request), nil
+	default:
+		return inference.Result{}, errors.New("unexpected inference call")
+	}
 }
 
 func hydrateFinalEvidenceRef(result inference.Result, request inference.Request) inference.Result {
@@ -283,6 +378,53 @@ func TestRunnerRunIncludesPreviousActionFeedbackOnSubsequentStep(t *testing.T) {
 	}
 }
 
+func TestRunnerRunPropagatesCompileDiagnosticsInNextStepFeedback(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult("if {")},
+			{result: finalResult("done")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+		TemplateVars:  map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+	if len(inferenceClient.requests) != 2 {
+		t.Fatalf("expected two inference requests, got %d", len(inferenceClient.requests))
+	}
+
+	var secondEnvelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(inferenceClient.requests[1].Messages[1].Content), &secondEnvelope); err != nil {
+		t.Fatalf("expected second envelope decode success, got %v", err)
+	}
+	if secondEnvelope.PreviousActionFeedback == nil {
+		t.Fatal("expected previous_action_feedback in second step")
+	}
+	if secondEnvelope.PreviousActionFeedback.ErrorDetail == nil {
+		t.Fatal("expected compile error_detail in previous_action_feedback")
+	}
+	if secondEnvelope.PreviousActionFeedback.ErrorDetail.Stage != "compile" {
+		t.Fatalf("expected compile error_detail stage, got %q", secondEnvelope.PreviousActionFeedback.ErrorDetail.Stage)
+	}
+}
+
 func TestRunnerRunNonRecursiveModeReturnsDepthLimitAndNoChildNodes(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
@@ -401,6 +543,89 @@ func TestRunnerRunRecursiveDepthLimitFallsBackToPlainSubcall(t *testing.T) {
 	}
 	if artifact.Subcalls[0].ExecutionMode != string(runtime.SubcallExecutionModeFallback) {
 		t.Fatalf("expected fallback subcall trace mode, got %q", artifact.Subcalls[0].ExecutionMode)
+	}
+}
+
+func TestRunnerRunRecursiveSubcallUsesIndependentTimeoutBudget(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &recursiveTimeoutInference{}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithREPLSessionFactory(repl.NewFactory(
+			repl.WithActionTimeout(2*time.Second),
+			repl.WithRecursiveSubcallTimeout(300*time.Millisecond),
+		)),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+
+	inferenceClient.mu.Lock()
+	observedDeadline := inferenceClient.childDeadline
+	inferenceClient.mu.Unlock()
+	if observedDeadline <= 0 {
+		t.Fatalf("expected child inference deadline to be recorded, got %s", observedDeadline)
+	}
+	if observedDeadline >= 1*time.Second {
+		t.Fatalf("expected child deadline to reflect recursive timeout budget, got %s", observedDeadline)
+	}
+}
+
+func TestRunnerRunRecursiveSubcallTimeoutBudgetDecouplesAcrossRecursiveLevels(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &recursiveLevelTimeoutInference{}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithREPLSessionFactory(repl.NewFactory(
+			repl.WithActionTimeout(2*time.Second),
+			repl.WithRecursiveSubcallTimeout(300*time.Millisecond),
+		)),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+
+	inferenceClient.mu.Lock()
+	depth1Deadline := inferenceClient.depth1Deadline
+	depth2Deadline := inferenceClient.depth2Deadline
+	inferenceClient.mu.Unlock()
+	if depth1Deadline <= 0 {
+		t.Fatalf("expected depth1 deadline to be recorded, got %s", depth1Deadline)
+	}
+	if depth2Deadline <= 0 {
+		t.Fatalf("expected depth2 deadline to be recorded, got %s", depth2Deadline)
+	}
+	if depth1Deadline < 200*time.Millisecond || depth1Deadline > 500*time.Millisecond {
+		t.Fatalf("expected depth1 deadline near recursive timeout budget, got %s", depth1Deadline)
+	}
+	if depth2Deadline < 200*time.Millisecond || depth2Deadline > 500*time.Millisecond {
+		t.Fatalf("expected depth2 deadline near recursive timeout budget, got %s", depth2Deadline)
 	}
 }
 
@@ -538,6 +763,50 @@ func TestRunnerRunInferenceFailureAppendsRunFailed(t *testing.T) {
 	}
 	if !strings.Contains(string(eventsBytes), string(ErrorCodeInference)) {
 		t.Fatalf("expected run.failed payload to include %q", ErrorCodeInference)
+	}
+	if !strings.Contains(string(eventsBytes), "node.failed") {
+		t.Fatalf("expected node.failed event in events log")
+	}
+	if strings.Index(string(eventsBytes), "node.failed") > strings.Index(string(eventsBytes), "run.failed") {
+		t.Fatalf("expected node.failed to be emitted before run.failed")
+	}
+}
+
+func TestRunnerRunChildFailureEmitsNodeFailedBeforeParentSubcallFailureEvent(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &childFailureInference{}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success despite child failure, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+
+	eventsBytes, err := os.ReadFile(result.EventsPath)
+	if err != nil {
+		t.Fatalf("expected events read success, got %v", err)
+	}
+	eventsLog := string(eventsBytes)
+	childFailedIndex := strings.Index(eventsLog, `"type":"node.failed"`)
+	parentSubcallFailedIndex := strings.Index(eventsLog, `"type":"node.subcall.executed"`)
+	if childFailedIndex < 0 || parentSubcallFailedIndex < 0 {
+		t.Fatalf("expected node.failed and node.subcall.executed events in log")
+	}
+	if childFailedIndex > parentSubcallFailedIndex {
+		t.Fatalf("expected child node.failed before parent subcall event")
 	}
 }
 

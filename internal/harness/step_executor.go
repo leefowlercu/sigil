@@ -11,12 +11,13 @@ import (
 
 // ContinueActionInput defines one continue action execution request.
 type ContinueActionInput struct {
-	NodeID    string
-	StepID    string
-	Code      string
-	Context   string
-	Subcalls  SubcallBindings
-	Collector *SubcallRouter
+	NodeID     string
+	StepID     string
+	Code       string
+	Context    string
+	RunContext context.Context
+	Subcalls   SubcallBindings
+	Collector  *SubcallRouter
 }
 
 // StepExecutor executes continue actions in node-local REPL sessions.
@@ -68,11 +69,12 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 	}
 
 	session, err := e.sessions.SessionForNode(ctx, NodeSessionInput{
-		RunID:    e.lifecycle.RunID(),
-		NodeID:   node.ID,
-		Depth:    node.Depth,
-		Context:  input.Context,
-		Bindings: input.Subcalls,
+		RunID:      e.lifecycle.RunID(),
+		NodeID:     node.ID,
+		Depth:      node.Depth,
+		Context:    input.Context,
+		RunContext: input.RunContext,
+		Bindings:   input.Subcalls,
 	})
 	if err != nil {
 		logger.Error("failed to initialize node repl session", "error", err)
@@ -125,6 +127,9 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 		artifact.Status = string(payload.Status)
 		artifact.ErrorCode = &errorCode
 		artifact.ErrorMessage = &errorMessage
+		if detail := compileErrorDetail(execErr, execResult.Stderr); detail != nil {
+			artifact.ErrorDetail = detail
+		}
 		logger.Warn("continue action execution returned non-fatal failure",
 			"error_code", errorCode,
 			"error_message", errorMessage,

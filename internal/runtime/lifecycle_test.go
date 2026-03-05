@@ -394,6 +394,28 @@ func TestRootNodeAndNodeByIDAccessors(t *testing.T) {
 	}
 }
 
+func TestNodeTerminalEventExclusivityBetweenCompletedAndFailed(t *testing.T) {
+	lifecycle := mustRunningLifecycle(t)
+	rootNode, err := lifecycle.RootNode()
+	if err != nil {
+		t.Fatalf("expected root node lookup success, got %v", err)
+	}
+
+	if err := lifecycle.CompleteNode(rootNode.ID, nil); err != nil {
+		t.Fatalf("expected node completion success, got %v", err)
+	}
+
+	err = lifecycle.AppendNodeFailed(rootNode.ID, NodeFailedPayload{
+		Status:       "failed",
+		DurationMS:   1,
+		ErrorCode:    "harness_inference",
+		ErrorMessage: "failed",
+	})
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got %v", err)
+	}
+}
+
 func mustNewLifecycle(t *testing.T) *Lifecycle {
 	t.Helper()
 

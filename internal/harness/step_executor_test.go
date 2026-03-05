@@ -162,6 +162,17 @@ func TestStepExecutorExecuteContinueActionRecordsFailedActionWithoutFatalError(t
 	if payload.ErrorCode == nil || *payload.ErrorCode != string(repl.ErrorCodeExecutionCompile) {
 		t.Fatalf("expected compile error code, got %v", payload.ErrorCode)
 	}
+
+	artifact, err := artifacts.Read(lifecycle.RunID(), payload.OutputRef)
+	if err != nil {
+		t.Fatalf("expected artifact read success, got %v", err)
+	}
+	if artifact.ErrorDetail == nil {
+		t.Fatal("expected compile error_detail in failed artifact")
+	}
+	if artifact.ErrorDetail.Stage != "compile" {
+		t.Fatalf("expected compile error_detail stage, got %q", artifact.ErrorDetail.Stage)
+	}
 }
 
 func TestStepExecutorExecuteContinueActionReturnsFatalErrorOnSessionInitFailure(t *testing.T) {

@@ -1,6 +1,6 @@
 # Build artifacts
 /bin/
-/sigil
+/.sigil
 
 # Go test and coverage artifacts
 *.coverprofile

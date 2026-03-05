@@ -398,6 +398,18 @@ func (w *harnessWorld) normalizedOutputContainsAllRequiredCanonicalFields() erro
 	if w.inferenceResult.RawMetadata == nil {
 		return fmt.Errorf("expected canonical raw_metadata field")
 	}
+	if w.inferenceRequest.SchemaID == sigilschema.SigilLLMAnswerV1SchemaID {
+		if _, hasOutputText := w.inferenceResult.RawMetadata["output_text"]; hasOutputText {
+			extraction := asMapValue(w.inferenceResult.RawMetadata["extraction"])
+			if extraction == nil {
+				return fmt.Errorf("expected extraction metadata for llm raw-text fallback response")
+			}
+			mode, _ := extraction["mode"].(string)
+			if mode != "raw_text_fallback" {
+				return fmt.Errorf("expected extraction.mode raw_text_fallback, got %q", mode)
+			}
+		}
+	}
 
 	return nil
 }
@@ -593,6 +605,10 @@ func responsesForFixture(fixture string) ([]mockGatewayResponse, error) {
 		return []mockGatewayResponse{{statusCode: 200, body: llmAnswerValidGatewayResponseBody()}}, nil
 	case "llm-answer-empty":
 		return []mockGatewayResponse{{statusCode: 200, body: llmAnswerEmptyGatewayResponseBody()}}, nil
+	case "llm-answer-raw-text":
+		return []mockGatewayResponse{{statusCode: 200, body: llmAnswerRawTextGatewayResponseBody()}}, nil
+	case "invalid-json-text":
+		return []mockGatewayResponse{{statusCode: 200, body: invalidJSONTextGatewayResponseBody()}}, nil
 	default:
 		return nil, fmt.Errorf("unknown mock fixture %q", fixture)
 	}
@@ -763,6 +779,28 @@ func llmAnswerEmptyGatewayResponseBody() map[string]any {
 			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"answer":""}`}}},
 		},
 		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+	}
+}
+
+func llmAnswerRawTextGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":          "resp_llm_answer_raw_text",
+		"status":      "completed",
+		"provider":    "openai",
+		"model":       "gpt-5.1",
+		"output_text": "plain-answer-from-raw-text",
+		"usage":       map[string]any{"input_tokens": 4, "output_tokens": 3, "total_tokens": 7},
+	}
+}
+
+func invalidJSONTextGatewayResponseBody() map[string]any {
+	return map[string]any{
+		"id":          "resp_invalid_json_text",
+		"status":      "completed",
+		"provider":    "openai",
+		"model":       "gpt-5.1",
+		"output_text": "non-json text payload",
+		"usage":       map[string]any{"input_tokens": 4, "output_tokens": 3, "total_tokens": 7},
 	}
 }
 

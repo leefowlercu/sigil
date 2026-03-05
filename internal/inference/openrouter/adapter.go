@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/leefowlercu/sigil/internal/inference"
+	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
 
 const (
@@ -135,7 +136,7 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 		return inference.GatewayResponse{}, fmt.Errorf("failed to decode openrouter response JSON; %w", err)
 	}
 
-	structuredPayload, err := extractStructuredPayload(decoded)
+	structuredPayload, extractionMetadata, err := extractStructuredPayload(decoded, request.Schema.ID)
 	if err != nil {
 		logger.Error("failed to extract structured response payload", "error", err)
 		return inference.GatewayResponse{}, fmt.Errorf("failed to extract structured response payload; %w", err)
@@ -156,6 +157,11 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 		"finish_status", strings.TrimSpace(status),
 	)
 
+	rawMetadata := cloneMap(decoded)
+	if len(extractionMetadata) > 0 {
+		rawMetadata["extraction"] = extractionMetadata
+	}
+
 	return inference.GatewayResponse{
 		GatewayResponseID: strings.TrimSpace(responseID),
 		Provider:          strings.TrimSpace(responseProvider),
@@ -164,7 +170,7 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 		StructuredPayload: structuredPayload,
 		Usage:             usage,
 		Reasoning:         reasoning,
-		RawMetadata:       cloneMap(decoded),
+		RawMetadata:       rawMetadata,
 	}, nil
 }
 
@@ -252,28 +258,48 @@ func isReasoningCapabilityFailure(statusCode int, body []byte) bool {
 	return false
 }
 
-func extractStructuredPayload(decoded map[string]any) (map[string]any, error) {
+func extractStructuredPayload(decoded map[string]any, schemaID string) (map[string]any, map[string]any, error) {
 	if payload := asMap(decoded["validated_payload"]); payload != nil {
-		return payload, nil
+		return payload, nil, nil
 	}
 
+	trimmedSchemaID := strings.TrimSpace(schemaID)
+	rawFallbackCandidate := ""
+	rawFallbackSource := ""
+
 	if text, ok := decoded["output_text"].(string); ok {
-		return decodePayloadText(text)
+		payload, err := decodePayloadText(text)
+		if err == nil {
+			return payload, nil, nil
+		}
+		if trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && strings.TrimSpace(text) != "" {
+			rawFallbackCandidate = strings.TrimSpace(text)
+			rawFallbackSource = "output_text"
+		} else {
+			return nil, nil, err
+		}
 	}
 
 	outputArray, ok := decoded["output"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("missing output payload")
+		if rawFallbackCandidate != "" {
+			return map[string]any{"answer": rawFallbackCandidate}, map[string]any{
+				"mode":      "raw_text_fallback",
+				"source":    rawFallbackSource,
+				"schema_id": trimmedSchemaID,
+			}, nil
+		}
+		return nil, nil, fmt.Errorf("missing output payload")
 	}
 
-	for _, outputItem := range outputArray {
+	for outputIndex, outputItem := range outputArray {
 		outputMap := asMap(outputItem)
 		contentArray, ok := outputMap["content"].([]any)
 		if !ok {
 			continue
 		}
 
-		for _, contentItem := range contentArray {
+		for contentIndex, contentItem := range contentArray {
 			contentMap := asMap(contentItem)
 			contentType, _ := contentMap["type"].(string)
 			if strings.TrimSpace(contentType) != "output_text" {
@@ -282,13 +308,35 @@ func extractStructuredPayload(decoded map[string]any) (map[string]any, error) {
 
 			text, _ := contentMap["text"].(string)
 			if strings.TrimSpace(text) == "" {
-				return nil, fmt.Errorf("output_text content is empty")
+				if rawFallbackCandidate == "" {
+					rawFallbackSource = fmt.Sprintf("output[%d].content[%d].text", outputIndex, contentIndex)
+				}
+				continue
 			}
-			return decodePayloadText(text)
+			payload, err := decodePayloadText(text)
+			if err == nil {
+				return payload, nil, nil
+			}
+			if trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && rawFallbackCandidate == "" {
+				rawFallbackCandidate = strings.TrimSpace(text)
+				rawFallbackSource = fmt.Sprintf("output[%d].content[%d].text", outputIndex, contentIndex)
+				continue
+			}
+			if trimmedSchemaID != schema.SigilLLMAnswerV1SchemaID {
+				return nil, nil, err
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("output_text content not found")
+	if trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && rawFallbackCandidate != "" {
+		return map[string]any{"answer": rawFallbackCandidate}, map[string]any{
+			"mode":      "raw_text_fallback",
+			"source":    rawFallbackSource,
+			"schema_id": trimmedSchemaID,
+		}, nil
+	}
+
+	return nil, nil, fmt.Errorf("output_text content not found")
 }
 
 func decodePayloadText(text string) (map[string]any, error) {

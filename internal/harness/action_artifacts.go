@@ -25,7 +25,18 @@ type ActionArtifact struct {
 	DurationMS   int                  `json:"duration_ms"`
 	ErrorCode    *string              `json:"error_code,omitempty"`
 	ErrorMessage *string              `json:"error_message,omitempty"`
+	ErrorDetail  *ActionErrorDetail   `json:"error_detail,omitempty"`
 	Subcalls     []ActionSubcallTrace `json:"subcalls,omitempty"`
+}
+
+// ActionErrorDetail captures structured stage-specific diagnostics.
+type ActionErrorDetail struct {
+	Stage      string  `json:"stage"`
+	Message    string  `json:"message"`
+	Line       *int    `json:"line,omitempty"`
+	Column     *int    `json:"column,omitempty"`
+	Symbol     *string `json:"symbol,omitempty"`
+	SourceLine *string `json:"source_line,omitempty"`
 }
 
 // ActionSubcallTrace captures one subcall execution observed within a continue action.

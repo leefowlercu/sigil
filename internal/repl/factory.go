@@ -36,11 +36,12 @@ var defaultAllowedImports = map[string]struct{}{
 
 // Factory is the production session factory for an embedded Go REPL.
 type Factory struct {
-	actionTimeout  time.Duration
-	maxCodeBytes   int
-	stdoutCapBytes int
-	stderrCapBytes int
-	allowedImports map[string]struct{}
+	actionTimeout           time.Duration
+	recursiveSubcallTimeout time.Duration
+	maxCodeBytes            int
+	stdoutCapBytes          int
+	stderrCapBytes          int
+	allowedImports          map[string]struct{}
 }
 
 // FactoryOption mutates factory defaults.
@@ -50,6 +51,13 @@ type FactoryOption func(*Factory)
 func WithActionTimeout(timeout time.Duration) FactoryOption {
 	return func(factory *Factory) {
 		factory.actionTimeout = timeout
+	}
+}
+
+// WithRecursiveSubcallTimeout sets timeout budget for recursive subcalls.
+func WithRecursiveSubcallTimeout(timeout time.Duration) FactoryOption {
+	return func(factory *Factory) {
+		factory.recursiveSubcallTimeout = timeout
 	}
 }
 
@@ -71,11 +79,12 @@ func WithOutputCaps(stdoutCap int, stderrCap int) FactoryOption {
 // NewFactory constructs a Yaegi-backed session factory.
 func NewFactory(options ...FactoryOption) *Factory {
 	factory := &Factory{
-		actionTimeout:  30 * time.Second,
-		maxCodeBytes:   65536,
-		stdoutCapBytes: 1048576,
-		stderrCapBytes: 1048576,
-		allowedImports: cloneImportSet(defaultAllowedImports),
+		actionTimeout:           180 * time.Second,
+		recursiveSubcallTimeout: 300 * time.Second,
+		maxCodeBytes:            65536,
+		stdoutCapBytes:          1048576,
+		stderrCapBytes:          1048576,
+		allowedImports:          cloneImportSet(defaultAllowedImports),
 	}
 	for _, option := range options {
 		if option != nil {
@@ -97,6 +106,9 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 	if f.actionTimeout <= 0 {
 		return nil, WrapError(ErrorCodeSessionInit, "action timeout must be > 0", nil)
 	}
+	if f.recursiveSubcallTimeout <= 0 {
+		return nil, WrapError(ErrorCodeSessionInit, "recursive subcall timeout must be > 0", nil)
+	}
 	if f.maxCodeBytes < 1 {
 		return nil, WrapError(ErrorCodeSessionInit, "max code bytes must be >= 1", nil)
 	}
@@ -116,18 +128,19 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 	}
 
 	session := &yaegiSession{
-		interpreter:    interpreter,
-		stdout:         stdout,
-		stderr:         stderr,
-		actionTimeout:  f.actionTimeout,
-		maxCodeBytes:   f.maxCodeBytes,
-		allowedImports: cloneImportSet(f.allowedImports),
-		imported:       make(map[string]struct{}, len(f.allowedImports)),
-		runID:          options.RunID,
-		nodeID:         options.NodeID,
-		nodeDepth:      options.Depth,
+		interpreter:             interpreter,
+		stdout:                  stdout,
+		stderr:                  stderr,
+		runContextSource:        options.RunContext,
+		actionTimeout:           f.actionTimeout,
+		recursiveSubcallTimeout: f.recursiveSubcallTimeout,
+		maxCodeBytes:            f.maxCodeBytes,
+		allowedImports:          cloneImportSet(f.allowedImports),
+		imported:                make(map[string]struct{}, len(f.allowedImports)),
+		runID:                   options.RunID,
+		nodeID:                  options.NodeID,
+		nodeDepth:               options.Depth,
 	}
-
 	exports := interp.Exports{
 		"sigil/repl/repl": map[string]reflect.Value{
 			"LLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
@@ -145,11 +158,12 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				return answer, nil
 			}),
 			"RLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
-				execCtx, ctxErr := session.activeExecContext()
+				subcallCtx, cancel, ctxErr := session.newRecursiveSubcallContext()
 				if ctxErr != nil {
 					return "", ctxErr
 				}
-				answer, err := options.RLMQuery(execCtx, QueryRequest{Prompt: prompt, Context: subContext})
+				defer cancel()
+				answer, err := options.RLMQuery(subcallCtx, QueryRequest{Prompt: prompt, Context: subContext})
 				if err != nil {
 					if _, ok := CodeOf(err); ok {
 						return "", err
@@ -180,15 +194,16 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				return EncodeBatchedResults(results), nil
 			}),
 			"RLMQueryBatched": reflect.ValueOf(func(calls []map[string]string) ([]map[string]string, error) {
-				execCtx, ctxErr := session.activeExecContext()
+				subcallCtx, cancel, ctxErr := session.newRecursiveSubcallContext()
 				if ctxErr != nil {
 					return nil, ctxErr
 				}
+				defer cancel()
 				requests, err := ParseBatchedCalls(calls)
 				if err != nil {
 					return nil, WrapError(ErrorCodeSubcallInvalidInput, "rlm_query_batched input is invalid", err)
 				}
-				results, err := options.RLMQueryBatched(execCtx, requests)
+				results, err := options.RLMQueryBatched(subcallCtx, requests)
 				if err != nil {
 					if _, ok := CodeOf(err); ok {
 						return nil, err
@@ -233,6 +248,7 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 		"node_id", options.NodeID,
 		"node_depth", options.Depth,
 		"action_timeout", f.actionTimeout.String(),
+		"recursive_subcall_timeout", f.recursiveSubcallTimeout.String(),
 		"max_code_bytes", f.maxCodeBytes,
 		"stdout_cap_bytes", f.stdoutCapBytes,
 		"stderr_cap_bytes", f.stderrCapBytes,
@@ -243,20 +259,23 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 }
 
 type yaegiSession struct {
-	mu                 sync.Mutex
-	ctxMu              sync.RWMutex
-	interpreter        *interp.Interpreter
-	stdout             *cappedBuffer
-	stderr             *cappedBuffer
-	currentExecContext context.Context
-	closed             bool
-	actionTimeout      time.Duration
-	maxCodeBytes       int
-	allowedImports     map[string]struct{}
-	imported           map[string]struct{}
-	runID              string
-	nodeID             string
-	nodeDepth          int
+	mu                      sync.Mutex
+	ctxMu                   sync.RWMutex
+	interpreter             *interp.Interpreter
+	stdout                  *cappedBuffer
+	stderr                  *cappedBuffer
+	runContextSource        context.Context
+	currentExecContext      context.Context
+	currentRunContext       context.Context
+	closed                  bool
+	actionTimeout           time.Duration
+	recursiveSubcallTimeout time.Duration
+	maxCodeBytes            int
+	allowedImports          map[string]struct{}
+	imported                map[string]struct{}
+	runID                   string
+	nodeID                  string
+	nodeDepth               int
 }
 
 func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error) {
@@ -306,9 +325,18 @@ func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error
 
 	execCtx, cancel := context.WithTimeout(ctx, s.actionTimeout)
 	defer cancel()
+	runCtx := s.runContextSource
+	if runCtx == nil {
+		runCtx = ctx
+	}
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
+	s.setCurrentRunContext(runCtx)
 	s.setCurrentExecContext(execCtx)
 	defer func() {
 		s.setCurrentExecContext(nil)
+		s.setCurrentRunContext(nil)
 	}()
 
 	start := time.Now().UTC()
@@ -381,6 +409,7 @@ func (s *yaegiSession) Close() error {
 
 	s.closed = true
 	s.setCurrentExecContext(nil)
+	s.setCurrentRunContext(nil)
 	factoryLogger().Info("closed yaegi repl session",
 		"run_id", s.runID,
 		"node_id", s.nodeID,
@@ -415,6 +444,37 @@ func (s *yaegiSession) activeExecContext() (context.Context, error) {
 func (s *yaegiSession) setCurrentExecContext(ctx context.Context) {
 	s.ctxMu.Lock()
 	s.currentExecContext = ctx
+	s.ctxMu.Unlock()
+}
+
+func (s *yaegiSession) activeRunContext() (context.Context, error) {
+	s.ctxMu.RLock()
+	runCtx := s.currentRunContext
+	s.ctxMu.RUnlock()
+
+	if runCtx == nil {
+		return nil, WrapError(ErrorCodeExecutionTimeout, "repl run context is unavailable", context.Canceled)
+	}
+	if err := runCtx.Err(); err != nil {
+		return nil, WrapError(ErrorCodeExecutionTimeout, "repl run context is canceled", err)
+	}
+
+	return runCtx, nil
+}
+
+func (s *yaegiSession) newRecursiveSubcallContext() (context.Context, context.CancelFunc, error) {
+	runCtx, err := s.activeRunContext()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	subcallCtx, cancel := context.WithTimeout(runCtx, s.recursiveSubcallTimeout)
+	return subcallCtx, cancel, nil
+}
+
+func (s *yaegiSession) setCurrentRunContext(ctx context.Context) {
+	s.ctxMu.Lock()
+	s.currentRunContext = ctx
 	s.ctxMu.Unlock()
 }
 

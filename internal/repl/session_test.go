@@ -385,6 +385,108 @@ func TestYaegiSessionTimesOutUsingConfiguredActionTimeout(t *testing.T) {
 	}
 }
 
+func TestYaegiSessionRecursiveSubcallUsesIndependentTimeoutBudget(t *testing.T) {
+	actionTimeout := 2 * time.Second
+	recursiveTimeout := 300 * time.Millisecond
+	factory := NewFactory(
+		WithActionTimeout(actionTimeout),
+		WithRecursiveSubcallTimeout(recursiveTimeout),
+	)
+
+	deadlineDeltaCh := make(chan time.Duration, 1)
+	session := mustNewSessionWithFactoryAndQueriesAndRunContext(
+		t,
+		factory,
+		context.Background(),
+		func(_ context.Context, _ QueryRequest) (string, error) {
+			return "ok", nil
+		},
+		func(ctx context.Context, _ QueryRequest) (string, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				return "", errors.New("missing recursive subcall deadline")
+			}
+			deadlineDeltaCh <- time.Until(deadline)
+			return "ok", nil
+		},
+	)
+
+	execCtx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := session.Exec(execCtx, `_, _ = rlm_query("prompt", "subctx")`); err != nil {
+		t.Fatalf("expected recursive subcall execution success, got %v", err)
+	}
+
+	select {
+	case observed := <-deadlineDeltaCh:
+		if observed <= 30*time.Millisecond {
+			t.Fatalf("expected recursive timeout budget > exec context timeout (%s), got %s", 30*time.Millisecond, observed)
+		}
+		if observed < 150*time.Millisecond || observed > 450*time.Millisecond {
+			t.Fatalf("expected recursive timeout near %s, got %s", recursiveTimeout, observed)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected recursive subcall to report deadline")
+	}
+}
+
+func TestYaegiSessionRecursiveSubcallCanceledByRunContext(t *testing.T) {
+	factory := NewFactory(
+		WithActionTimeout(2*time.Second),
+		WithRecursiveSubcallTimeout(300*time.Second),
+	)
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	started := make(chan struct{})
+	observedErrCh := make(chan error, 1)
+	session := mustNewSessionWithFactoryAndQueriesAndRunContext(
+		t,
+		factory,
+		runCtx,
+		func(_ context.Context, _ QueryRequest) (string, error) {
+			return "ok", nil
+		},
+		func(ctx context.Context, _ QueryRequest) (string, error) {
+			close(started)
+			<-ctx.Done()
+			observedErrCh <- ctx.Err()
+			return "", ctx.Err()
+		},
+	)
+
+	execErrCh := make(chan error, 1)
+	go func() {
+		_, err := session.Exec(context.Background(), `_, _ = rlm_query("prompt", "subctx")`)
+		execErrCh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected recursive subcall to start")
+	}
+	cancel()
+
+	select {
+	case observedErr := <-observedErrCh:
+		if !errors.Is(observedErr, context.Canceled) {
+			t.Fatalf("expected recursive subcall ctx error context.Canceled, got %v", observedErr)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected recursive subcall to observe context cancellation")
+	}
+
+	select {
+	case execErr := <-execErrCh:
+		if execErr != nil && !IsCode(execErr, ErrorCodeExecutionTimeout) {
+			t.Fatalf("expected nil or execution-timeout error after run cancellation, got %v", execErr)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected REPL execution to finish after run cancellation")
+	}
+}
+
 func TestParseBatchedCalls(t *testing.T) {
 	requests, err := ParseBatchedCalls([]map[string]string{
 		{"prompt": "p1", "context": "c1"},
@@ -470,16 +572,28 @@ func mustNewSessionWithFactoryAndQuery(t *testing.T, factory *Factory, query Que
 
 func mustNewSessionWithFactoryAndQueries(t *testing.T, factory *Factory, llmQuery QueryFunc, rlmQuery QueryFunc) Session {
 	t.Helper()
+	return mustNewSessionWithFactoryAndQueriesAndRunContext(t, factory, nil, llmQuery, rlmQuery)
+}
+
+func mustNewSessionWithFactoryAndQueriesAndRunContext(
+	t *testing.T,
+	factory *Factory,
+	runCtx context.Context,
+	llmQuery QueryFunc,
+	rlmQuery QueryFunc,
+) Session {
+	t.Helper()
 
 	runID := mustUUIDv7String(t)
 	nodeID := mustUUIDv7String(t)
 	session, err := factory.NewSession(context.Background(), SessionOptions{
-		RunID:    runID,
-		NodeID:   nodeID,
-		Depth:    0,
-		Context:  "context",
-		LLMQuery: llmQuery,
-		RLMQuery: rlmQuery,
+		RunID:      runID,
+		NodeID:     nodeID,
+		Depth:      0,
+		Context:    "context",
+		RunContext: runCtx,
+		LLMQuery:   llmQuery,
+		RLMQuery:   rlmQuery,
 		LLMQueryBatched: func(_ context.Context, requests []BatchedQueryRequest) ([]BatchedQueryResult, error) {
 			results := make([]BatchedQueryResult, len(requests))
 			for index := range requests {

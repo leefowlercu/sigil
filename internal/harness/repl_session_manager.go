@@ -18,11 +18,12 @@ var (
 
 // NodeSessionInput contains per-node data required to initialize a REPL session.
 type NodeSessionInput struct {
-	RunID    string
-	NodeID   string
-	Depth    int
-	Context  string
-	Bindings SubcallBindings
+	RunID      string
+	NodeID     string
+	Depth      int
+	Context    string
+	RunContext context.Context
+	Bindings   SubcallBindings
 }
 
 // SubcallBindings defines step-scoped subcall handlers used by node-local REPL sessions.
@@ -105,10 +106,11 @@ func (m *REPLSessionManager) SessionForNode(ctx context.Context, input NodeSessi
 	dispatcher.Set(input.Bindings)
 
 	created, err := m.factory.NewSession(ctx, repl.SessionOptions{
-		RunID:   input.RunID,
-		NodeID:  input.NodeID,
-		Depth:   input.Depth,
-		Context: input.Context,
+		RunID:      input.RunID,
+		NodeID:     input.NodeID,
+		Depth:      input.Depth,
+		Context:    input.Context,
+		RunContext: input.RunContext,
 		LLMQuery: func(callCtx context.Context, request repl.QueryRequest) (string, error) {
 			current, currentErr := dispatcher.current()
 			if currentErr != nil {

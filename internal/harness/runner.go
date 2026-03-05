@@ -16,6 +16,7 @@ import (
 
 type executionContext struct {
 	runConfig    config.RunConfig
+	runContext   context.Context
 	lifecycle    *runtime.Lifecycle
 	inference    InferenceClient
 	sessions     *REPLSessionManager
@@ -34,6 +35,10 @@ type nodeExecutionResult struct {
 // Run executes one blocking harness invocation for `sigil run start`.
 func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	logger := harnessRunnerLogger()
+	runContext := ctx
+	if runContext == nil {
+		runContext = context.Background()
+	}
 
 	if r == nil {
 		return RunResult{}, WrapError(ErrorCodeInfrastructure, "runner is required", nil)
@@ -151,6 +156,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 
 	execCtx := executionContext{
 		runConfig:    input.RunConfig,
+		runContext:   runContext,
 		lifecycle:    lifecycle,
 		inference:    inferenceClient,
 		sessions:     sessions,
@@ -161,7 +167,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		nonRecursive: !input.RunConfig.RLM.Enabled,
 	}
 
-	rootResult, err := r.executeNode(ctx, &execCtx, rootNode, effectivePrompt, effectiveContext)
+	rootResult, err := r.executeNode(runContext, &execCtx, rootNode, effectivePrompt, effectiveContext)
 	if err != nil {
 		failedNodeID := rootNode.ID
 		logger.Error("root node execution failed",
@@ -193,7 +199,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	}, nil
 }
 
-func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, node runtime.Node, prompt string, baseContext string) (nodeExecutionResult, error) {
+func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, node runtime.Node, prompt string, baseContext string) (result nodeExecutionResult, runErr error) {
 	if execCtx == nil {
 		return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "execution context is required", nil)
 	}
@@ -203,6 +209,38 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 		"node_id", node.ID,
 		"node_depth", node.Depth,
 	)
+	nodeStart := time.Now().UTC()
+	var failedStepID *string
+	defer func() {
+		if runErr == nil {
+			return
+		}
+
+		if execCtx.lifecycle.State() == runtime.RunStateRunning {
+			if _, terminalized := execCtx.lifecycle.NodeTerminalEvent(node.ID); !terminalized {
+				errorCode := ErrorCodeInfrastructure
+				if code, ok := CodeOf(runErr); ok {
+					errorCode = code
+				}
+
+				payload := runtime.NodeFailedPayload{
+					Status:       "failed",
+					DurationMS:   durationMS(nodeStart),
+					ErrorCode:    string(errorCode),
+					ErrorMessage: runErr.Error(),
+					FailedStepID: cloneOptionalStringPointer(failedStepID),
+				}
+				if err := execCtx.lifecycle.AppendNodeFailed(node.ID, payload); err != nil {
+					runErr = WrapError(ErrorCodeInfrastructure, "failed to append node.failed", err)
+				}
+			}
+		}
+
+		if closeErr := execCtx.sessions.CloseNode(node.ID); closeErr != nil {
+			logger.Error("failed to close node repl session", "error", closeErr)
+		}
+	}()
+
 	logger.Info("executing node",
 		"prompt_bytes", len(prompt),
 		"initial_context_bytes", len(baseContext),
@@ -223,6 +261,8 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to append node.step.started", "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.started", err)
 		}
+		stepID := stepStarted.StepID
+		failedStepID = &stepID
 		logger.Debug("started node step",
 			"step_id", stepStarted.StepID,
 			"step_index", stepStarted.StepIndex,
@@ -336,12 +376,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			}
 
 			actionPayload, actionErr := execCtx.stepExecutor.ExecuteContinueAction(ctx, ContinueActionInput{
-				NodeID:    node.ID,
-				StepID:    stepStarted.StepID,
-				Code:      decisionPayload.Continuation.ReplCode,
-				Context:   baseContext,
-				Subcalls:  subcalls,
-				Collector: subcalls,
+				NodeID:     node.ID,
+				StepID:     stepStarted.StepID,
+				Code:       decisionPayload.Continuation.ReplCode,
+				Context:    baseContext,
+				RunContext: execCtx.runContext,
+				Subcalls:   subcalls,
+				Collector:  subcalls,
 			})
 			if actionErr != nil {
 				logger.Error("failed to execute continue action",
@@ -433,6 +474,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to close node repl session", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to close node repl session", err)
 		}
+		failedStepID = nil
 		logger.Info("node reached final decision",
 			"step_id", stepStarted.StepID,
 			"duration_ms", durationMS(stepStart),
@@ -461,6 +503,14 @@ func cloneOptionalString(raw string) *string {
 
 	value := raw
 	return &value
+}
+
+func cloneOptionalStringPointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 func valueOrEmpty(value *string) string {
