@@ -165,6 +165,10 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				defer cancel()
 				answer, err := options.RLMQuery(subcallCtx, QueryRequest{Prompt: prompt, Context: subContext})
 				if err != nil {
+					if IsFatalExecution(err) {
+						session.cancelCurrentExec()
+						panic(UnwrapFatalExecution(err))
+					}
 					if _, ok := CodeOf(err); ok {
 						return "", err
 					}
@@ -205,6 +209,10 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				}
 				results, err := options.RLMQueryBatched(subcallCtx, requests)
 				if err != nil {
+					if IsFatalExecution(err) {
+						session.cancelCurrentExec()
+						panic(UnwrapFatalExecution(err))
+					}
 					if _, ok := CodeOf(err); ok {
 						return nil, err
 					}
@@ -266,6 +274,7 @@ type yaegiSession struct {
 	stderr                  *cappedBuffer
 	runContextSource        context.Context
 	currentExecContext      context.Context
+	currentExecCancel       context.CancelFunc
 	currentRunContext       context.Context
 	closed                  bool
 	actionTimeout           time.Duration
@@ -333,9 +342,9 @@ func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error
 		runCtx = context.Background()
 	}
 	s.setCurrentRunContext(runCtx)
-	s.setCurrentExecContext(execCtx)
+	s.setCurrentExecContext(execCtx, cancel)
 	defer func() {
-		s.setCurrentExecContext(nil)
+		s.setCurrentExecContext(nil, nil)
 		s.setCurrentRunContext(nil)
 	}()
 
@@ -408,7 +417,7 @@ func (s *yaegiSession) Close() error {
 	defer s.mu.Unlock()
 
 	s.closed = true
-	s.setCurrentExecContext(nil)
+	s.setCurrentExecContext(nil, nil)
 	s.setCurrentRunContext(nil)
 	factoryLogger().Info("closed yaegi repl session",
 		"run_id", s.runID,
@@ -441,10 +450,20 @@ func (s *yaegiSession) activeExecContext() (context.Context, error) {
 	return execCtx, nil
 }
 
-func (s *yaegiSession) setCurrentExecContext(ctx context.Context) {
+func (s *yaegiSession) setCurrentExecContext(ctx context.Context, cancel context.CancelFunc) {
 	s.ctxMu.Lock()
 	s.currentExecContext = ctx
+	s.currentExecCancel = cancel
 	s.ctxMu.Unlock()
+}
+
+func (s *yaegiSession) cancelCurrentExec() {
+	s.ctxMu.RLock()
+	cancel := s.currentExecCancel
+	s.ctxMu.RUnlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (s *yaegiSession) activeRunContext() (context.Context, error) {

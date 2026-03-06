@@ -91,13 +91,6 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 		DurationMS:  execResult.DurationMS,
 	}
 
-	if input.Collector != nil {
-		if fatalErr := input.Collector.FatalError(); fatalErr != nil {
-			logger.Error("subcall event persistence failed", "error", fatalErr)
-			return runtime.NodeActionExecutedPayload{}, fatalErr
-		}
-	}
-
 	artifact := ActionArtifact{
 		RunID:       e.lifecycle.RunID(),
 		NodeID:      node.ID,
@@ -111,28 +104,27 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 		Stderr:      execResult.Stderr,
 		DurationMS:  execResult.DurationMS,
 	}
+	var fatalErr error
 	if input.Collector != nil {
 		artifact.Subcalls = input.Collector.Traces()
+		fatalErr = input.Collector.FatalError()
 	}
 
-	if execErr != nil {
-		payload.Status = runtime.ActionExecutionStatusFailed
-		errorCode := string(repl.ErrorCodeExecutionRuntime)
-		if code, ok := repl.CodeOf(execErr); ok {
-			errorCode = string(code)
-		}
-		errorMessage := execErr.Error()
-		payload.ErrorCode = &errorCode
-		payload.ErrorMessage = &errorMessage
-		artifact.Status = string(payload.Status)
-		artifact.ErrorCode = &errorCode
-		artifact.ErrorMessage = &errorMessage
+	if fatalErr != nil {
+		applyActionFailure(&payload, &artifact, fatalErr)
+		logger.Warn("continue action recorded fatal guardrail failure",
+			"error_code", valueOrEmpty(payload.ErrorCode),
+			"error_message", valueOrEmpty(payload.ErrorMessage),
+			"duration_ms", execResult.DurationMS,
+		)
+	} else if execErr != nil {
+		applyActionFailure(&payload, &artifact, execErr)
 		if detail := compileErrorDetail(execErr, execResult.Stderr); detail != nil {
 			artifact.ErrorDetail = detail
 		}
 		logger.Warn("continue action execution returned non-fatal failure",
-			"error_code", errorCode,
-			"error_message", errorMessage,
+			"error_code", valueOrEmpty(payload.ErrorCode),
+			"error_message", valueOrEmpty(payload.ErrorMessage),
 			"duration_ms", execResult.DurationMS,
 		)
 	}
@@ -155,7 +147,30 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 		"output_ref", payload.OutputRef,
 	)
 
+	if fatalErr != nil {
+		return payload, fatalErr
+	}
 	return payload, nil
+}
+
+func applyActionFailure(payload *runtime.NodeActionExecutedPayload, artifact *ActionArtifact, err error) {
+	if payload == nil || artifact == nil || err == nil {
+		return
+	}
+
+	payload.Status = runtime.ActionExecutionStatusFailed
+	errorCode := string(repl.ErrorCodeExecutionRuntime)
+	if code, ok := repl.CodeOf(err); ok {
+		errorCode = string(code)
+	} else if code, ok := CodeOf(err); ok {
+		errorCode = string(code)
+	}
+	errorMessage := err.Error()
+	payload.ErrorCode = &errorCode
+	payload.ErrorMessage = &errorMessage
+	artifact.Status = string(payload.Status)
+	artifact.ErrorCode = &errorCode
+	artifact.ErrorMessage = &errorMessage
 }
 
 func stepExecutorLogger() *slog.Logger {

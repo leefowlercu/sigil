@@ -223,6 +223,22 @@ func TestNewDefaultRunConfig(t *testing.T) {
 	if defaults.RLM.MaxDepth != DefaultRunRLMMaxDepth {
 		t.Fatalf("expected rlm.max_depth %d, got %d", DefaultRunRLMMaxDepth, defaults.RLM.MaxDepth)
 	}
+
+	if defaults.Guardrails.MaxStepsPerNode != DefaultRunGuardrailsMaxStepsPerNode {
+		t.Fatalf("expected guardrails.max_steps_per_node %d, got %d", DefaultRunGuardrailsMaxStepsPerNode, defaults.Guardrails.MaxStepsPerNode)
+	}
+
+	if defaults.Guardrails.MaxTotalStepsPerRun != DefaultRunGuardrailsMaxTotalStepsPerRun {
+		t.Fatalf("expected guardrails.max_total_steps_per_run %d, got %d", DefaultRunGuardrailsMaxTotalStepsPerRun, defaults.Guardrails.MaxTotalStepsPerRun)
+	}
+
+	if defaults.Guardrails.MaxRunDurationMS != DefaultRunGuardrailsMaxRunDurationMS {
+		t.Fatalf("expected guardrails.max_run_duration_ms %d, got %d", DefaultRunGuardrailsMaxRunDurationMS, defaults.Guardrails.MaxRunDurationMS)
+	}
+
+	if defaults.Guardrails.MaxConsecutiveStepFailures != DefaultRunGuardrailsMaxConsecutiveStepFailures {
+		t.Fatalf("expected guardrails.max_consecutive_step_failures %d, got %d", DefaultRunGuardrailsMaxConsecutiveStepFailures, defaults.Guardrails.MaxConsecutiveStepFailures)
+	}
 }
 
 func TestInitRunUsesEnvironmentWhenDefaultRunConfigFileIsMissing(t *testing.T) {
@@ -439,6 +455,22 @@ func TestInitRunFromPathAppliesGatewayOpenRouterAndRLMDefaults(t *testing.T) {
 	if cfg.RLM.MaxDepth != DefaultRunRLMMaxDepth {
 		t.Fatalf("expected rlm.max_depth %d, got %d", DefaultRunRLMMaxDepth, cfg.RLM.MaxDepth)
 	}
+
+	if cfg.Guardrails.MaxStepsPerNode != DefaultRunGuardrailsMaxStepsPerNode {
+		t.Fatalf("expected guardrails.max_steps_per_node %d, got %d", DefaultRunGuardrailsMaxStepsPerNode, cfg.Guardrails.MaxStepsPerNode)
+	}
+
+	if cfg.Guardrails.MaxTotalStepsPerRun != DefaultRunGuardrailsMaxTotalStepsPerRun {
+		t.Fatalf("expected guardrails.max_total_steps_per_run %d, got %d", DefaultRunGuardrailsMaxTotalStepsPerRun, cfg.Guardrails.MaxTotalStepsPerRun)
+	}
+
+	if cfg.Guardrails.MaxRunDurationMS != DefaultRunGuardrailsMaxRunDurationMS {
+		t.Fatalf("expected guardrails.max_run_duration_ms %d, got %d", DefaultRunGuardrailsMaxRunDurationMS, cfg.Guardrails.MaxRunDurationMS)
+	}
+
+	if cfg.Guardrails.MaxConsecutiveStepFailures != DefaultRunGuardrailsMaxConsecutiveStepFailures {
+		t.Fatalf("expected guardrails.max_consecutive_step_failures %d, got %d", DefaultRunGuardrailsMaxConsecutiveStepFailures, cfg.Guardrails.MaxConsecutiveStepFailures)
+	}
 }
 
 func TestInitRunFromPathRejectsUnsupportedGateway(t *testing.T) {
@@ -643,6 +675,113 @@ func TestInitRunFromPathReturnsErrorWhenConfigFileIsMissing(t *testing.T) {
 
 	if err := InitRunFromPath(filepath.Join(workDir, "missing-run.yaml")); err == nil {
 		t.Fatal("expected missing explicit run config path error")
+	}
+}
+
+func TestInitRunFromPathAppliesGuardrailEnvironmentOverrides(t *testing.T) {
+	clearActiveRunConfig()
+	unsetEnv(
+		t,
+		"SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN",
+		"SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS",
+		"SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES",
+	)
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	configPath := filepath.Join(workDir, "sigil-run.yaml")
+	writeRunTestFile(
+		t,
+		configPath,
+		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n",
+	)
+
+	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE", "64")
+	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN", "256")
+	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS", "1200000")
+	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES", "6")
+
+	if err := InitRunFromPath(configPath); err != nil {
+		t.Fatalf("expected run config init success, got %v", err)
+	}
+
+	cfg := MustGetRun()
+	if cfg.Guardrails.MaxStepsPerNode != 64 {
+		t.Fatalf("expected guardrails.max_steps_per_node 64, got %d", cfg.Guardrails.MaxStepsPerNode)
+	}
+	if cfg.Guardrails.MaxTotalStepsPerRun != 256 {
+		t.Fatalf("expected guardrails.max_total_steps_per_run 256, got %d", cfg.Guardrails.MaxTotalStepsPerRun)
+	}
+	if cfg.Guardrails.MaxRunDurationMS != 1200000 {
+		t.Fatalf("expected guardrails.max_run_duration_ms 1200000, got %d", cfg.Guardrails.MaxRunDurationMS)
+	}
+	if cfg.Guardrails.MaxConsecutiveStepFailures != 6 {
+		t.Fatalf("expected guardrails.max_consecutive_step_failures 6, got %d", cfg.Guardrails.MaxConsecutiveStepFailures)
+	}
+}
+
+func TestInitRunFromPathRejectsInvalidGuardrailValues(t *testing.T) {
+	clearActiveRunConfig()
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	testCases := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "max steps per node non-positive",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 0\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n",
+		},
+		{
+			name:    "max total steps per run non-positive",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 0\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n",
+		},
+		{
+			name:    "max run duration non-positive",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 0\n  max_consecutive_step_failures: 1\n",
+		},
+		{
+			name:    "max consecutive failures non-positive",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 0\n",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			clearActiveRunConfig()
+			configPath := filepath.Join(workDir, testCase.name+".yaml")
+			writeRunTestFile(t, configPath, testCase.content)
+			if err := InitRunFromPath(configPath); err == nil {
+				t.Fatal("expected guardrail validation failure")
+			}
+		})
+	}
+}
+
+func TestInitRunFromPathAllowsRunTotalStepBudgetBelowPerNodeBudget(t *testing.T) {
+	clearActiveRunConfig()
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	configPath := filepath.Join(workDir, "sigil-run.yaml")
+	writeRunTestFile(
+		t,
+		configPath,
+		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 5\n  max_run_duration_ms: 1000\n  max_consecutive_step_failures: 2\n",
+	)
+
+	if err := InitRunFromPath(configPath); err != nil {
+		t.Fatalf("expected run config init success, got %v", err)
+	}
+
+	cfg := MustGetRun()
+	if cfg.Guardrails.MaxStepsPerNode != 10 {
+		t.Fatalf("expected guardrails.max_steps_per_node 10, got %d", cfg.Guardrails.MaxStepsPerNode)
+	}
+	if cfg.Guardrails.MaxTotalStepsPerRun != 5 {
+		t.Fatalf("expected guardrails.max_total_steps_per_run 5, got %d", cfg.Guardrails.MaxTotalStepsPerRun)
 	}
 }
 

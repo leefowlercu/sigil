@@ -213,11 +213,15 @@ type RunCompletedPayload struct {
 
 // RunFailedPayload is the strict payload for run.failed.
 type RunFailedPayload struct {
-	Status       string  `json:"status"`
-	ErrorCode    string  `json:"error_code"`
-	ErrorMessage string  `json:"error_message"`
-	FailedNodeID *string `json:"failed_node_id,omitempty"`
-	Retryable    bool    `json:"retryable"`
+	Status          string  `json:"status"`
+	ErrorCode       string  `json:"error_code"`
+	ErrorMessage    string  `json:"error_message"`
+	FailedNodeID    *string `json:"failed_node_id,omitempty"`
+	FailedStepID    *string `json:"failed_step_id,omitempty"`
+	LimitKey        *string `json:"limit_key,omitempty"`
+	ConfiguredValue *string `json:"configured_value,omitempty"`
+	ObservedValue   *string `json:"observed_value,omitempty"`
+	Retryable       bool    `json:"retryable"`
 }
 
 // RunInterruptedPayload is the strict payload for run.interrupted.

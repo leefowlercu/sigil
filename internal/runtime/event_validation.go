@@ -665,11 +665,15 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		return payload, nil
 	case EventTypeRunFailed:
 		allowed := map[string]struct{}{
-			"status":         {},
-			"error_code":     {},
-			"error_message":  {},
-			"failed_node_id": {},
-			"retryable":      {},
+			"status":           {},
+			"error_code":       {},
+			"error_message":    {},
+			"failed_node_id":   {},
+			"failed_step_id":   {},
+			"limit_key":        {},
+			"configured_value": {},
+			"observed_value":   {},
+			"retryable":        {},
 		}
 		required := map[string]struct{}{
 			"status":        {},
@@ -680,6 +684,10 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		var payload RunFailedPayload
 		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
 			return nil, err
+		}
+		payloadObj, err := decodeJSONObjectStrict(payloadRaw)
+		if err != nil {
+			return nil, fmt.Errorf("payload must be a JSON object; %w", ErrInvalidEvent)
 		}
 		if payload.Status != "failed" {
 			return nil, fmt.Errorf("run.failed status must be failed; %w", ErrInvalidEvent)
@@ -694,6 +702,40 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			if err := validateUUIDv7String(*payload.FailedNodeID); err != nil {
 				return nil, fmt.Errorf("run.failed failed_node_id must be UUIDv7 when present; %w", ErrInvalidEvent)
 			}
+		}
+		if fieldIsExplicitNull(payloadObj, "failed_step_id") {
+			return nil, fmt.Errorf("run.failed failed_step_id must not be null when present; %w", ErrInvalidEvent)
+		}
+		if payload.FailedStepID != nil {
+			if err := validateUUIDv7String(*payload.FailedStepID); err != nil {
+				return nil, fmt.Errorf("run.failed failed_step_id must be UUIDv7 when present; %w", ErrInvalidEvent)
+			}
+		}
+		if fieldIsExplicitNull(payloadObj, "limit_key") {
+			return nil, fmt.Errorf("run.failed limit_key must not be null when present; %w", ErrInvalidEvent)
+		}
+		if fieldIsExplicitNull(payloadObj, "configured_value") {
+			return nil, fmt.Errorf("run.failed configured_value must not be null when present; %w", ErrInvalidEvent)
+		}
+		if fieldIsExplicitNull(payloadObj, "observed_value") {
+			return nil, fmt.Errorf("run.failed observed_value must not be null when present; %w", ErrInvalidEvent)
+		}
+		if payload.LimitKey != nil {
+			if strings.TrimSpace(*payload.LimitKey) == "" {
+				return nil, fmt.Errorf("run.failed limit_key must be non-empty when present; %w", ErrInvalidEvent)
+			}
+			if payload.ConfiguredValue == nil || strings.TrimSpace(*payload.ConfiguredValue) == "" {
+				return nil, fmt.Errorf("run.failed configured_value must be present and non-empty when limit_key is present; %w", ErrInvalidEvent)
+			}
+			if payload.ObservedValue == nil || strings.TrimSpace(*payload.ObservedValue) == "" {
+				return nil, fmt.Errorf("run.failed observed_value must be present and non-empty when limit_key is present; %w", ErrInvalidEvent)
+			}
+		}
+		if payload.ConfiguredValue != nil && strings.TrimSpace(*payload.ConfiguredValue) == "" {
+			return nil, fmt.Errorf("run.failed configured_value must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		if payload.ObservedValue != nil && strings.TrimSpace(*payload.ObservedValue) == "" {
+			return nil, fmt.Errorf("run.failed observed_value must be non-empty when present; %w", ErrInvalidEvent)
 		}
 		return payload, nil
 	case EventTypeRunInterrupted:
@@ -748,6 +790,14 @@ func decodePayloadStrict(raw []byte, allowed map[string]struct{}, required map[s
 	}
 
 	return nil
+}
+
+func fieldIsExplicitNull(obj map[string]json.RawMessage, field string) bool {
+	value, ok := obj[field]
+	if !ok {
+		return false
+	}
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 }
 
 func validateEventShape(event EventEnvelope) error {

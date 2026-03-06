@@ -27,6 +27,14 @@ const (
 	DefaultRunRLMEnabled = true
 	// DefaultRunRLMMaxDepth is the default RLM max recursion depth.
 	DefaultRunRLMMaxDepth = 3
+	// DefaultRunGuardrailsMaxStepsPerNode is default per-node step budget.
+	DefaultRunGuardrailsMaxStepsPerNode = 64
+	// DefaultRunGuardrailsMaxTotalStepsPerRun is default run total step budget.
+	DefaultRunGuardrailsMaxTotalStepsPerRun = 256
+	// DefaultRunGuardrailsMaxRunDurationMS is default run wall-clock budget.
+	DefaultRunGuardrailsMaxRunDurationMS = 1200000
+	// DefaultRunGuardrailsMaxConsecutiveStepFailures is default consecutive-failure budget.
+	DefaultRunGuardrailsMaxConsecutiveStepFailures = 6
 )
 
 // NewDefaultConfig returns a fully populated baseline Config.
@@ -56,6 +64,12 @@ func NewDefaultRunConfig() RunConfig {
 		RLM: RunRLMConfig{
 			Enabled:  DefaultRunRLMEnabled,
 			MaxDepth: DefaultRunRLMMaxDepth,
+		},
+		Guardrails: RunGuardrailsConfig{
+			MaxStepsPerNode:            DefaultRunGuardrailsMaxStepsPerNode,
+			MaxTotalStepsPerRun:        DefaultRunGuardrailsMaxTotalStepsPerRun,
+			MaxRunDurationMS:           DefaultRunGuardrailsMaxRunDurationMS,
+			MaxConsecutiveStepFailures: DefaultRunGuardrailsMaxConsecutiveStepFailures,
 		},
 	}
 }

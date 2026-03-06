@@ -29,3 +29,9 @@ llm:
 rlm:
   enabled: true
   max_depth: 4
+
+guardrails:
+  max_steps_per_node: 96
+  max_total_steps_per_run: 384
+  max_run_duration_ms: 1800000
+  max_consecutive_step_failures: 10

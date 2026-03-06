@@ -260,6 +260,10 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^effective run llm.openrouter.api_key_env is "([^"]*)"$`, world.effectiveRunLLMOpenRouterAPIKeyEnvIs)
 	ctx.Step(`^effective run rlm.enabled is (true|false)$`, world.effectiveRunRLMEnabledIs)
 	ctx.Step(`^effective run rlm.max_depth is (\d+)$`, world.effectiveRunRLMMaxDepthIs)
+	ctx.Step(`^effective run guardrails.max_steps_per_node is (\d+)$`, world.effectiveRunGuardrailsMaxStepsPerNodeIs)
+	ctx.Step(`^effective run guardrails.max_total_steps_per_run is (\d+)$`, world.effectiveRunGuardrailsMaxTotalStepsPerRunIs)
+	ctx.Step(`^effective run guardrails.max_run_duration_ms is (\d+)$`, world.effectiveRunGuardrailsMaxRunDurationMSIs)
+	ctx.Step(`^effective run guardrails.max_consecutive_step_failures is (\d+)$`, world.effectiveRunGuardrailsMaxConsecutiveStepFailuresIs)
 	ctx.Step(`^effective run llm.reasoning.enabled is (true|false)$`, world.effectiveRunLLMReasoningEnabledIs)
 	ctx.Step(`^effective run llm.reasoning.effort is "([^"]*)"$`, world.effectiveRunLLMReasoningEffortIs)
 	ctx.Step(`^application configuration initialization fails$`, world.applicationConfigurationInitializationFails)
@@ -301,6 +305,10 @@ func (w *harnessWorld) sigilConfigEnvironmentVariablesAreCleared() error {
 		"SIGIL_RUN_LLM_OPENROUTER_API_KEY_ENV",
 		"SIGIL_RUN_RLM_ENABLED",
 		"SIGIL_RUN_RLM_MAX_DEPTH",
+		"SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN",
+		"SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS",
+		"SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES",
 		"SIGIL_RUN_SYSTEM_PROMPT_APPEND",
 		"SIGIL_RUN_PROMPT",
 		"SIGIL_RUN_PROMPT_TEMPLATE",
@@ -1648,6 +1656,50 @@ func (w *harnessWorld) effectiveRunRLMMaxDepthIs(expected int) error {
 	return nil
 }
 
+func (w *harnessWorld) effectiveRunGuardrailsMaxStepsPerNodeIs(expected int) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxStepsPerNode != expected {
+		return fmt.Errorf("expected guardrails.max_steps_per_node %d, got %d", expected, cfg.Guardrails.MaxStepsPerNode)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxTotalStepsPerRunIs(expected int) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxTotalStepsPerRun != expected {
+		return fmt.Errorf("expected guardrails.max_total_steps_per_run %d, got %d", expected, cfg.Guardrails.MaxTotalStepsPerRun)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxRunDurationMSIs(expected int) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxRunDurationMS != expected {
+		return fmt.Errorf("expected guardrails.max_run_duration_ms %d, got %d", expected, cfg.Guardrails.MaxRunDurationMS)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxConsecutiveStepFailuresIs(expected int) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxConsecutiveStepFailures != expected {
+		return fmt.Errorf("expected guardrails.max_consecutive_step_failures %d, got %d", expected, cfg.Guardrails.MaxConsecutiveStepFailures)
+	}
+	return nil
+}
+
 func (w *harnessWorld) effectiveRunLLMReasoningEnabledIs(expectedRaw string) error {
 	cfg, err := w.activeRunConfig()
 	if err != nil {
@@ -1769,12 +1821,11 @@ func (w *harnessWorld) aUserRuns(commandLine string) error {
 func (w *harnessWorld) ensureRunStartMockGateway() error {
 	if w.inferenceMockServer == nil {
 		w.inferenceMockServer = newOpenRouterMockServer()
+		w.inferenceMockServer.SetResponses(mockGatewayResponse{
+			statusCode: 200,
+			body:       validFinalGatewayResponseBody(),
+		})
 	}
-
-	w.inferenceMockServer.SetResponses(mockGatewayResponse{
-		statusCode: 200,
-		body:       validFinalGatewayResponseBody(),
-	})
 
 	if err := osSetEnv("OPENROUTER_API_KEY", "test-openrouter-key"); err != nil {
 		return err

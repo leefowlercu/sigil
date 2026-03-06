@@ -1,5 +1,8 @@
 # Build artifacts
 /bin/
+/sigil
+
+# Run artifacts
 /.sigil
 
 # Go test and coverage artifacts

@@ -321,6 +321,10 @@ func registerRunDefaults(v *viper.Viper) {
 	v.SetDefault("llm.openrouter.api_key_env", defaults.LLM.OpenRouter.APIKeyEnv)
 	v.SetDefault("rlm.enabled", defaults.RLM.Enabled)
 	v.SetDefault("rlm.max_depth", defaults.RLM.MaxDepth)
+	v.SetDefault("guardrails.max_steps_per_node", defaults.Guardrails.MaxStepsPerNode)
+	v.SetDefault("guardrails.max_total_steps_per_run", defaults.Guardrails.MaxTotalStepsPerRun)
+	v.SetDefault("guardrails.max_run_duration_ms", defaults.Guardrails.MaxRunDurationMS)
+	v.SetDefault("guardrails.max_consecutive_step_failures", defaults.Guardrails.MaxConsecutiveStepFailures)
 }
 
 func readConfig(v *viper.Viper, allowMissing bool) error {
@@ -378,6 +382,18 @@ func validateRunConfig(cfg RunConfig) error {
 
 	if _, ok := validRunReasoningEfforts[cfg.LLM.Reasoning.Effort]; !ok {
 		return fmt.Errorf("unsupported llm.reasoning.effort %q", cfg.LLM.Reasoning.Effort)
+	}
+	if cfg.Guardrails.MaxStepsPerNode < 1 {
+		return errors.New("guardrails.max_steps_per_node must be >= 1")
+	}
+	if cfg.Guardrails.MaxTotalStepsPerRun < 1 {
+		return errors.New("guardrails.max_total_steps_per_run must be >= 1")
+	}
+	if cfg.Guardrails.MaxRunDurationMS < 1 {
+		return errors.New("guardrails.max_run_duration_ms must be >= 1")
+	}
+	if cfg.Guardrails.MaxConsecutiveStepFailures < 1 {
+		return errors.New("guardrails.max_consecutive_step_failures must be >= 1")
 	}
 
 	return nil

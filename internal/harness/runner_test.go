@@ -48,9 +48,10 @@ type subcallAwareInference struct {
 }
 
 type recursiveTimeoutInference struct {
-	mu            sync.Mutex
-	callCount     int
-	childDeadline time.Duration
+	mu               sync.Mutex
+	callCount        int
+	childHasDeadline bool
+	childDeadline    time.Duration
 }
 
 type recursiveLevelTimeoutInference struct {
@@ -64,6 +65,11 @@ type childFailureInference struct {
 	mu       sync.Mutex
 	call     int
 	requests []inference.Request
+}
+
+type totalStepsGuardrailInference struct {
+	mu   sync.Mutex
+	call int
 }
 
 func (s *subcallAwareInference) Infer(_ context.Context, request inference.Request) (inference.Result, error) {
@@ -112,6 +118,7 @@ func (s *recursiveTimeoutInference) Infer(ctx context.Context, request inference
 	case 2:
 		if deadline, ok := ctx.Deadline(); ok {
 			s.mu.Lock()
+			s.childHasDeadline = true
 			s.childDeadline = time.Until(deadline)
 			s.mu.Unlock()
 		}
@@ -171,6 +178,19 @@ func (s *childFailureInference) Infer(_ context.Context, request inference.Reque
 		return hydrateFinalEvidenceRef(finalResult("done"), request), nil
 	default:
 		return inference.Result{}, errors.New("unexpected inference call")
+	}
+}
+
+func (s *totalStepsGuardrailInference) Infer(_ context.Context, request inference.Request) (inference.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.call++
+	switch s.call {
+	case 1:
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; _, err := rlm_query("child prompt", "child context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+	default:
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; fmt.Print("child step")`), request), nil
 	}
 }
 
@@ -857,6 +877,615 @@ func TestRunnerRunFailsWithOutputValidationWhenFinalEvidenceIsUnresolvable(t *te
 	if code != ErrorCodeOutputValidation {
 		t.Fatalf("expected output_validation typed error, got %q", code)
 	}
+}
+
+func TestRunnerRunFailsWhenMaxStepsPerNodeGuardrailBreached(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; fmt.Print("loop")`)},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxStepsPerNode = 1
+	runConfig.Guardrails.MaxTotalStepsPerRun = 10
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+	code, ok := CodeOf(err)
+	if !ok || code != ErrorCodeLimitExceeded {
+		t.Fatalf("expected typed limit-exceeded error, got %v", err)
+	}
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxStepsPerNode {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxStepsPerNode, limit.LimitKey)
+	}
+
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.LimitKey == nil || *payload.LimitKey != limitKeyMaxStepsPerNode {
+		t.Fatalf("expected run.failed limit_key %q, got %v", limitKeyMaxStepsPerNode, payload.LimitKey)
+	}
+}
+
+func TestRunnerRunFailsWhenMaxTotalStepsPerRunGuardrailBreachedAcrossRecursiveNodes(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &totalStepsGuardrailInference{}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxStepsPerNode = 2
+	runConfig.Guardrails.MaxTotalStepsPerRun = 2
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+	code, ok := CodeOf(err)
+	if !ok || code != ErrorCodeLimitExceeded {
+		t.Fatalf("expected typed limit-exceeded error, got %v", err)
+	}
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalStepsPerRun {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalStepsPerRun, limit.LimitKey)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countFailedActionEvents(events) != 1 {
+		t.Fatalf("expected one failed parent node.action.executed event, got %d", countFailedActionEvents(events))
+	}
+	if countEventType(events, runtime.EventTypeNodeStepCompleted) != 2 {
+		t.Fatalf("expected both child and parent steps to emit node.step.completed, got %d", countEventType(events, runtime.EventTypeNodeStepCompleted))
+	}
+}
+
+func TestRunnerRunAbortsParentActionAfterFatalChildGuardrailBreach(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; _, _ = rlm_query("child prompt", "child context"); fmt.Print("after-child-limit")`)},
+			{result: continueResult(`import "fmt"; fmt.Print("child step")`)},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxStepsPerNode = 1
+	runConfig.Guardrails.MaxTotalStepsPerRun = 10
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+
+	for _, artifact := range mustReadActionArtifacts(t, baseDir) {
+		if strings.Contains(artifact.Stdout, "after-child-limit") {
+			t.Fatalf("expected parent action to abort before post-breach code runs, got stdout %q", artifact.Stdout)
+		}
+	}
+}
+
+func TestRunnerRunStopsBatchedRecursiveSubcallsAfterFatalGuardrailBreach(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; calls := []map[string]string{{"prompt":"child1","context":"ctx1"},{"prompt":"child2","context":"ctx2"}}; _, _ = rlm_query_batched(calls); fmt.Print("after-batched-child-limit")`)},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 1
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeSubcallExecuted) != 1 {
+		t.Fatalf("expected batched recursive subcalls to stop after first fatal guardrail, got %d node.subcall.executed events", countEventType(events, runtime.EventTypeNodeSubcallExecuted))
+	}
+	for _, artifact := range mustReadActionArtifacts(t, baseDir) {
+		if strings.Contains(artifact.Stdout, "after-batched-child-limit") {
+			t.Fatalf("expected batched parent action to abort before post-breach code runs, got stdout %q", artifact.Stdout)
+		}
+	}
+}
+
+func TestRunnerRunFailsWhenMaxRunDurationGuardrailBreached(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; import "time"; time.Sleep(50 * time.Millisecond); fmt.Print("after-sleep")`)},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxRunDurationMS = 15
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 20
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxRunDurationMS {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxRunDurationMS, limit.LimitKey)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeStepCompleted) != 0 {
+		t.Fatalf("expected interrupted duration-guardrail step to avoid node.step.completed, got %d", countEventType(events, runtime.EventTypeNodeStepCompleted))
+	}
+	actionArtifacts, err := filepath.Glob(filepath.Join(baseDir, "*", "artifacts", "node", "*", "step", "*", "action-1.json"))
+	if err != nil {
+		t.Fatalf("expected action artifact glob success, got %v", err)
+	}
+	for _, artifactPath := range actionArtifacts {
+		artifactBytes, readErr := os.ReadFile(artifactPath)
+		if readErr != nil {
+			t.Fatalf("expected action artifact read success, got %v", readErr)
+		}
+
+		var artifact ActionArtifact
+		if err := json.Unmarshal(artifactBytes, &artifact); err != nil {
+			t.Fatalf("expected artifact decode success, got %v", err)
+		}
+		if strings.Contains(artifact.Stdout, "after-sleep") {
+			t.Fatalf("expected duration guardrail to interrupt before post-sleep output, got stdout %q", artifact.Stdout)
+		}
+	}
+}
+
+func TestRunnerRunFailsWhenMaxRunDurationBudgetIsConsumedBeforeFirstStep(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResult("done")},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxRunDurationMS = 5
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 20
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			time.Sleep(20 * time.Millisecond)
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure before first step")
+	}
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxRunDurationMS {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxRunDurationMS, limit.LimitKey)
+	}
+	if inferenceClient.calls != 0 {
+		t.Fatalf("expected no inference calls once startup already consumed the budget, got %d", inferenceClient.calls)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeStepStarted) != 0 {
+		t.Fatalf("expected no node.step.started events, got %d", countEventType(events, runtime.EventTypeNodeStepStarted))
+	}
+}
+
+func TestRunnerRunCancelsRecursiveSubcallsWhenRunDurationGuardrailExpires(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &recursiveTimeoutInference{}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxRunDurationMS = 50
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 20
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithREPLSessionFactory(repl.NewFactory(
+			repl.WithActionTimeout(2*time.Second),
+			repl.WithRecursiveSubcallTimeout(300*time.Millisecond),
+		)),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxRunDurationMS {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxRunDurationMS, limit.LimitKey)
+	}
+
+	inferenceClient.mu.Lock()
+	childHasDeadline := inferenceClient.childHasDeadline
+	observedDeadline := inferenceClient.childDeadline
+	inferenceClient.mu.Unlock()
+	if !childHasDeadline {
+		t.Fatal("expected child inference deadline to be recorded")
+	}
+	if observedDeadline > 150*time.Millisecond {
+		t.Fatalf("expected recursive child deadline to honor run-duration guardrail, got %s", observedDeadline)
+	}
+}
+
+func TestRunnerRunFailsWhenConsecutiveFailedContinueActionsGuardrailBreached(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult("if {")},
+			{result: continueResult("if {")},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxConsecutiveStepFailures = 2
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 20
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxConsecutiveStepErrors {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxConsecutiveStepErrors, limit.LimitKey)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeStepCompleted) != 2 {
+		t.Fatalf("expected both failed continue steps to emit node.step.completed, got %d", countEventType(events, runtime.EventTypeNodeStepCompleted))
+	}
+}
+
+func TestRunnerRunFailsWhenChildGuardrailBreachAlsoTriggersParentExecError(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; _, err := rlm_query("child prompt", "child context"); if err != nil { panic(err) }`)},
+			{result: continueResult("if {")},
+			{result: continueResult("if {")},
+			{result: finalResult("should not reach")},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxConsecutiveStepFailures = 2
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 20
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+	code, ok := CodeOf(err)
+	if !ok || code != ErrorCodeLimitExceeded {
+		t.Fatalf("expected typed limit-exceeded error, got %v", err)
+	}
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxConsecutiveStepErrors {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxConsecutiveStepErrors, limit.LimitKey)
+	}
+	if inferenceClient.calls != 3 {
+		t.Fatalf("expected guardrail terminalization before root final inference, got %d inference calls", inferenceClient.calls)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeRunFailed) != 1 {
+		t.Fatalf("expected one run.failed event, got %d", countEventType(events, runtime.EventTypeRunFailed))
+	}
+}
+
+func TestRunnerRunResetsConsecutiveFailureCounterAfterSuccessfulContinue(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult("if {")},
+			{result: continueResult(`import "fmt"; fmt.Print("ok")`)},
+			{result: continueResult("if {")},
+			{result: finalResult("done")},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxConsecutiveStepFailures = 2
+	runConfig.Guardrails.MaxStepsPerNode = 10
+	runConfig.Guardrails.MaxTotalStepsPerRun = 20
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err != nil {
+		t.Fatalf("expected run completion when failure counter resets, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+}
+
+func TestRunnerRunOmitsNodeFailedStepIDWhenGuardrailBlocksNextStepStart(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; fmt.Print("loop")`)},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxStepsPerNode = 1
+	runConfig.Guardrails.MaxTotalStepsPerRun = 10
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected guardrail run failure")
+	}
+
+	payload := mustReadNodeFailedPayload(t, baseDir)
+	if payload.FailedStepID != nil {
+		t.Fatalf("expected node.failed failed_step_id to be omitted for pre-step guardrail breach, got %q", *payload.FailedStepID)
+	}
+}
+
+func mustReadNodeFailedPayload(t *testing.T, runsBaseDir string) runtime.NodeFailedPayload {
+	t.Helper()
+
+	events := mustReadPersistedEvents(t, runsBaseDir)
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != runtime.EventTypeNodeFailed {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.NodeFailedPayload)
+		if !ok {
+			t.Fatalf("expected node.failed payload type, got %T", event.Payload)
+		}
+		return payload
+	}
+
+	t.Fatalf("expected node.failed payload in events")
+	return runtime.NodeFailedPayload{}
+}
+
+func mustReadActionArtifacts(t *testing.T, runsBaseDir string) []ActionArtifact {
+	t.Helper()
+
+	actionArtifacts, err := filepath.Glob(filepath.Join(runsBaseDir, "*", "artifacts", "node", "*", "step", "*", "action-1.json"))
+	if err != nil {
+		t.Fatalf("expected action artifact glob success, got %v", err)
+	}
+	if len(actionArtifacts) == 0 {
+		t.Fatal("expected at least one action artifact")
+	}
+
+	artifacts := make([]ActionArtifact, 0, len(actionArtifacts))
+	for _, artifactPath := range actionArtifacts {
+		artifactBytes, readErr := os.ReadFile(artifactPath)
+		if readErr != nil {
+			t.Fatalf("expected action artifact read success, got %v", readErr)
+		}
+
+		var artifact ActionArtifact
+		if err := json.Unmarshal(artifactBytes, &artifact); err != nil {
+			t.Fatalf("expected artifact decode success, got %v", err)
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	return artifacts
+}
+
+func mustReadRunFailedPayload(t *testing.T, runsBaseDir string) runtime.RunFailedPayload {
+	t.Helper()
+
+	events := mustReadPersistedEvents(t, runsBaseDir)
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != runtime.EventTypeRunFailed {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.RunFailedPayload)
+		if !ok {
+			t.Fatalf("expected run.failed payload type, got %T", event.Payload)
+		}
+		return payload
+	}
+
+	t.Fatalf("expected run.failed payload in events")
+	return runtime.RunFailedPayload{}
+}
+
+func mustReadPersistedEvents(t *testing.T, runsBaseDir string) []runtime.EventEnvelope {
+	t.Helper()
+
+	eventsFiles, err := filepath.Glob(filepath.Join(runsBaseDir, "*", "events.jsonl"))
+	if err != nil {
+		t.Fatalf("expected events glob success, got %v", err)
+	}
+	if len(eventsFiles) != 1 {
+		t.Fatalf("expected one events file, got %d", len(eventsFiles))
+	}
+
+	encoded, err := os.ReadFile(eventsFiles[0])
+	if err != nil {
+		t.Fatalf("expected events file read success, got %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(encoded)), "\n")
+	events := make([]runtime.EventEnvelope, 0, len(lines))
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		event, parseErr := runtime.ParseEventEnvelopeStrict([]byte(line))
+		if parseErr != nil {
+			t.Fatalf("expected parse success for persisted event, got %v", parseErr)
+		}
+		events = append(events, event)
+	}
+
+	return events
+}
+
+func countEventType(events []runtime.EventEnvelope, eventType runtime.EventType) int {
+	count := 0
+	for _, event := range events {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+func countFailedActionEvents(events []runtime.EventEnvelope) int {
+	count := 0
+	for _, event := range events {
+		if event.Type != runtime.EventTypeNodeActionExecuted {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.NodeActionExecutedPayload)
+		if ok && payload.Status == runtime.ActionExecutionStatusFailed {
+			count++
+		}
+	}
+	return count
 }
 
 func continueResult(replCode string) inference.Result {

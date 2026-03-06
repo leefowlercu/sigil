@@ -597,3 +597,132 @@ func TestParseEventEnvelopeStrictRejectsInvalidStepTurnAndActionPayloadInvariant
 		})
 	}
 }
+
+func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+
+	testCases := []struct {
+		name          string
+		payload       map[string]any
+		expectInvalid bool
+	}{
+		{
+			name: "valid guardrail metadata",
+			payload: map[string]any{
+				"status":           "failed",
+				"error_code":       "harness_limit_exceeded",
+				"error_message":    "guardrail breached",
+				"failed_node_id":   nodeID,
+				"failed_step_id":   mustUUIDv7String(t),
+				"limit_key":        "max_steps_per_node",
+				"configured_value": "1",
+				"observed_value":   "1",
+				"retryable":        false,
+			},
+			expectInvalid: false,
+		},
+		{
+			name: "limit key missing configured value",
+			payload: map[string]any{
+				"status":         "failed",
+				"error_code":     "harness_limit_exceeded",
+				"error_message":  "guardrail breached",
+				"failed_node_id": nodeID,
+				"limit_key":      "max_steps_per_node",
+				"observed_value": "1",
+				"retryable":      false,
+			},
+			expectInvalid: true,
+		},
+		{
+			name: "configured value without limit key remains valid",
+			payload: map[string]any{
+				"status":           "failed",
+				"error_code":       "harness_limit_exceeded",
+				"error_message":    "guardrail breached",
+				"failed_node_id":   nodeID,
+				"configured_value": "1",
+				"retryable":        false,
+			},
+			expectInvalid: false,
+		},
+		{
+			name: "failed step id must be uuidv7",
+			payload: map[string]any{
+				"status":           "failed",
+				"error_code":       "harness_limit_exceeded",
+				"error_message":    "guardrail breached",
+				"failed_node_id":   nodeID,
+				"failed_step_id":   "not-uuidv7",
+				"limit_key":        "max_steps_per_node",
+				"configured_value": "1",
+				"observed_value":   "1",
+				"retryable":        false,
+			},
+			expectInvalid: true,
+		},
+		{
+			name: "failed step id must not be null when present",
+			payload: map[string]any{
+				"status":           "failed",
+				"error_code":       "harness_limit_exceeded",
+				"error_message":    "guardrail breached",
+				"failed_node_id":   nodeID,
+				"failed_step_id":   nil,
+				"limit_key":        "max_steps_per_node",
+				"configured_value": "1",
+				"observed_value":   "1",
+				"retryable":        false,
+			},
+			expectInvalid: true,
+		},
+		{
+			name: "guardrail metadata must not be null when present",
+			payload: map[string]any{
+				"status":           "failed",
+				"error_code":       "harness_limit_exceeded",
+				"error_message":    "guardrail breached",
+				"failed_node_id":   nodeID,
+				"limit_key":        nil,
+				"configured_value": nil,
+				"observed_value":   nil,
+				"retryable":        false,
+			},
+			expectInvalid: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := map[string]any{
+				"event_id":       mustUUIDv7String(t),
+				"schema_version": SchemaVersionV1,
+				"run_id":         runID,
+				"seq":            2,
+				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+				"type":           EventTypeRunFailed,
+				"causation_id":   mustUUIDv7String(t),
+				"correlation_id": runID,
+				"payload":        testCase.payload,
+			}
+
+			serialized, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("expected serialization success, got %v", err)
+			}
+
+			_, err = ParseEventEnvelopeStrict(serialized)
+			if testCase.expectInvalid {
+				if !errors.Is(err, ErrInvalidEvent) {
+					t.Fatalf("expected ErrInvalidEvent, got %v", err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected success, got %v", err)
+			}
+		})
+	}
+}

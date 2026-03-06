@@ -8,13 +8,14 @@ type Config struct {
 
 // RunConfig is the typed run configuration contract for sigil.
 type RunConfig struct {
-	SystemPromptAppend string       `yaml:"system_prompt_append" mapstructure:"system_prompt_append"`
-	Prompt             string       `yaml:"prompt" mapstructure:"prompt"`
-	PromptTemplate     string       `yaml:"prompt_template" mapstructure:"prompt_template"`
-	Context            string       `yaml:"context" mapstructure:"context"`
-	ContextTemplate    string       `yaml:"context_template" mapstructure:"context_template"`
-	LLM                RunLLMConfig `yaml:"llm" mapstructure:"llm"`
-	RLM                RunRLMConfig `yaml:"rlm" mapstructure:"rlm"`
+	SystemPromptAppend string              `yaml:"system_prompt_append" mapstructure:"system_prompt_append"`
+	Prompt             string              `yaml:"prompt" mapstructure:"prompt"`
+	PromptTemplate     string              `yaml:"prompt_template" mapstructure:"prompt_template"`
+	Context            string              `yaml:"context" mapstructure:"context"`
+	ContextTemplate    string              `yaml:"context_template" mapstructure:"context_template"`
+	LLM                RunLLMConfig        `yaml:"llm" mapstructure:"llm"`
+	RLM                RunRLMConfig        `yaml:"rlm" mapstructure:"rlm"`
+	Guardrails         RunGuardrailsConfig `yaml:"guardrails" mapstructure:"guardrails"`
 }
 
 // RunLLMConfig defines LLM-related run configuration.
@@ -43,4 +44,12 @@ type RunOpenRouterConfig struct {
 type RunRLMConfig struct {
 	Enabled  bool `yaml:"enabled" mapstructure:"enabled"`
 	MaxDepth int  `yaml:"max_depth" mapstructure:"max_depth"`
+}
+
+// RunGuardrailsConfig defines deterministic harness runtime guardrails.
+type RunGuardrailsConfig struct {
+	MaxStepsPerNode            int `yaml:"max_steps_per_node" mapstructure:"max_steps_per_node"`
+	MaxTotalStepsPerRun        int `yaml:"max_total_steps_per_run" mapstructure:"max_total_steps_per_run"`
+	MaxRunDurationMS           int `yaml:"max_run_duration_ms" mapstructure:"max_run_duration_ms"`
+	MaxConsecutiveStepFailures int `yaml:"max_consecutive_step_failures" mapstructure:"max_consecutive_step_failures"`
 }

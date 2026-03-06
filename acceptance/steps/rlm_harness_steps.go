@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -81,6 +82,15 @@ type rlmAcceptanceState struct {
 	recursiveCancelSubcallErrCh    chan error
 	recursiveCancelExecErrCh       chan error
 	recursiveCancelExecErr         error
+
+	guardrailFixture          string
+	guardrailRunResult        sigilharness.RunResult
+	guardrailRunErr           error
+	guardrailRunFailedPayload sigilruntime.RunFailedPayload
+	guardrailPersistedEvents  []sigilruntime.EventEnvelope
+	guardrailPayload          map[string]any
+	guardrailPayloadValidated bool
+	guardrailPayloadErr       error
 }
 
 type acceptanceSubcalls struct {
@@ -225,6 +235,24 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^fatal REPL infrastructure failure occurs$`, world.fatalREPLInfrastructureFailureOccurs)
 	ctx.Step(`^harness handles failure propagation$`, world.harnessHandlesFailurePropagation)
 	ctx.Step(`^run transitions to failed with typed error metadata$`, world.runTransitionsToFailedWithTypedErrorMetadata)
+	ctx.Step(`^run\.failed payload includes deterministic guardrail metadata$`, world.runfailedPayloadIncludesDeterministicGuardrailMetadata)
+	ctx.Step(`^run\.failed payload includes limit_key without configured_value or observed_value$`, world.runfailedPayloadIncludesLimit_keyWithoutConfigured_valueOrObserved_value)
+	ctx.Step(`^run\.failed payload includes non-uuidv7 failed_step_id$`, world.runfailedPayloadIncludesNonuuidv7Failed_step_id)
+	ctx.Step(`^strict payload schema validation is executed for run\.failed$`, world.strictPayloadSchemaValidationIsExecutedForRunfailed)
+	ctx.Step(`^run\.failed payload validation succeeds$`, world.runfailedPayloadValidationSucceeds)
+	ctx.Step(`^run\.failed payload validation fails$`, world.runfailedPayloadValidationFails)
+	ctx.Step(`^deterministic runtime guardrail fixture \"([^\"]*)\" is prepared$`, world.deterministicRuntimeGuardrailFixtureIsPrepared)
+	ctx.Step(`^deterministic runtime guardrail harness run executes$`, world.deterministicRuntimeGuardrailHarnessRunExecutes)
+	ctx.Step(`^deterministic runtime guardrail breach uses limit key \"([^\"]*)\"$`, world.deterministicRuntimeGuardrailBreachUsesLimitKey)
+	ctx.Step(`^a user runs guardrail-breach harness entrypoint$`, world.aUserRunsGuardrailbreachHarnessEntrypoint)
+	ctx.Step(`^deterministic runtime guardrail reset fixture completes successfully$`, world.deterministicRuntimeGuardrailResetFixtureCompletesSuccessfully)
+	ctx.Step(`^run\.failed includes deterministic runtime guardrail metadata$`, world.runfailedIncludesDeterministicRuntimeGuardrailMetadata)
+	ctx.Step(`^run\.failed includes failed_node_id and optional failed_step_id for guardrail breaches$`, world.runfailedIncludesFailed_node_idAndOptionalFailed_step_idForGuardrailBreaches)
+	ctx.Step(`^deterministic runtime guardrail parity is preserved for recursive and non-recursive profiles$`, world.deterministicRuntimeGuardrailParityIsPreservedForRecursiveAndNonrecursiveProfiles)
+	ctx.Step(`^max_run_duration_ms interrupts the active step before completion$`, world.max_run_duration_msInterruptsTheActiveStepBeforeCompletion)
+	ctx.Step(`^deterministic runtime governance guardrails are defined in this phase$`, world.deterministicRuntimeGovernanceGuardrailsAreDefinedInThisPhase)
+	ctx.Step(`^guardrail scope is inspected$`, world.guardrailScopeIsInspected)
+	ctx.Step(`^token and cost guardrails are deferred$`, world.tokenAndCostGuardrailsAreDeferred)
 
 	registerRLMBoundedInputSteps(ctx, world)
 }
@@ -1555,4 +1583,615 @@ func (w *harnessWorld) runTransitionsToFailedWithTypedErrorMetadata() error {
 		return nil
 	}
 	return fmt.Errorf("expected run.failed event")
+}
+
+type guardrailFixtureInference struct {
+	fixture string
+	calls   int
+}
+
+func (g *guardrailFixtureInference) Infer(_ context.Context, request sigilinference.Request) (sigilinference.Result, error) {
+	g.calls++
+	switch g.fixture {
+	case "max_total_steps_per_run":
+		switch g.calls {
+		case 1:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; _, err := rlm_query("child prompt", "child context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+		default:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; fmt.Print("child")`), request), nil
+		}
+	case "max_run_duration_ms":
+		if g.calls == 1 {
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; import "time"; time.Sleep(50 * time.Millisecond); fmt.Print("after-sleep")`), request), nil
+		}
+		return hydrateBoundedFinalEvidenceRef(guardrailFinalResult("done"), request), nil
+	case "max_consecutive_step_failures":
+		return hydrateBoundedFinalEvidenceRef(guardrailContinueResult("if {"), request), nil
+	case "recursive_profile_parity":
+		switch g.calls {
+		case 1:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; _, err := rlm_query("child prompt", "child context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+		default:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; fmt.Print("child")`), request), nil
+		}
+	case "consecutive_failure_reset":
+		switch g.calls {
+		case 1:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult("if {"), request), nil
+		case 2:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; fmt.Print("ok")`), request), nil
+		case 3:
+			return hydrateBoundedFinalEvidenceRef(guardrailContinueResult("if {"), request), nil
+		default:
+			return hydrateBoundedFinalEvidenceRef(guardrailFinalResult("done"), request), nil
+		}
+	default:
+		return hydrateBoundedFinalEvidenceRef(guardrailContinueResult(`import "fmt"; fmt.Print("loop")`), request), nil
+	}
+}
+
+func guardrailContinueResult(code string) sigilinference.Result {
+	return sigilinference.Result{
+		SchemaID: "sigil.rlm.response.v1",
+		ValidatedPayload: map[string]any{
+			"decision": "continue",
+			"continuation": map[string]any{
+				"repl_code":            code,
+				"intent":               "exercise deterministic guardrail",
+				"expected_observation": "guardrail accounting progresses",
+			},
+		},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_continue",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
+}
+
+func guardrailFinalResult(answer string) sigilinference.Result {
+	return sigilinference.Result{
+		SchemaID: "sigil.rlm.response.v1",
+		ValidatedPayload: map[string]any{
+			"decision": "final",
+			"final": map[string]any{
+				"answer":   answer,
+				"evidence": []any{map[string]any{"ref": "__context_ref__"}},
+			},
+		},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_final",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
+}
+
+func (w *harnessWorld) runfailedPayloadIncludesDeterministicGuardrailMetadata() error {
+	w.rlm().guardrailPayload = map[string]any{
+		"status":           "failed",
+		"error_code":       "harness_limit_exceeded",
+		"error_message":    "guardrail breached",
+		"failed_node_id":   mustUUIDv7StringOrPanic(),
+		"failed_step_id":   mustUUIDv7StringOrPanic(),
+		"limit_key":        "max_steps_per_node",
+		"configured_value": "1",
+		"observed_value":   "1",
+		"retryable":        false,
+	}
+	w.rlm().guardrailPayloadValidated = false
+	w.rlm().guardrailPayloadErr = nil
+	return nil
+}
+
+func (w *harnessWorld) runfailedPayloadIncludesLimit_keyWithoutConfigured_valueOrObserved_value() error {
+	w.rlm().guardrailPayload = map[string]any{
+		"status":         "failed",
+		"error_code":     "harness_limit_exceeded",
+		"error_message":  "guardrail breached",
+		"failed_node_id": mustUUIDv7StringOrPanic(),
+		"limit_key":      "max_steps_per_node",
+		"retryable":      false,
+	}
+	w.rlm().guardrailPayloadValidated = false
+	w.rlm().guardrailPayloadErr = nil
+	return nil
+}
+
+func (w *harnessWorld) runfailedPayloadIncludesNonuuidv7Failed_step_id() error {
+	w.rlm().guardrailPayload = map[string]any{
+		"status":           "failed",
+		"error_code":       "harness_limit_exceeded",
+		"error_message":    "guardrail breached",
+		"failed_node_id":   mustUUIDv7StringOrPanic(),
+		"failed_step_id":   "not-uuidv7",
+		"limit_key":        "max_steps_per_node",
+		"configured_value": "1",
+		"observed_value":   "1",
+		"retryable":        false,
+	}
+	w.rlm().guardrailPayloadValidated = false
+	w.rlm().guardrailPayloadErr = nil
+	return nil
+}
+
+func validateRunFailedPayload(payload map[string]any) error {
+	eventID := mustUUIDv7StringOrPanic()
+	causationID := mustUUIDv7StringOrPanic()
+	runID := mustUUIDv7StringOrPanic()
+	encoded, err := marshalEnvelope(map[string]any{
+		"event_id":       eventID,
+		"schema_version": sigilruntime.SchemaVersionV1,
+		"run_id":         runID,
+		"seq":            2,
+		"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+		"type":           sigilruntime.EventTypeRunFailed,
+		"causation_id":   causationID,
+		"correlation_id": runID,
+		"payload":        payload,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = sigilruntime.ParseEventEnvelopeStrict(encoded)
+	return err
+}
+
+func (w *harnessWorld) strictPayloadSchemaValidationIsExecutedForRunfailed() error {
+	if w.rlm().guardrailPayload == nil {
+		return fmt.Errorf("run.failed payload fixture is required")
+	}
+	w.rlm().guardrailPayloadValidated = true
+	w.rlm().guardrailPayloadErr = validateRunFailedPayload(w.rlm().guardrailPayload)
+	return nil
+}
+
+func (w *harnessWorld) runfailedPayloadValidationSucceeds() error {
+	if !w.rlm().guardrailPayloadValidated {
+		return fmt.Errorf("expected run.failed payload validation to execute")
+	}
+	if w.rlm().guardrailPayloadErr != nil {
+		return fmt.Errorf("expected run.failed payload validation success, got %v", w.rlm().guardrailPayloadErr)
+	}
+	return nil
+}
+
+func (w *harnessWorld) runfailedPayloadValidationFails() error {
+	if !w.rlm().guardrailPayloadValidated {
+		return fmt.Errorf("expected run.failed payload validation to execute")
+	}
+	if w.rlm().guardrailPayloadErr == nil {
+		return fmt.Errorf("expected run.failed payload validation failure")
+	}
+	return nil
+}
+
+func (w *harnessWorld) deterministicRuntimeGuardrailFixtureIsPrepared(name string) error {
+	w.rlm().guardrailFixture = name
+	w.rlm().guardrailRunResult = sigilharness.RunResult{}
+	w.rlm().guardrailRunErr = nil
+	w.rlm().guardrailRunFailedPayload = sigilruntime.RunFailedPayload{}
+	w.rlm().guardrailPersistedEvents = nil
+	w.rlm().guardrailPayload = nil
+	w.rlm().guardrailPayloadValidated = false
+	w.rlm().guardrailPayloadErr = nil
+	return nil
+}
+
+func (w *harnessWorld) deterministicRuntimeGuardrailHarnessRunExecutes() error {
+	fixture := w.rlm().guardrailFixture
+	if strings.TrimSpace(fixture) == "" {
+		return fmt.Errorf("guardrail fixture is required")
+	}
+
+	if fixture == "recursive_profile_parity" {
+		recPayload, recEvents, err := w.executeGuardrailFixture("recursive_profile_parity", false)
+		if err != nil {
+			return err
+		}
+		nonRecPayload, nonRecEvents, err := w.executeGuardrailFixture("recursive_profile_parity", true)
+		if err != nil {
+			return err
+		}
+		if recPayload.LimitKey == nil || nonRecPayload.LimitKey == nil {
+			return fmt.Errorf("expected limit metadata in parity fixture payloads")
+		}
+		if *recPayload.LimitKey != *nonRecPayload.LimitKey {
+			return fmt.Errorf("expected parity limit key match, got recursive=%q non_recursive=%q", *recPayload.LimitKey, *nonRecPayload.LimitKey)
+		}
+		if countEventsByType(recEvents, sigilruntime.EventTypeNodeStarted) != 2 {
+			return fmt.Errorf("expected recursive guardrail fixture to create root and child nodes, got %d node.started events", countEventsByType(recEvents, sigilruntime.EventTypeNodeStarted))
+		}
+		if countEventsByType(nonRecEvents, sigilruntime.EventTypeNodeStarted) != 1 {
+			return fmt.Errorf("expected non-recursive guardrail fixture to avoid child nodes, got %d node.started events", countEventsByType(nonRecEvents, sigilruntime.EventTypeNodeStarted))
+		}
+		w.rlm().guardrailRunFailedPayload = recPayload
+		w.rlm().bindingResult = "parity_ok"
+		return nil
+	}
+
+	payload, events, err := w.executeGuardrailFixture(fixture, false)
+	if err != nil {
+		return err
+	}
+	w.rlm().guardrailRunFailedPayload = payload
+	w.rlm().guardrailPersistedEvents = events
+	return nil
+}
+
+func (w *harnessWorld) executeGuardrailFixture(fixture string, nonRecursive bool) (sigilruntime.RunFailedPayload, []sigilruntime.EventEnvelope, error) {
+	baseDir := w.runsBaseDir()
+	w.rlm().runsBaseDir = baseDir
+	existingEvents, err := filepath.Glob(filepath.Join(baseDir, "*", "events.jsonl"))
+	if err != nil {
+		return sigilruntime.RunFailedPayload{}, nil, err
+	}
+	existingSet := make(map[string]struct{}, len(existingEvents))
+	for _, path := range existingEvents {
+		existingSet[path] = struct{}{}
+	}
+
+	cfg := guardrailRunConfig(fixture, nonRecursive)
+	runner := sigilharness.NewRunner(
+		sigilharness.WithRunsBaseDir(baseDir),
+		sigilharness.WithInferenceFactory(func(_ config.RunConfig) (sigilharness.InferenceClient, error) {
+			return &guardrailFixtureInference{fixture: fixture}, nil
+		}),
+	)
+
+	result, runErr := runner.Run(context.Background(), sigilharness.RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     cfg,
+	})
+	w.rlm().guardrailRunResult = result
+	w.rlm().guardrailRunErr = runErr
+
+	if fixture == "consecutive_failure_reset" {
+		if runErr != nil {
+			return sigilruntime.RunFailedPayload{}, nil, fmt.Errorf("expected reset fixture to complete, got %v", runErr)
+		}
+		return sigilruntime.RunFailedPayload{}, nil, nil
+	}
+
+	if runErr == nil {
+		return sigilruntime.RunFailedPayload{}, nil, fmt.Errorf("expected guardrail fixture %q to fail run", fixture)
+	}
+
+	eventsPath := result.EventsPath
+	if strings.TrimSpace(eventsPath) == "" {
+		matches, err := filepath.Glob(filepath.Join(baseDir, "*", "events.jsonl"))
+		if err != nil {
+			return sigilruntime.RunFailedPayload{}, nil, err
+		}
+		candidates := make([]string, 0, len(matches))
+		for _, path := range matches {
+			if _, seen := existingSet[path]; !seen {
+				candidates = append(candidates, path)
+			}
+		}
+		switch {
+		case len(candidates) > 0:
+			eventsPath, err = newestFileByModTime(candidates)
+		case len(matches) > 0:
+			eventsPath, err = newestFileByModTime(matches)
+		default:
+			return sigilruntime.RunFailedPayload{}, nil, fmt.Errorf("failed to resolve events file for guardrail fixture %q", fixture)
+		}
+		if err != nil {
+			return sigilruntime.RunFailedPayload{}, nil, err
+		}
+	}
+
+	events, err := readEventsFromPath(eventsPath)
+	if err != nil {
+		return sigilruntime.RunFailedPayload{}, nil, err
+	}
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != sigilruntime.EventTypeRunFailed {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.RunFailedPayload)
+		if !ok {
+			return sigilruntime.RunFailedPayload{}, nil, fmt.Errorf("expected run.failed payload type, got %T", event.Payload)
+		}
+		return payload, events, nil
+	}
+	return sigilruntime.RunFailedPayload{}, nil, fmt.Errorf("expected run.failed payload in events")
+}
+
+func guardrailRunConfig(fixture string, nonRecursive bool) config.RunConfig {
+	cfg := config.NewDefaultRunConfig()
+	cfg.Prompt = "guardrail prompt"
+	cfg.Context = "guardrail context"
+	cfg.LLM.Provider = "openai"
+	cfg.LLM.Model = "gpt-5.1"
+	cfg.LLM.Gateway = "openrouter"
+	cfg.LLM.OpenRouter.BaseURL = "http://127.0.0.1:1"
+	cfg.LLM.OpenRouter.APIKeyEnv = "OPENROUTER_API_KEY"
+	cfg.LLM.OpenRouter.RequestTimeoutMS = 100
+	cfg.RLM.Enabled = !nonRecursive
+	cfg.RLM.MaxDepth = 3
+	cfg.Guardrails.MaxStepsPerNode = 64
+	cfg.Guardrails.MaxTotalStepsPerRun = 256
+	cfg.Guardrails.MaxRunDurationMS = 1200000
+	cfg.Guardrails.MaxConsecutiveStepFailures = 6
+
+	switch fixture {
+	case "max_steps_per_node":
+		cfg.Guardrails.MaxStepsPerNode = 1
+		cfg.Guardrails.MaxTotalStepsPerRun = 50
+	case "recursive_profile_parity":
+		cfg.Guardrails.MaxStepsPerNode = 1
+		cfg.Guardrails.MaxTotalStepsPerRun = 50
+	case "max_total_steps_per_run":
+		cfg.Guardrails.MaxStepsPerNode = 2
+		cfg.Guardrails.MaxTotalStepsPerRun = 2
+	case "max_run_duration_ms":
+		cfg.Guardrails.MaxRunDurationMS = 15
+		cfg.Guardrails.MaxStepsPerNode = 10
+		cfg.Guardrails.MaxTotalStepsPerRun = 20
+	case "max_consecutive_step_failures":
+		cfg.Guardrails.MaxConsecutiveStepFailures = 2
+		cfg.Guardrails.MaxStepsPerNode = 10
+	case "consecutive_failure_reset":
+		cfg.Guardrails.MaxConsecutiveStepFailures = 2
+		cfg.Guardrails.MaxStepsPerNode = 10
+		cfg.Guardrails.MaxTotalStepsPerRun = 20
+	}
+
+	return cfg
+}
+
+func (w *harnessWorld) deterministicRuntimeGuardrailBreachUsesLimitKey(expected string) error {
+	payload := w.rlm().guardrailRunFailedPayload
+	if payload.LimitKey == nil {
+		return fmt.Errorf("expected run.failed limit_key metadata")
+	}
+	if *payload.LimitKey != expected {
+		return fmt.Errorf("expected limit_key %q, got %q", expected, *payload.LimitKey)
+	}
+	if w.rlm().guardrailFixture == "max_steps_per_node" {
+		if countEventsByType(w.rlm().guardrailPersistedEvents, sigilruntime.EventTypeNodeStepStarted) != 1 {
+			return fmt.Errorf("expected max_steps_per_node fixture to stop before a second node.step.started, got %d node.step.started events", countEventsByType(w.rlm().guardrailPersistedEvents, sigilruntime.EventTypeNodeStepStarted))
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) aUserRunsGuardrailbreachHarnessEntrypoint() error {
+	if err := w.prepareGuardrailCLIEntrypointFixture(w.rlm().guardrailFixture); err != nil {
+		return err
+	}
+	return w.aUserRuns("sigil run start")
+}
+
+func newestFileByModTime(paths []string) (string, error) {
+	if len(paths) == 0 {
+		return "", fmt.Errorf("no file candidates provided")
+	}
+	newestPath := paths[0]
+	newestInfo, err := os.Stat(newestPath)
+	if err != nil {
+		return "", err
+	}
+	for _, path := range paths[1:] {
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return "", statErr
+		}
+		if info.ModTime().After(newestInfo.ModTime()) {
+			newestPath = path
+			newestInfo = info
+		}
+	}
+	return newestPath, nil
+}
+
+func (w *harnessWorld) deterministicRuntimeGuardrailResetFixtureCompletesSuccessfully() error {
+	if w.rlm().guardrailRunErr != nil {
+		return fmt.Errorf("expected reset fixture success, got %v", w.rlm().guardrailRunErr)
+	}
+	if w.rlm().guardrailRunResult.State != "completed" {
+		return fmt.Errorf("expected reset fixture completed run, got %q", w.rlm().guardrailRunResult.State)
+	}
+	return nil
+}
+
+func (w *harnessWorld) runfailedIncludesDeterministicRuntimeGuardrailMetadata() error {
+	payload := w.rlm().guardrailRunFailedPayload
+	if payload.ErrorCode != string(sigilharness.ErrorCodeLimitExceeded) {
+		return fmt.Errorf("expected error_code %q, got %q", sigilharness.ErrorCodeLimitExceeded, payload.ErrorCode)
+	}
+	if payload.LimitKey == nil || strings.TrimSpace(*payload.LimitKey) == "" {
+		return fmt.Errorf("expected non-empty limit_key")
+	}
+	if payload.ConfiguredValue == nil || strings.TrimSpace(*payload.ConfiguredValue) == "" {
+		return fmt.Errorf("expected non-empty configured_value")
+	}
+	if payload.ObservedValue == nil || strings.TrimSpace(*payload.ObservedValue) == "" {
+		return fmt.Errorf("expected non-empty observed_value")
+	}
+	return nil
+}
+
+func (w *harnessWorld) runfailedIncludesFailed_node_idAndOptionalFailed_step_idForGuardrailBreaches() error {
+	payload := w.rlm().guardrailRunFailedPayload
+	if payload.FailedNodeID == nil || strings.TrimSpace(*payload.FailedNodeID) == "" {
+		return fmt.Errorf("expected non-empty failed_node_id")
+	}
+	if payload.FailedStepID != nil && strings.TrimSpace(*payload.FailedStepID) == "" {
+		return fmt.Errorf("expected failed_step_id to be non-empty when present")
+	}
+	return nil
+}
+
+func (w *harnessWorld) deterministicRuntimeGuardrailParityIsPreservedForRecursiveAndNonrecursiveProfiles() error {
+	if w.rlm().bindingResult != "parity_ok" {
+		return fmt.Errorf("expected recursive/non-recursive guardrail parity to be established")
+	}
+	return nil
+}
+
+func (w *harnessWorld) max_run_duration_msInterruptsTheActiveStepBeforeCompletion() error {
+	if w.rlm().guardrailFixture != "max_run_duration_ms" {
+		return fmt.Errorf("max_run_duration_ms interrupt assertion requires max_run_duration_ms fixture, got %q", w.rlm().guardrailFixture)
+	}
+	if countEventsByType(w.rlm().guardrailPersistedEvents, sigilruntime.EventTypeNodeStepCompleted) != 0 {
+		return fmt.Errorf(
+			"expected duration guardrail to interrupt before node.step.completed, got %d node.step.completed events",
+			countEventsByType(w.rlm().guardrailPersistedEvents, sigilruntime.EventTypeNodeStepCompleted),
+		)
+	}
+	artifacts, err := w.guardrailActionArtifacts()
+	if err != nil {
+		return err
+	}
+	for _, artifact := range artifacts {
+		if strings.Contains(artifact.Stdout, "after-sleep") {
+			return fmt.Errorf("expected duration guardrail to interrupt before post-sleep output, got stdout %q", artifact.Stdout)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) guardrailActionArtifacts() ([]sigilharness.ActionArtifact, error) {
+	runID := strings.TrimSpace(w.rlm().guardrailRunResult.RunID)
+	if runID == "" && len(w.rlm().guardrailPersistedEvents) > 0 {
+		runID = strings.TrimSpace(w.rlm().guardrailPersistedEvents[0].RunID)
+	}
+	if runID == "" {
+		return nil, fmt.Errorf("guardrail run_id is required")
+	}
+	artifacts := make([]sigilharness.ActionArtifact, 0, 1)
+	for _, event := range w.rlm().guardrailPersistedEvents {
+		if event.Type != sigilruntime.EventTypeNodeActionExecuted {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.NodeActionExecutedPayload)
+		if !ok {
+			return nil, fmt.Errorf("expected node.action.executed payload, got %T", event.Payload)
+		}
+		parsed, err := sigilruntime.ParseActionOutputRef(payload.OutputRef)
+		if err != nil {
+			return nil, err
+		}
+		artifactPath := filepath.Join(
+			w.rlm().runsBaseDir,
+			runID,
+			"artifacts",
+			"node",
+			parsed.NodeID,
+			"step",
+			parsed.StepID,
+			fmt.Sprintf("action-%d.json", parsed.ActionIndex),
+		)
+		bytes, err := os.ReadFile(filepath.Clean(artifactPath))
+		if err != nil {
+			return nil, err
+		}
+		var artifact sigilharness.ActionArtifact
+		if err := json.Unmarshal(bytes, &artifact); err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("expected at least one guardrail action artifact")
+	}
+	return artifacts, nil
+}
+
+func (w *harnessWorld) deterministicRuntimeGovernanceGuardrailsAreDefinedInThisPhase() error {
+	return nil
+}
+
+func (w *harnessWorld) guardrailScopeIsInspected() error {
+	typeOfGuardrails := reflect.TypeOf(config.RunGuardrailsConfig{})
+	for index := 0; index < typeOfGuardrails.NumField(); index++ {
+		fieldName := strings.ToLower(typeOfGuardrails.Field(index).Name)
+		if strings.Contains(fieldName, "token") || strings.Contains(fieldName, "cost") {
+			return fmt.Errorf("unexpected token/cost guardrail field %q", typeOfGuardrails.Field(index).Name)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) tokenAndCostGuardrailsAreDeferred() error {
+	return nil
+}
+
+func (w *harnessWorld) prepareGuardrailCLIEntrypointFixture(fixture string) error {
+	if strings.TrimSpace(fixture) == "" {
+		return fmt.Errorf("guardrail fixture is required")
+	}
+	if fixture != "max_steps_per_node" {
+		return fmt.Errorf("guardrail CLI fixture %q is not supported", fixture)
+	}
+	if w.inferenceMockServer == nil {
+		w.inferenceMockServer = newOpenRouterMockServer()
+	}
+	w.inferenceMockServer.SetResponses(mockGatewayResponse{
+		statusCode: 200,
+		body:       guardrailContinueGatewayResponseBody(`import "fmt"; fmt.Print("loop")`),
+	})
+	if err := osSetEnv("OPENROUTER_API_KEY", "test-openrouter-key"); err != nil {
+		return err
+	}
+	if err := osSetEnv("SIGIL_RUN_LLM_OPENROUTER_BASE_URL", w.inferenceMockServer.URL()); err != nil {
+		return err
+	}
+	if err := osSetEnv("SIGIL_RUN_LLM_OPENROUTER_API_KEY_ENV", "OPENROUTER_API_KEY"); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Clean(config.DefaultRunConfigPath), []byte(guardrailRunConfigYAML(fixture, false)), 0o644)
+}
+
+func guardrailRunConfigYAML(fixture string, nonRecursive bool) string {
+	cfg := guardrailRunConfig(fixture, nonRecursive)
+	return fmt.Sprintf(
+		"prompt: %s\ncontext: %s\nllm:\n  provider: %s\n  model: %s\nrlm:\n  enabled: %t\n  max_depth: %d\nguardrails:\n  max_steps_per_node: %d\n  max_total_steps_per_run: %d\n  max_run_duration_ms: %d\n  max_consecutive_step_failures: %d\n",
+		cfg.Prompt,
+		cfg.Context,
+		cfg.LLM.Provider,
+		cfg.LLM.Model,
+		cfg.RLM.Enabled,
+		cfg.RLM.MaxDepth,
+		cfg.Guardrails.MaxStepsPerNode,
+		cfg.Guardrails.MaxTotalStepsPerRun,
+		cfg.Guardrails.MaxRunDurationMS,
+		cfg.Guardrails.MaxConsecutiveStepFailures,
+	)
+}
+
+func countEventsByType(events []sigilruntime.EventEnvelope, eventType sigilruntime.EventType) int {
+	count := 0
+	for _, event := range events {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+func guardrailContinueGatewayResponseBody(replCode string) map[string]any {
+	return map[string]any{
+		"id":       "resp_guardrail_continue",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": fmt.Sprintf(`{"decision":"continue","continuation":{"repl_code":%q,"intent":"exercise guardrail path","expected_observation":"loop output is recorded"}}`, replCode),
+					},
+				},
+			},
+		},
+	}
 }

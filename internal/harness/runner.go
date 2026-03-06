@@ -25,6 +25,7 @@ type executionContext struct {
 	turnOutputs  *TurnOutputStore
 	systemPrompt string
 	nonRecursive bool
+	guardrails   *deterministicGuardrails
 }
 
 type nodeExecutionResult struct {
@@ -54,6 +55,14 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	}
 	if r.inferenceFactory == nil {
 		return RunResult{}, WrapError(ErrorCodeInfrastructure, "inference factory is required", nil)
+	}
+	runStart := time.Now().UTC()
+	guardrails := newDeterministicGuardrails(input.RunConfig.Guardrails, runStart)
+	guardrailRunContext := runContext
+	if deadline := guardrails.Deadline(); !deadline.IsZero() {
+		var cancel context.CancelFunc
+		guardrailRunContext, cancel = context.WithDeadline(runContext, deadline)
+		defer cancel()
 	}
 
 	logger.Info("starting harness run",
@@ -156,7 +165,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 
 	execCtx := executionContext{
 		runConfig:    input.RunConfig,
-		runContext:   runContext,
+		runContext:   guardrailRunContext,
 		lifecycle:    lifecycle,
 		inference:    inferenceClient,
 		sessions:     sessions,
@@ -165,9 +174,10 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		turnOutputs:  turnOutputs,
 		systemPrompt: effectiveSystemPrompt,
 		nonRecursive: !input.RunConfig.RLM.Enabled,
+		guardrails:   guardrails,
 	}
 
-	rootResult, err := r.executeNode(runContext, &execCtx, rootNode, effectivePrompt, effectiveContext)
+	rootResult, err := r.executeNode(guardrailRunContext, &execCtx, rootNode, effectivePrompt, effectiveContext)
 	if err != nil {
 		failedNodeID := rootNode.ID
 		logger.Error("root node execution failed",
@@ -254,6 +264,11 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 	contextMetadata := buildContextMetadata(baseContext, contextRef)
 	var previousFeedback *PreviousActionFeedback
 	for {
+		failedStepID = nil
+		if err := execCtx.guardrails.CheckBeforeStep(node.ID, time.Now().UTC()); err != nil {
+			logger.Error("deterministic runtime guardrail blocked new step start", "error", err)
+			return nodeExecutionResult{}, err
+		}
 		stepStart := time.Now().UTC()
 
 		stepStarted, err := execCtx.lifecycle.AppendNodeStepStarted(node.ID)
@@ -261,6 +276,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to append node.step.started", "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.started", err)
 		}
+		execCtx.guardrails.RecordStepStarted(node.ID)
 		stepID := stepStarted.StepID
 		failedStepID = &stepID
 		logger.Debug("started node step",
@@ -318,6 +334,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			},
 		})
 		if err != nil {
+			if limitErr := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); limitErr != nil {
+				logger.Error("deterministic runtime guardrail interrupted active inference step",
+					"step_id", stepStarted.StepID,
+					"error", limitErr,
+				)
+				return nodeExecutionResult{}, limitErr
+			}
 			logger.Error("inference execution failed",
 				"step_id", stepStarted.StepID,
 				"error", err,
@@ -389,7 +412,34 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 					"step_id", stepStarted.StepID,
 					"error", actionErr,
 				)
+				if code, ok := CodeOf(actionErr); ok && code == ErrorCodeLimitExceeded {
+					if actionPayload.StepID != "" {
+						if err := appendContinueStepCompleted(execCtx.lifecycle, node.ID, stepStarted, stepStart); err != nil {
+							logger.Error("failed to append node.step.completed for fatal continue decision",
+								"step_id", stepStarted.StepID,
+								"error", err,
+							)
+							return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.completed", err)
+						}
+					}
+					return nodeExecutionResult{}, actionErr
+				}
 				return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to execute continue action", actionErr)
+			}
+			if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
+				logger.Error("deterministic runtime guardrail interrupted active continue step", "step_id", stepStarted.StepID, "error", err)
+				return nodeExecutionResult{}, err
+			}
+			if err := execCtx.guardrails.RecordContinueAction(node.ID, stepStarted.StepID, actionPayload.Status); err != nil {
+				if stepCompleteErr := appendContinueStepCompleted(execCtx.lifecycle, node.ID, stepStarted, stepStart); stepCompleteErr != nil {
+					logger.Error("failed to append node.step.completed for guardrail-breached continue decision",
+						"step_id", stepStarted.StepID,
+						"error", stepCompleteErr,
+					)
+					return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.completed", stepCompleteErr)
+				}
+				logger.Error("deterministic runtime guardrail breached after continue action", "step_id", stepStarted.StepID, "error", err)
+				return nodeExecutionResult{}, err
 			}
 			if actionPayload.Status == runtime.ActionExecutionStatusFailed {
 				logger.Warn("continue action recorded non-fatal failure",
@@ -406,17 +456,16 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				)
 			}
 
-			if err := execCtx.lifecycle.AppendNodeStepCompleted(node.ID, runtime.NodeStepCompletedPayload{
-				StepID:      stepStarted.StepID,
-				Decision:    runtime.StepDecisionContinue,
-				ActionCount: 1,
-				DurationMS:  durationMS(stepStart),
-			}); err != nil {
+			if err := appendContinueStepCompleted(execCtx.lifecycle, node.ID, stepStarted, stepStart); err != nil {
 				logger.Error("failed to append node.step.completed for continue decision",
 					"step_id", stepStarted.StepID,
 					"error", err,
 				)
 				return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.completed", err)
+			}
+			if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
+				logger.Error("deterministic runtime guardrail breached after continue step completion", "step_id", stepStarted.StepID, "error", err)
+				return nodeExecutionResult{}, err
 			}
 			logger.Debug("completed continue step",
 				"step_id", stepStarted.StepID,
@@ -432,6 +481,10 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			continue
 		}
 
+		if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
+			logger.Error("deterministic runtime guardrail interrupted final-decision step before completion", "step_id", stepStarted.StepID, "error", err)
+			return nodeExecutionResult{}, err
+		}
 		if err := execCtx.lifecycle.AppendNodeStepCompleted(node.ID, runtime.NodeStepCompletedPayload{
 			StepID:      stepStarted.StepID,
 			Decision:    runtime.StepDecisionFinal,
@@ -443,6 +496,11 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				"error", err,
 			)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.completed", err)
+		}
+		execCtx.guardrails.RecordFinalDecision()
+		if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
+			logger.Error("deterministic runtime guardrail breached before node finalization", "step_id", stepStarted.StepID, "error", err)
+			return nodeExecutionResult{}, err
 		}
 
 		if decisionPayload.Final == nil {
@@ -484,6 +542,15 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 
 		return nodeExecutionResult{answer: decisionPayload.Final.Answer, finalRef: finalRef}, nil
 	}
+}
+
+func appendContinueStepCompleted(lifecycle *runtime.Lifecycle, nodeID string, stepStarted runtime.NodeStepStartedPayload, stepStart time.Time) error {
+	return lifecycle.AppendNodeStepCompleted(nodeID, runtime.NodeStepCompletedPayload{
+		StepID:      stepStarted.StepID,
+		Decision:    runtime.StepDecisionContinue,
+		ActionCount: 1,
+		DurationMS:  durationMS(stepStart),
+	})
 }
 
 func durationMS(start time.Time) int {
@@ -536,13 +603,32 @@ func failRunningRun(lifecycle *runtime.Lifecycle, failedNodeID *string, runErr e
 	if code, ok := CodeOf(runErr); ok {
 		errorCode = code
 	}
+	limitMetadata, hasLimit := LimitOf(runErr)
+	resolvedFailedNodeID := failedNodeID
+	if hasLimit && strings.TrimSpace(limitMetadata.NodeID) != "" {
+		resolvedFailedNodeID = cloneOptionalString(limitMetadata.NodeID)
+	}
+	var failedStepID *string
+	var limitKey *string
+	var configuredValue *string
+	var observedValue *string
+	if hasLimit {
+		failedStepID = cloneOptionalString(limitMetadata.StepID)
+		limitKey = cloneOptionalString(limitMetadata.LimitKey)
+		configuredValue = cloneOptionalString(limitMetadata.ConfiguredValue)
+		observedValue = cloneOptionalString(limitMetadata.ObservedValue)
+	}
 
 	payload := runtime.RunFailedPayload{
-		Status:       "failed",
-		ErrorCode:    string(errorCode),
-		ErrorMessage: runErr.Error(),
-		FailedNodeID: failedNodeID,
-		Retryable:    false,
+		Status:          "failed",
+		ErrorCode:       string(errorCode),
+		ErrorMessage:    runErr.Error(),
+		FailedNodeID:    resolvedFailedNodeID,
+		FailedStepID:    failedStepID,
+		LimitKey:        limitKey,
+		ConfiguredValue: configuredValue,
+		ObservedValue:   observedValue,
+		Retryable:       false,
 	}
 	if err := lifecycle.FailWith(payload); err != nil {
 		harnessRunnerLogger().Error("failed to persist run.failed event",

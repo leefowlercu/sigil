@@ -36,6 +36,10 @@ type Error struct {
 	Cause   error
 }
 
+type fatalExecutionError struct {
+	Cause error
+}
+
 func (e *Error) Error() string {
 	if e.Cause == nil {
 		return fmt.Sprintf("%s: %s", e.Code, e.Message)
@@ -46,6 +50,20 @@ func (e *Error) Error() string {
 
 // Unwrap returns wrapped cause.
 func (e *Error) Unwrap() error {
+	return e.Cause
+}
+
+func (e *fatalExecutionError) Error() string {
+	if e == nil || e.Cause == nil {
+		return ""
+	}
+	return e.Cause.Error()
+}
+
+func (e *fatalExecutionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.Cause
 }
 
@@ -84,4 +102,27 @@ func IsCode(err error, code ErrorCode) bool {
 	}
 
 	return errCode == code
+}
+
+// MarkFatalExecution marks an error as requiring immediate action termination.
+func MarkFatalExecution(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &fatalExecutionError{Cause: err}
+}
+
+// IsFatalExecution reports whether an error should abort the active REPL action.
+func IsFatalExecution(err error) bool {
+	var fatalErr *fatalExecutionError
+	return errors.As(err, &fatalErr)
+}
+
+// UnwrapFatalExecution returns the underlying cause of a fatal execution error.
+func UnwrapFatalExecution(err error) error {
+	var fatalErr *fatalExecutionError
+	if errors.As(err, &fatalErr) && fatalErr.Cause != nil {
+		return fatalErr.Cause
+	}
+	return err
 }

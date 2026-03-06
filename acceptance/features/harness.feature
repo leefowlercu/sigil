@@ -1598,3 +1598,198 @@ Feature: Sigil baseline CLI and config contracts
     Given a node-local step with decision continue
     When continuation payload is validated
     Then exactly one executable action is accepted for that step
+
+  Scenario: Defines deterministic guardrails section in run config schema
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      guardrails:
+        max_steps_per_node: 10
+        max_total_steps_per_run: 20
+        max_run_duration_ms: 30000
+        max_consecutive_step_failures: 2
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+
+  Scenario: Applies deterministic guardrail defaults when guardrails fields are omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run guardrails.max_steps_per_node is 64
+    And effective run guardrails.max_total_steps_per_run is 256
+    And effective run guardrails.max_run_duration_ms is 1200000
+    And effective run guardrails.max_consecutive_step_failures is 6
+
+  Scenario: Applies SIGIL_RUN environment overrides for guardrails fields
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      guardrails:
+        max_steps_per_node: 10
+        max_total_steps_per_run: 20
+        max_run_duration_ms: 30000
+        max_consecutive_step_failures: 2
+      """
+    And environment override "SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE" is "64"
+    And environment override "SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN" is "256"
+    And environment override "SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS" is "1200000"
+    And environment override "SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES" is "6"
+    When run configuration is merged
+    Then effective run guardrails.max_steps_per_node is 64
+    And effective run guardrails.max_total_steps_per_run is 256
+    And effective run guardrails.max_run_duration_ms is 1200000
+    And effective run guardrails.max_consecutive_step_failures is 6
+
+  Scenario: Rejects run configuration when deterministic guardrail values are non-positive
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      guardrails:
+        max_steps_per_node: 0
+        max_total_steps_per_run: 5
+        max_run_duration_ms: 30000
+        max_consecutive_step_failures: 2
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Extends run.failed payload with deterministic guardrail metadata fields
+    Given run.failed payload includes deterministic guardrail metadata
+    When strict payload schema validation is executed for run.failed
+    Then run.failed payload validation succeeds
+
+  Scenario: Requires configured_value and observed_value when run.failed limit_key is present
+    Given run.failed payload includes limit_key without configured_value or observed_value
+    When strict payload schema validation is executed for run.failed
+    Then run.failed payload validation fails
+
+  Scenario: Validates failed_step_id as UUIDv7 when present in run.failed payload
+    Given run.failed payload includes non-uuidv7 failed_step_id
+    When strict payload schema validation is executed for run.failed
+    Then run.failed payload validation fails
+
+  Scenario: Applies deterministic runtime governance guardrails from PRD-0016 during harness execution
+    Given deterministic runtime guardrail fixture "max_steps_per_node" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_steps_per_node"
+
+  Scenario: Exits non-zero when deterministic runtime guardrail breach terminalizes run
+    Given deterministic runtime guardrail fixture "max_steps_per_node" is prepared
+    When a user runs guardrail-breach harness entrypoint
+    Then command exits non-zero
+
+  Scenario: Defines run guardrails config section for deterministic step time and failure thresholds
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      guardrails:
+        max_steps_per_node: 1
+        max_total_steps_per_run: 2
+        max_run_duration_ms: 1000
+        max_consecutive_step_failures: 1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+
+  Scenario: Applies default deterministic guardrail values when guardrails config is omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run guardrails.max_steps_per_node is 64
+    And effective run guardrails.max_total_steps_per_run is 256
+    And effective run guardrails.max_run_duration_ms is 1200000
+    And effective run guardrails.max_consecutive_step_failures is 6
+
+  Scenario: Rejects non-positive deterministic guardrail configuration values
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      guardrails:
+        max_steps_per_node: 0
+        max_total_steps_per_run: 1
+        max_run_duration_ms: 1000
+        max_consecutive_step_failures: 1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Enforces max_steps_per_node before appending node.step.started
+    Given deterministic runtime guardrail fixture "max_steps_per_node" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_steps_per_node"
+
+  Scenario: Enforces max_total_steps_per_run across root and recursive nodes
+    Given deterministic runtime guardrail fixture "max_total_steps_per_run" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_total_steps_per_run"
+
+  Scenario: Enforces max_run_duration_ms as hard run wall-clock budget
+    Given deterministic runtime guardrail fixture "max_run_duration_ms" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_run_duration_ms"
+    And max_run_duration_ms interrupts the active step before completion
+
+  Scenario: Enforces max_consecutive_step_failures using consecutive failed continue actions
+    Given deterministic runtime guardrail fixture "max_consecutive_step_failures" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_consecutive_step_failures"
+
+  Scenario: Resets consecutive failed-step counter after successful continue action or final decision
+    Given deterministic runtime guardrail fixture "consecutive_failure_reset" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail reset fixture completes successfully
+
+  Scenario: Emits run.failed with harness_limit_exceeded and deterministic limit metadata on breach
+    Given deterministic runtime guardrail fixture "max_steps_per_node" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then run.failed includes deterministic runtime guardrail metadata
+
+  Scenario: Includes failed_node_id and optional failed_step_id in run.failed guardrail failures
+    Given deterministic runtime guardrail fixture "max_steps_per_node" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then run.failed includes failed_node_id and optional failed_step_id for guardrail breaches
+
+  Scenario: Applies deterministic guardrails identically in recursive and non-recursive profiles
+    Given deterministic runtime guardrail fixture "recursive_profile_parity" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail parity is preserved for recursive and non-recursive profiles
+
+  Scenario: Defers token and cost guardrails pending accounting-ledger subsystem
+    Given deterministic runtime governance guardrails are defined in this phase
+    When guardrail scope is inspected
+    Then token and cost guardrails are deferred

@@ -110,8 +110,14 @@ func (r *SubcallRouter) LLMQuery(ctx context.Context, request repl.QueryRequest)
 }
 
 func (r *SubcallRouter) RLMQuery(ctx context.Context, request repl.QueryRequest) (string, error) {
-	record := r.executeRLMQuery(ctx, request)
+	record, fatalErr := r.executeRLMQuery(ctx, request)
 	r.persistRecord(runtime.SubcallTypeRLMQuery, request, record)
+	if fatalErr != nil {
+		if record.err != nil {
+			return record.answer, repl.MarkFatalExecution(record.err)
+		}
+		return record.answer, repl.MarkFatalExecution(fatalErr)
+	}
 	return record.answer, record.err
 }
 
@@ -173,9 +179,9 @@ func (r *SubcallRouter) RLMQueryBatched(ctx context.Context, requests []repl.Bat
 		return nil, repl.WrapError(repl.ErrorCodeSubcallInvalidInput, "rlm_query_batched requires at least one call item", nil)
 	}
 
-	output := make([]repl.BatchedQueryResult, len(requests))
-	for index, request := range requests {
-		record := r.executeRLMQuery(ctx, repl.QueryRequest{
+	output := make([]repl.BatchedQueryResult, 0, len(requests))
+	for _, request := range requests {
+		record, fatalErr := r.executeRLMQuery(ctx, repl.QueryRequest{
 			Prompt:  request.Prompt,
 			Context: request.Context,
 		})
@@ -185,7 +191,13 @@ func (r *SubcallRouter) RLMQueryBatched(ctx context.Context, requests []repl.Bat
 		}, record); err != nil {
 			return nil, err
 		}
-		output[index] = toBatchedResult(record.answer, record.err)
+		if fatalErr != nil {
+			if record.err != nil {
+				return nil, repl.MarkFatalExecution(record.err)
+			}
+			return nil, repl.MarkFatalExecution(fatalErr)
+		}
+		output = append(output, toBatchedResult(record.answer, record.err))
 	}
 
 	return output, nil
@@ -220,7 +232,7 @@ func (r *SubcallRouter) executeLLMQuery(ctx context.Context, request repl.QueryR
 	}
 }
 
-func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryRequest) subcallRecord {
+func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryRequest) (subcallRecord, error) {
 	start := time.Now().UTC()
 	if r.nonRecursive {
 		err := repl.WrapError(repl.ErrorCodeChildDepthLimit, "rlm_query is disabled in non-recursive mode", nil)
@@ -228,7 +240,7 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 			err:        err,
 			durationMS: durationMS(start),
 			mode:       runtime.SubcallExecutionModeFallback,
-		}
+		}, nil
 	}
 
 	childNode, err := r.lifecycle.CreateChildNode(r.node.ID)
@@ -240,24 +252,29 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 				err:        fallbackErr,
 				durationMS: durationMS(start),
 				mode:       runtime.SubcallExecutionModeFallback,
-			}
+			}, nil
 		}
 
 		return subcallRecord{
 			err:        repl.WrapError(repl.ErrorCodeChildFailure, "rlm_query child creation failed", err),
 			durationMS: durationMS(start),
 			mode:       runtime.SubcallExecutionModeRecursive,
-		}
+		}, nil
 	}
 
 	result, childErr := r.executeChild(ctx, childNode, request.Prompt, request.Context)
 	if childErr != nil {
-		return subcallRecord{
+		record := subcallRecord{
 			err:         repl.WrapError(repl.ErrorCodeChildFailure, "rlm_query child execution failed", childErr),
 			durationMS:  durationMS(start),
 			mode:        runtime.SubcallExecutionModeRecursive,
 			childNodeID: cloneStringPointer(childNode.ID),
 		}
+		if code, ok := CodeOf(childErr); ok && code == ErrorCodeLimitExceeded {
+			r.setFatal(childErr)
+			return record, childErr
+		}
+		return record, nil
 	}
 
 	return subcallRecord{
@@ -265,7 +282,7 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 		durationMS:  durationMS(start),
 		mode:        runtime.SubcallExecutionModeRecursive,
 		childNodeID: cloneStringPointer(childNode.ID),
-	}
+	}, nil
 }
 
 func (r *SubcallRouter) inferLLMAnswer(ctx context.Context, prompt string, subContext string) (string, error) {
