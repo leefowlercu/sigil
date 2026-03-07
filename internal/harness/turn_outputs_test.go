@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference"
 )
 
@@ -141,5 +142,76 @@ func TestTurnOutputStorePersistsContext(t *testing.T) {
 	path := filepath.Join(baseDir, runID, "outputs", "node", nodeID, "context.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected persisted context artifact %q, got %v", path, err)
+	}
+}
+
+func TestTurnOutputStorePersistsAccountingArtifacts(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	store, err := NewTurnOutputStore(baseDir)
+	if err != nil {
+		t.Fatalf("expected turn output store creation success, got %v", err)
+	}
+
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+	inputTokens := int64(10)
+	outputTokens := int64(5)
+	totalTokens := int64(15)
+	totalCost := int64(250)
+
+	summary := accounting.BuildLeafSummary(accounting.LeafInput{
+		Provider:                 "openai",
+		Model:                    "gpt-5.1",
+		PricingVersion:           "v1",
+		InputTokens:              &inputTokens,
+		OutputTokens:             &outputTokens,
+		TotalTokens:              &totalTokens,
+		GatewayTotalCostMicrousd: &totalCost,
+	})
+	rollup := accounting.BuildRollup("openai", "gpt-5.1", "v1", summary, accounting.ZeroSummary("openai", "gpt-5.1", "v1"))
+
+	subcallRef, err := store.PersistSubcallAccounting(runID, nodeID, stepID, 1, summary)
+	if err != nil {
+		t.Fatalf("expected subcall accounting persist success, got %v", err)
+	}
+	if subcallRef != "run-output://node/"+nodeID+"/step/"+stepID+"/subcall-1-accounting.json" {
+		t.Fatalf("unexpected subcall accounting ref %q", subcallRef)
+	}
+
+	stepRef, err := store.PersistStepAccounting(runID, nodeID, stepID, rollup)
+	if err != nil {
+		t.Fatalf("expected step accounting persist success, got %v", err)
+	}
+	if stepRef != "run-output://node/"+nodeID+"/step/"+stepID+"/accounting.json" {
+		t.Fatalf("unexpected step accounting ref %q", stepRef)
+	}
+
+	nodeRef, err := store.PersistNodeAccounting(runID, nodeID, rollup)
+	if err != nil {
+		t.Fatalf("expected node accounting persist success, got %v", err)
+	}
+	if nodeRef != "run-output://node/"+nodeID+"/accounting.json" {
+		t.Fatalf("unexpected node accounting ref %q", nodeRef)
+	}
+
+	runRef, err := store.PersistRunAccounting(runID, rollup)
+	if err != nil {
+		t.Fatalf("expected run accounting persist success, got %v", err)
+	}
+	if runRef != "run-output://run/accounting.json" {
+		t.Fatalf("unexpected run accounting ref %q", runRef)
+	}
+
+	paths := []string{
+		filepath.Join(baseDir, runID, "outputs", "node", nodeID, "step", stepID, "subcall-1-accounting.json"),
+		filepath.Join(baseDir, runID, "outputs", "node", nodeID, "step", stepID, "accounting.json"),
+		filepath.Join(baseDir, runID, "outputs", "node", nodeID, "accounting.json"),
+		filepath.Join(baseDir, runID, "outputs", "run", "accounting.json"),
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected persisted accounting artifact %q, got %v", path, err)
+		}
 	}
 }

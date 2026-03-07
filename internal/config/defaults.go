@@ -27,6 +27,8 @@ const (
 	DefaultRunRLMEnabled = true
 	// DefaultRunRLMMaxDepth is the default RLM max recursion depth.
 	DefaultRunRLMMaxDepth = 3
+	// DefaultRunAccountingPricingVersion is the default accounting pricing version.
+	DefaultRunAccountingPricingVersion = "v1"
 	// DefaultRunGuardrailsMaxStepsPerNode is default per-node step budget.
 	DefaultRunGuardrailsMaxStepsPerNode = 64
 	// DefaultRunGuardrailsMaxTotalStepsPerRun is default run total step budget.
@@ -64,6 +66,10 @@ func NewDefaultRunConfig() RunConfig {
 		RLM: RunRLMConfig{
 			Enabled:  DefaultRunRLMEnabled,
 			MaxDepth: DefaultRunRLMMaxDepth,
+		},
+		Accounting: RunAccountingConfig{
+			PricingVersion:  DefaultRunAccountingPricingVersion,
+			FallbackPricing: map[string]map[string]RunAccountingFallbackModelConfig{},
 		},
 		Guardrails: RunGuardrailsConfig{
 			MaxStepsPerNode:            DefaultRunGuardrailsMaxStepsPerNode,

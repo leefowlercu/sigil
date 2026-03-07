@@ -626,6 +626,7 @@ Feature: Sigil baseline CLI and config contracts
     And command output contains `"final_answer_ref"`
     And command output contains `"events_path"`
     And command output contains `"final_answer"`
+    And command output contains `"accounting"`
 
   Scenario: Exits non-zero with typed failure metadata on unrecoverable harness inference or template errors
     Given application config exists at "./sigil.yaml" with:
@@ -1420,7 +1421,7 @@ Feature: Sigil baseline CLI and config contracts
     When model-step inference input is constructed for child step
     Then bounded model-input contract is applied to recursive child node step
 
-  Scenario: Exposes resolvable evidence references through context_ref and previous_action_feedback.output_ref
+  Scenario: Exposes canonical and resolvable evidence references through context_ref and previous_action_feedback.output_ref
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
     Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
@@ -1471,6 +1472,11 @@ Feature: Sigil baseline CLI and config contracts
     Given harness base system prompt resolution runs
     When harness effective system prompt is constructed
     Then effective system prompt equals resolved base prompt
+
+  Scenario: Requires byte-for-byte previous_action_feedback.output_ref reuse with context_ref fallback for final evidence citations
+    Given harness base system prompt resolution runs
+    When harness effective system prompt is constructed
+    Then system prompt requires byte-for-byte previous_action_feedback.output_ref reuse with context_ref fallback
 
   Scenario: Defines node.failed event type for canonical failed-node terminalization
     Given canonical v1 run-event validation rules
@@ -1793,3 +1799,110 @@ Feature: Sigil baseline CLI and config contracts
     Given deterministic runtime governance guardrails are defined in this phase
     When guardrail scope is inspected
     Then token and cost guardrails are deferred
+
+  Scenario: Defines accounting section in run config schema
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      accounting:
+        pricing_version: custom-v1
+        fallback_pricing:
+          openai:
+            gpt-5.1:
+              input_microusd_per_million_tokens: 111
+              output_microusd_per_million_tokens: 222
+              reasoning_microusd_per_million_tokens: 333
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run accounting.pricing_version is "custom-v1"
+    And effective run accounting fallback pricing for provider "openai" model "gpt-5.1" uses input rate 111 output rate 222 reasoning rate 333
+
+  Scenario: Applies default accounting pricing version when accounting section is omitted
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      """
+    When run configuration validation runs
+    Then run configuration initialization succeeds
+    And effective run accounting.pricing_version is "v1"
+
+  Scenario: Applies SIGIL_RUN environment overrides for accounting fallback pricing
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      accounting:
+        pricing_version: file-v1
+      """
+    And environment override "SIGIL_RUN_ACCOUNTING_PRICING_VERSION" is "env-v2"
+    And environment override "SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_INPUT_MICROUSD_PER_MILLION_TOKENS" is "111"
+    And environment override "SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_OUTPUT_MICROUSD_PER_MILLION_TOKENS" is "222"
+    And environment override "SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_REASONING_MICROUSD_PER_MILLION_TOKENS" is "333"
+    When run configuration is merged
+    Then effective run accounting.pricing_version is "env-v2"
+    And effective run accounting fallback pricing for provider "openai" model "gpt-5.1" uses input rate 111 output rate 222 reasoning rate 333
+
+  Scenario: Rejects run configuration when accounting fallback pricing values are non-positive
+    Given run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: prompt
+      context: context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      accounting:
+        fallback_pricing:
+          openai:
+            gpt-5.1:
+              input_microusd_per_million_tokens: 0
+              output_microusd_per_million_tokens: 1
+      """
+    When run configuration validation runs
+    Then run configuration initialization fails
+
+  Scenario: Includes accounting rollup in successful run summary and terminal events
+    Given a harness runner captures provider-reported accounting for a final step
+    When accounting artifacts are persisted for the completed run
+    Then successful run summary and terminal events include accounting
+
+  Scenario: Computes fallback cost from configured pricing when gateway omits cost
+    Given a harness runner captures fallback-priced accounting for a final step
+    When accounting rollups are inspected
+    Then fallback pricing-derived accounting cost is preserved in completed run accounting
+
+  Scenario: Aggregates recursive subcall tree accounting into node and run totals
+    Given a recursive harness run captures subtree accounting
+    When accounting rollups are inspected
+    Then recursive accounting tree total includes child node totals
+
+  Scenario: Persists subcall leaf accounting in events and action artifacts
+    Given a recursive harness run captures subtree accounting
+    When accounting rollups are inspected
+    Then subcall events and action artifacts include leaf accounting summaries
+
+  Scenario: Preserves partial accounting status when cost is unavailable
+    Given a harness runner captures partial accounting for a final step
+    When accounting rollups are inspected
+    Then partial accounting totals remain marked partial instead of zero-complete
+
+  Scenario: Includes partial accounting in failed terminal events
+    Given a running lifecycle captures partial terminal accounting
+    When a failed terminal event is persisted with accounting
+    Then failed terminal events include partial accounting
+
+  Scenario: Includes partial accounting in interrupted terminal events
+    Given a running lifecycle captures partial terminal accounting
+    When an interrupted terminal event is persisted with accounting
+    Then interrupted terminal events include partial accounting

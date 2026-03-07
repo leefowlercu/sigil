@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 // Config is the typed application configuration contract for sigil.
 type Config struct {
 	LogLevel string `yaml:"log_level" mapstructure:"log_level"`
@@ -16,6 +18,7 @@ type RunConfig struct {
 	LLM                RunLLMConfig        `yaml:"llm" mapstructure:"llm"`
 	RLM                RunRLMConfig        `yaml:"rlm" mapstructure:"rlm"`
 	Guardrails         RunGuardrailsConfig `yaml:"guardrails" mapstructure:"guardrails"`
+	Accounting         RunAccountingConfig `yaml:"accounting" mapstructure:"accounting"`
 }
 
 // RunLLMConfig defines LLM-related run configuration.
@@ -52,4 +55,35 @@ type RunGuardrailsConfig struct {
 	MaxTotalStepsPerRun        int `yaml:"max_total_steps_per_run" mapstructure:"max_total_steps_per_run"`
 	MaxRunDurationMS           int `yaml:"max_run_duration_ms" mapstructure:"max_run_duration_ms"`
 	MaxConsecutiveStepFailures int `yaml:"max_consecutive_step_failures" mapstructure:"max_consecutive_step_failures"`
+}
+
+// RunAccountingConfig defines accounting policy and fallback pricing.
+type RunAccountingConfig struct {
+	PricingVersion  string                                                 `yaml:"pricing_version" mapstructure:"pricing_version"`
+	FallbackPricing map[string]map[string]RunAccountingFallbackModelConfig `yaml:"fallback_pricing" mapstructure:"fallback_pricing"`
+}
+
+// RunAccountingFallbackModelConfig defines fallback pricing for one provider/model pair.
+type RunAccountingFallbackModelConfig struct {
+	InputMicrousdPerMillionTokens     int64  `yaml:"input_microusd_per_million_tokens" mapstructure:"input_microusd_per_million_tokens"`
+	OutputMicrousdPerMillionTokens    int64  `yaml:"output_microusd_per_million_tokens" mapstructure:"output_microusd_per_million_tokens"`
+	ReasoningMicrousdPerMillionTokens *int64 `yaml:"reasoning_microusd_per_million_tokens" mapstructure:"reasoning_microusd_per_million_tokens"`
+}
+
+// PricingFor returns fallback pricing for one provider/model pair when configured.
+func (c RunAccountingConfig) PricingFor(provider string, model string) (*RunAccountingFallbackModelConfig, bool) {
+	providerPricing, ok := c.FallbackPricing[strings.TrimSpace(provider)]
+	if !ok {
+		return nil, false
+	}
+	modelPricing, ok := providerPricing[strings.TrimSpace(model)]
+	if !ok {
+		return nil, false
+	}
+	cloned := modelPricing
+	if modelPricing.ReasoningMicrousdPerMillionTokens != nil {
+		value := *modelPricing.ReasoningMicrousdPerMillionTokens
+		cloned.ReasoningMicrousdPerMillionTokens = &value
+	}
+	return &cloned, true
 }

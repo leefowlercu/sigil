@@ -239,6 +239,10 @@ func TestNewDefaultRunConfig(t *testing.T) {
 	if defaults.Guardrails.MaxConsecutiveStepFailures != DefaultRunGuardrailsMaxConsecutiveStepFailures {
 		t.Fatalf("expected guardrails.max_consecutive_step_failures %d, got %d", DefaultRunGuardrailsMaxConsecutiveStepFailures, defaults.Guardrails.MaxConsecutiveStepFailures)
 	}
+
+	if defaults.Accounting.PricingVersion != DefaultRunAccountingPricingVersion {
+		t.Fatalf("expected accounting.pricing_version %q, got %q", DefaultRunAccountingPricingVersion, defaults.Accounting.PricingVersion)
+	}
 }
 
 func TestInitRunUsesEnvironmentWhenDefaultRunConfigFileIsMissing(t *testing.T) {
@@ -782,6 +786,121 @@ func TestInitRunFromPathAllowsRunTotalStepBudgetBelowPerNodeBudget(t *testing.T)
 	}
 	if cfg.Guardrails.MaxTotalStepsPerRun != 5 {
 		t.Fatalf("expected guardrails.max_total_steps_per_run 5, got %d", cfg.Guardrails.MaxTotalStepsPerRun)
+	}
+}
+
+func TestInitRunFromPathAppliesAccountingFallbackPricingEnvironmentOverrides(t *testing.T) {
+	clearActiveRunConfig()
+	workDir := t.TempDir()
+	chdir(t, workDir)
+	unsetEnv(
+		t,
+		"SIGIL_RUN_ACCOUNTING_PRICING_VERSION",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_INPUT_MICROUSD_PER_MILLION_TOKENS",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_OUTPUT_MICROUSD_PER_MILLION_TOKENS",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_REASONING_MICROUSD_PER_MILLION_TOKENS",
+	)
+
+	configPath := filepath.Join(workDir, "sigil-run.yaml")
+	writeRunTestFile(
+		t,
+		configPath,
+		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  pricing_version: file-v1\n",
+	)
+
+	t.Setenv("SIGIL_RUN_ACCOUNTING_PRICING_VERSION", "env-v2")
+	t.Setenv("SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_INPUT_MICROUSD_PER_MILLION_TOKENS", "111")
+	t.Setenv("SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_OUTPUT_MICROUSD_PER_MILLION_TOKENS", "222")
+	t.Setenv("SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_REASONING_MICROUSD_PER_MILLION_TOKENS", "333")
+
+	if err := InitRunFromPath(configPath); err != nil {
+		t.Fatalf("expected run config init success, got %v", err)
+	}
+
+	cfg := MustGetRun()
+	if cfg.Accounting.PricingVersion != "env-v2" {
+		t.Fatalf("expected accounting.pricing_version override %q, got %q", "env-v2", cfg.Accounting.PricingVersion)
+	}
+
+	pricing, ok := cfg.Accounting.PricingFor("openai", "gpt-5.1")
+	if !ok {
+		t.Fatalf("expected fallback pricing for openai/gpt-5.1")
+	}
+	if pricing.InputMicrousdPerMillionTokens != 111 {
+		t.Fatalf("expected input rate 111, got %d", pricing.InputMicrousdPerMillionTokens)
+	}
+	if pricing.OutputMicrousdPerMillionTokens != 222 {
+		t.Fatalf("expected output rate 222, got %d", pricing.OutputMicrousdPerMillionTokens)
+	}
+	if pricing.ReasoningMicrousdPerMillionTokens == nil || *pricing.ReasoningMicrousdPerMillionTokens != 333 {
+		t.Fatalf("expected reasoning rate 333, got %+v", pricing.ReasoningMicrousdPerMillionTokens)
+	}
+}
+
+func TestInitRunFromPathDecodesAccountingFallbackPricingFromFileKeysWithDots(t *testing.T) {
+	clearActiveRunConfig()
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	configPath := filepath.Join(workDir, "sigil-run.yaml")
+	writeRunTestFile(
+		t,
+		configPath,
+		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  pricing_version: custom-v1\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 111\n        output_microusd_per_million_tokens: 222\n        reasoning_microusd_per_million_tokens: 333\n",
+	)
+
+	if err := InitRunFromPath(configPath); err != nil {
+		t.Fatalf("expected run config init success, got %v", err)
+	}
+
+	cfg := MustGetRun()
+	if cfg.Accounting.PricingVersion != "custom-v1" {
+		t.Fatalf("expected pricing version custom-v1, got %q", cfg.Accounting.PricingVersion)
+	}
+	pricing, ok := cfg.Accounting.PricingFor("openai", "gpt-5.1")
+	if !ok {
+		t.Fatalf("expected fallback pricing for openai/gpt-5.1")
+	}
+	if pricing.InputMicrousdPerMillionTokens != 111 || pricing.OutputMicrousdPerMillionTokens != 222 {
+		t.Fatalf("unexpected fallback pricing %+v", pricing)
+	}
+	if pricing.ReasoningMicrousdPerMillionTokens == nil || *pricing.ReasoningMicrousdPerMillionTokens != 333 {
+		t.Fatalf("expected reasoning rate 333, got %+v", pricing.ReasoningMicrousdPerMillionTokens)
+	}
+}
+
+func TestInitRunFromPathRejectsInvalidAccountingFallbackPricingValues(t *testing.T) {
+	testCases := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "zero input rate",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 0\n        output_microusd_per_million_tokens: 1\n",
+		},
+		{
+			name:    "negative reasoning rate",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 1\n        output_microusd_per_million_tokens: 2\n        reasoning_microusd_per_million_tokens: -3\n",
+		},
+		{
+			name:    "fractional input rate",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 1.5\n        output_microusd_per_million_tokens: 2\n",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			clearActiveRunConfig()
+			workDir := t.TempDir()
+			chdir(t, workDir)
+
+			configPath := filepath.Join(workDir, "sigil-run.yaml")
+			writeRunTestFile(t, configPath, testCase.content)
+
+			if err := InitRunFromPath(configPath); err == nil {
+				t.Fatalf("expected invalid accounting fallback pricing error")
+			}
+		})
 	}
 }
 

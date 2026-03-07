@@ -1,6 +1,10 @@
 package runtime
 
-import "time"
+import (
+	"time"
+
+	"github.com/leefowlercu/sigil/internal/accounting"
+)
 
 const (
 	// SchemaVersionV1 is the canonical v1 event envelope schema version.
@@ -136,9 +140,11 @@ type NodeStartedPayload struct {
 
 // NodeCompletedPayload is the strict payload for node.completed.
 type NodeCompletedPayload struct {
-	Status     string  `json:"status"`
-	DurationMS int     `json:"duration_ms"`
-	OutputRef  *string `json:"output_ref,omitempty"`
+	Status        string            `json:"status"`
+	DurationMS    int               `json:"duration_ms"`
+	OutputRef     *string           `json:"output_ref,omitempty"`
+	Accounting    accounting.Rollup `json:"accounting"`
+	AccountingRef *string           `json:"accounting_ref,omitempty"`
 }
 
 // NodeFailedPayload is the strict payload for node.failed.
@@ -159,10 +165,12 @@ type NodeStepStartedPayload struct {
 
 // NodeStepCompletedPayload is the strict payload for node.step.completed.
 type NodeStepCompletedPayload struct {
-	StepID      string       `json:"step_id"`
-	Decision    StepDecision `json:"decision"`
-	ActionCount int          `json:"action_count"`
-	DurationMS  int          `json:"duration_ms"`
+	StepID        string            `json:"step_id"`
+	Decision      StepDecision      `json:"decision"`
+	ActionCount   int               `json:"action_count"`
+	DurationMS    int               `json:"duration_ms"`
+	Accounting    accounting.Rollup `json:"accounting"`
+	AccountingRef string            `json:"accounting_ref"`
 }
 
 // NodeTurnPayload is the strict payload for node.turn.user and node.turn.model.
@@ -187,6 +195,8 @@ type NodeSubcallExecutedPayload struct {
 	AnswerBytes   int                   `json:"answer_bytes"`
 	DurationMS    int                   `json:"duration_ms"`
 	ChildNodeID   *string               `json:"child_node_id,omitempty"`
+	Accounting    accounting.Summary    `json:"accounting"`
+	AccountingRef string                `json:"accounting_ref"`
 	ErrorCode     *string               `json:"error_code,omitempty"`
 	ErrorMessage  *string               `json:"error_message,omitempty"`
 }
@@ -206,22 +216,26 @@ type NodeActionExecutedPayload struct {
 
 // RunCompletedPayload is the strict payload for run.completed.
 type RunCompletedPayload struct {
-	Status         string  `json:"status"`
-	DurationMS     int     `json:"duration_ms"`
-	FinalAnswerRef *string `json:"final_answer_ref,omitempty"`
+	Status         string            `json:"status"`
+	DurationMS     int               `json:"duration_ms"`
+	FinalAnswerRef *string           `json:"final_answer_ref,omitempty"`
+	Accounting     accounting.Rollup `json:"accounting"`
+	AccountingRef  *string           `json:"accounting_ref,omitempty"`
 }
 
 // RunFailedPayload is the strict payload for run.failed.
 type RunFailedPayload struct {
-	Status          string  `json:"status"`
-	ErrorCode       string  `json:"error_code"`
-	ErrorMessage    string  `json:"error_message"`
-	FailedNodeID    *string `json:"failed_node_id,omitempty"`
-	FailedStepID    *string `json:"failed_step_id,omitempty"`
-	LimitKey        *string `json:"limit_key,omitempty"`
-	ConfiguredValue *string `json:"configured_value,omitempty"`
-	ObservedValue   *string `json:"observed_value,omitempty"`
-	Retryable       bool    `json:"retryable"`
+	Status          string            `json:"status"`
+	ErrorCode       string            `json:"error_code"`
+	ErrorMessage    string            `json:"error_message"`
+	FailedNodeID    *string           `json:"failed_node_id,omitempty"`
+	FailedStepID    *string           `json:"failed_step_id,omitempty"`
+	LimitKey        *string           `json:"limit_key,omitempty"`
+	ConfiguredValue *string           `json:"configured_value,omitempty"`
+	ObservedValue   *string           `json:"observed_value,omitempty"`
+	Retryable       bool              `json:"retryable"`
+	Accounting      accounting.Rollup `json:"accounting"`
+	AccountingRef   *string           `json:"accounting_ref,omitempty"`
 }
 
 // RunInterruptedPayload is the strict payload for run.interrupted.
@@ -230,6 +244,8 @@ type RunInterruptedPayload struct {
 	Reason            RunInterruptedReason `json:"reason"`
 	InterruptedBy     *string              `json:"interrupted_by,omitempty"`
 	InterruptedNodeID *string              `json:"interrupted_node_id,omitempty"`
+	Accounting        accounting.Rollup    `json:"accounting"`
+	AccountingRef     *string              `json:"accounting_ref,omitempty"`
 }
 
 // LifecycleOptions configures lifecycle defaults and durable event-store behavior.

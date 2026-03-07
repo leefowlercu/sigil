@@ -132,6 +132,9 @@ Structured-output requirements (MANDATORY):
   - final.evidence MUST include one or more resolvable refs
   - each evidence item MUST include ref and MAY include chunk_id/span fields
   - final.confidence MAY be low, medium, or high
+- If you cite previous_action_feedback.output_ref, copy it byte-for-byte.
+- Do not shorten, rewrite, splice, or synthesize run-artifact UUID segments.
+- If you cannot preserve an exact action output_ref, cite context_ref instead of inventing a run-artifact ref.
 - Use context_ref and action output_ref values when citing evidence.
 
 OUTPUT CONTRACT (MANDATORY)

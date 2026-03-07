@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/inference/openrouter"
@@ -23,6 +24,7 @@ type executionContext struct {
 	artifacts    *ActionArtifactStore
 	stepExecutor *StepExecutor
 	turnOutputs  *TurnOutputStore
+	ledger       *accounting.Ledger
 	systemPrompt string
 	nonRecursive bool
 	guardrails   *deterministicGuardrails
@@ -106,7 +108,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	sessions, err := NewREPLSessionManager(r.replFactory)
 	if err != nil {
 		logger.Error("failed to initialize repl session manager", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to initialize repl session manager", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize repl session manager", err))
 	}
 	defer func() {
 		if closeErr := sessions.CloseAll(); closeErr != nil {
@@ -117,44 +119,46 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	actionArtifacts, err := NewActionArtifactStore(r.runsBaseDir)
 	if err != nil {
 		logger.Error("failed to initialize action artifact store", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to initialize action artifact store", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize action artifact store", err))
 	}
 
 	turnOutputs, err := NewTurnOutputStore(r.runsBaseDir)
 	if err != nil {
 		logger.Error("failed to initialize turn output store", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to initialize turn output store", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize turn output store", err))
 	}
 
 	stepExecutor, err := NewStepExecutor(lifecycle, sessions, actionArtifacts)
 	if err != nil {
 		logger.Error("failed to initialize step executor", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to initialize step executor", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize step executor", err))
 	}
 
 	inferenceClient, err := r.inferenceFactory(input.RunConfig)
 	if err != nil {
 		logger.Error("failed to initialize inference service", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to initialize inference service", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize inference service", err))
 	}
 
 	_, effectiveSystemPrompt, err := r.promptResolver.ResolveEffective(input.RunConfig.LLM.Provider, input.RunConfig.SystemPromptAppend)
 	if err != nil {
 		logger.Error("failed to resolve effective system prompt", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to resolve effective system prompt", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to resolve effective system prompt", err))
 	}
 
 	effectivePrompt, effectiveContext, err := resolvePromptAndContext(input.RunConfig, input.TemplateVars, r.templateRenderer)
 	if err != nil {
 		logger.Error("failed to resolve prompt or context templates", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeTemplateRender, "failed to resolve prompt/context", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeTemplateRender, "failed to resolve prompt/context", err))
 	}
 
 	rootNode, err := lifecycle.RootNode()
 	if err != nil {
 		logger.Error("failed to resolve root node", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to resolve root node", err))
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to resolve root node", err))
 	}
+	ledger := accounting.NewLedger(input.RunConfig.Accounting.PricingVersion)
+	ledger.SetRootNodeID(rootNode.ID)
 	logger.Info("starting root node execution",
 		"run_id", lifecycle.RunID(),
 		"node_id", rootNode.ID,
@@ -172,6 +176,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		artifacts:    actionArtifacts,
 		stepExecutor: stepExecutor,
 		turnOutputs:  turnOutputs,
+		ledger:       ledger,
 		systemPrompt: effectiveSystemPrompt,
 		nonRecursive: !input.RunConfig.RLM.Enabled,
 		guardrails:   guardrails,
@@ -185,12 +190,18 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 			"node_id", failedNodeID,
 			"error", err,
 		)
-		return RunResult{}, failRunningRun(lifecycle, &failedNodeID, err)
+		return RunResult{}, failRunningRunWithAccounting(lifecycle, turnOutputs, ledger, input.RunConfig, &failedNodeID, err)
 	}
 
-	if err := lifecycle.CompleteWith(&rootResult.finalRef); err != nil {
+	runAccounting := ledger.RunRollup()
+	runAccountingRef, err := turnOutputs.PersistRunAccounting(lifecycle.RunID(), runAccounting)
+	if err != nil {
+		logger.Error("failed to persist run accounting output", "run_id", lifecycle.RunID(), "error", err)
+		return RunResult{}, failRunningRunWithAccounting(lifecycle, turnOutputs, ledger, input.RunConfig, nil, WrapError(ErrorCodeInfrastructure, "failed to persist run accounting output", err))
+	}
+	if err := lifecycle.CompleteWithAccounting(&rootResult.finalRef, runAccounting, &runAccountingRef); err != nil {
 		logger.Error("failed to complete run", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, WrapError(ErrorCodeInfrastructure, "failed to complete run", err))
+		return RunResult{}, failRunningRunWithAccounting(lifecycle, turnOutputs, ledger, input.RunConfig, nil, WrapError(ErrorCodeInfrastructure, "failed to complete run", err))
 	}
 
 	logger.Info("harness run completed",
@@ -206,6 +217,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		FinalAnswer:    rootResult.answer,
 		FinalAnswerRef: rootResult.finalRef,
 		EventsPath:     eventsPath,
+		Accounting:     runAccounting,
 	}, nil
 }
 
@@ -332,6 +344,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				Enabled: execCtx.runConfig.LLM.Reasoning.Enabled,
 				Effort:  execCtx.runConfig.LLM.Reasoning.Effort,
 			},
+			Accounting: buildInferenceAccountingConfig(execCtx.runConfig),
 		})
 		if err != nil {
 			if limitErr := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); limitErr != nil {
@@ -347,6 +360,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInference, "inference execution failed", err)
 		}
+		execCtx.ledger.RecordModelTurn(node.ID, stepStarted.StepID, inferenceResult.Accounting)
 
 		modelTurnRef, err := execCtx.turnOutputs.PersistModelTurn(execCtx.lifecycle.RunID(), node.ID, stepStarted.StepID, inferenceResult)
 		if err != nil {
@@ -382,6 +396,8 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				StepID:       stepStarted.StepID,
 				ActionIndex:  1,
 				NonRecursive: execCtx.nonRecursive,
+				TurnOutputs:  execCtx.turnOutputs,
+				Ledger:       execCtx.ledger,
 				ExecuteChild: func(queryCtx context.Context, child runtime.Node, subPrompt string, subContext string) (nodeExecutionResult, error) {
 					logger.Info("executing recursive child node subcall",
 						"step_id", stepStarted.StepID,
@@ -414,7 +430,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				)
 				if code, ok := CodeOf(actionErr); ok && code == ErrorCodeLimitExceeded {
 					if actionPayload.StepID != "" {
-						if err := appendContinueStepCompleted(execCtx.lifecycle, node.ID, stepStarted, stepStart); err != nil {
+						if err := appendContinueStepCompleted(execCtx, node.ID, stepStarted, stepStart); err != nil {
 							logger.Error("failed to append node.step.completed for fatal continue decision",
 								"step_id", stepStarted.StepID,
 								"error", err,
@@ -431,7 +447,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				return nodeExecutionResult{}, err
 			}
 			if err := execCtx.guardrails.RecordContinueAction(node.ID, stepStarted.StepID, actionPayload.Status); err != nil {
-				if stepCompleteErr := appendContinueStepCompleted(execCtx.lifecycle, node.ID, stepStarted, stepStart); stepCompleteErr != nil {
+				if stepCompleteErr := appendContinueStepCompleted(execCtx, node.ID, stepStarted, stepStart); stepCompleteErr != nil {
 					logger.Error("failed to append node.step.completed for guardrail-breached continue decision",
 						"step_id", stepStarted.StepID,
 						"error", stepCompleteErr,
@@ -456,7 +472,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				)
 			}
 
-			if err := appendContinueStepCompleted(execCtx.lifecycle, node.ID, stepStarted, stepStart); err != nil {
+			if err := appendContinueStepCompleted(execCtx, node.ID, stepStarted, stepStart); err != nil {
 				logger.Error("failed to append node.step.completed for continue decision",
 					"step_id", stepStarted.StepID,
 					"error", err,
@@ -485,11 +501,19 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("deterministic runtime guardrail interrupted final-decision step before completion", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, err
 		}
+		stepRollup := execCtx.ledger.StepRollup(node.ID, stepStarted.StepID)
+		stepAccountingRef, err := execCtx.turnOutputs.PersistStepAccounting(execCtx.lifecycle.RunID(), node.ID, stepStarted.StepID, stepRollup)
+		if err != nil {
+			logger.Error("failed to persist final-step accounting output", "step_id", stepStarted.StepID, "error", err)
+			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist final-step accounting output", err)
+		}
 		if err := execCtx.lifecycle.AppendNodeStepCompleted(node.ID, runtime.NodeStepCompletedPayload{
-			StepID:      stepStarted.StepID,
-			Decision:    runtime.StepDecisionFinal,
-			ActionCount: 0,
-			DurationMS:  durationMS(stepStart),
+			StepID:        stepStarted.StepID,
+			Decision:      runtime.StepDecisionFinal,
+			ActionCount:   0,
+			DurationMS:    durationMS(stepStart),
+			Accounting:    stepRollup,
+			AccountingRef: stepAccountingRef,
 		}); err != nil {
 			logger.Error("failed to append node.step.completed for final decision",
 				"step_id", stepStarted.StepID,
@@ -508,7 +532,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final payload is required for final decision", nil)
 		}
 
-		if err := resolveFinalEvidenceRefs(execCtx.lifecycle.RunID(), execCtx.turnOutputs.runsBaseDir, execCtx.artifacts, decisionPayload.Final.Evidence); err != nil {
+		if err := resolveFinalEvidenceRefs(execCtx.lifecycle.RunID(), execCtx.turnOutputs.runsBaseDir, execCtx.artifacts, node.ID, decisionPayload.Final.Evidence); err != nil {
 			logger.Error("failed to resolve final evidence refs", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final evidence resolution failed", err)
 		}
@@ -524,7 +548,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to persist final answer output", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist final answer output", err)
 		}
-		if err := execCtx.lifecycle.CompleteNode(node.ID, &finalRef); err != nil {
+		nodeAccounting := execCtx.ledger.NodeRollup(node.ID)
+		nodeAccountingRef, err := execCtx.turnOutputs.PersistNodeAccounting(execCtx.lifecycle.RunID(), node.ID, nodeAccounting)
+		if err != nil {
+			logger.Error("failed to persist node accounting output", "step_id", stepStarted.StepID, "error", err)
+			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist node accounting output", err)
+		}
+		if err := execCtx.lifecycle.CompleteNodeWithAccounting(node.ID, &finalRef, nodeAccounting, &nodeAccountingRef); err != nil {
 			logger.Error("failed to persist node.completed event", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to complete node", err)
 		}
@@ -544,12 +574,22 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 	}
 }
 
-func appendContinueStepCompleted(lifecycle *runtime.Lifecycle, nodeID string, stepStarted runtime.NodeStepStartedPayload, stepStart time.Time) error {
-	return lifecycle.AppendNodeStepCompleted(nodeID, runtime.NodeStepCompletedPayload{
-		StepID:      stepStarted.StepID,
-		Decision:    runtime.StepDecisionContinue,
-		ActionCount: 1,
-		DurationMS:  durationMS(stepStart),
+func appendContinueStepCompleted(execCtx *executionContext, nodeID string, stepStarted runtime.NodeStepStartedPayload, stepStart time.Time) error {
+	if execCtx == nil {
+		return fmt.Errorf("execution context is required")
+	}
+	stepRollup := execCtx.ledger.StepRollup(nodeID, stepStarted.StepID)
+	stepAccountingRef, err := execCtx.turnOutputs.PersistStepAccounting(execCtx.lifecycle.RunID(), nodeID, stepStarted.StepID, stepRollup)
+	if err != nil {
+		return fmt.Errorf("failed to persist step accounting output; %w", err)
+	}
+	return execCtx.lifecycle.AppendNodeStepCompleted(nodeID, runtime.NodeStepCompletedPayload{
+		StepID:        stepStarted.StepID,
+		Decision:      runtime.StepDecisionContinue,
+		ActionCount:   1,
+		DurationMS:    durationMS(stepStart),
+		Accounting:    stepRollup,
+		AccountingRef: stepAccountingRef,
 	})
 }
 
@@ -591,7 +631,11 @@ func harnessRunnerLogger() *slog.Logger {
 	return slog.Default().With("component", "harness.runner")
 }
 
-func failRunningRun(lifecycle *runtime.Lifecycle, failedNodeID *string, runErr error) error {
+func failRunningRun(lifecycle *runtime.Lifecycle, failedNodeID *string, runConfig config.RunConfig, runErr error) error {
+	return failRunningRunWithAccounting(lifecycle, nil, nil, runConfig, failedNodeID, runErr)
+}
+
+func failRunningRunWithAccounting(lifecycle *runtime.Lifecycle, turnOutputs *TurnOutputStore, ledger *accounting.Ledger, runConfig config.RunConfig, failedNodeID *string, runErr error) error {
 	if lifecycle == nil || runErr == nil {
 		return runErr
 	}
@@ -618,6 +662,23 @@ func failRunningRun(lifecycle *runtime.Lifecycle, failedNodeID *string, runErr e
 		configuredValue = cloneOptionalString(limitMetadata.ConfiguredValue)
 		observedValue = cloneOptionalString(limitMetadata.ObservedValue)
 	}
+	runAccounting := unavailableAccountingRollupForRun(runConfig)
+	var runAccountingRef *string
+	if ledger != nil {
+		runAccounting = ledger.RunRollup()
+	}
+	if turnOutputs != nil {
+		ref, err := turnOutputs.PersistRunAccounting(lifecycle.RunID(), runAccounting)
+		if err != nil {
+			harnessRunnerLogger().Error("failed to persist run.failed accounting output",
+				"run_id", lifecycle.RunID(),
+				"error", err,
+			)
+			runErr = fmt.Errorf("%w; additionally failed to persist run accounting output: %v", runErr, err)
+		} else {
+			runAccountingRef = &ref
+		}
+	}
 
 	payload := runtime.RunFailedPayload{
 		Status:          "failed",
@@ -629,6 +690,8 @@ func failRunningRun(lifecycle *runtime.Lifecycle, failedNodeID *string, runErr e
 		ConfiguredValue: configuredValue,
 		ObservedValue:   observedValue,
 		Retryable:       false,
+		Accounting:      runAccounting,
+		AccountingRef:   runAccountingRef,
 	}
 	if err := lifecycle.FailWith(payload); err != nil {
 		harnessRunnerLogger().Error("failed to persist run.failed event",

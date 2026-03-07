@@ -264,6 +264,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^effective run guardrails.max_total_steps_per_run is (\d+)$`, world.effectiveRunGuardrailsMaxTotalStepsPerRunIs)
 	ctx.Step(`^effective run guardrails.max_run_duration_ms is (\d+)$`, world.effectiveRunGuardrailsMaxRunDurationMSIs)
 	ctx.Step(`^effective run guardrails.max_consecutive_step_failures is (\d+)$`, world.effectiveRunGuardrailsMaxConsecutiveStepFailuresIs)
+	ctx.Step(`^effective run accounting.pricing_version is "([^"]*)"$`, world.effectiveRunAccountingPricingVersionIs)
+	ctx.Step(`^effective run accounting fallback pricing for provider "([^"]*)" model "([^"]*)" uses input rate (\d+) output rate (\d+) reasoning rate (\d+)$`, world.effectiveRunAccountingFallbackPricingForProviderModelUsesRates)
 	ctx.Step(`^effective run llm.reasoning.enabled is (true|false)$`, world.effectiveRunLLMReasoningEnabledIs)
 	ctx.Step(`^effective run llm.reasoning.effort is "([^"]*)"$`, world.effectiveRunLLMReasoningEffortIs)
 	ctx.Step(`^application configuration initialization fails$`, world.applicationConfigurationInitializationFails)
@@ -309,6 +311,10 @@ func (w *harnessWorld) sigilConfigEnvironmentVariablesAreCleared() error {
 		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN",
 		"SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS",
 		"SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES",
+		"SIGIL_RUN_ACCOUNTING_PRICING_VERSION",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_INPUT_MICROUSD_PER_MILLION_TOKENS",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_OUTPUT_MICROUSD_PER_MILLION_TOKENS",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_REASONING_MICROUSD_PER_MILLION_TOKENS",
 		"SIGIL_RUN_SYSTEM_PROMPT_APPEND",
 		"SIGIL_RUN_PROMPT",
 		"SIGIL_RUN_PROMPT_TEMPLATE",
@@ -1384,8 +1390,10 @@ func (w *harnessWorld) coreV1PayloadValidationExecutes() error {
 		"causation_id":   mustUUIDv7StringOrPanic(),
 		"correlation_id": runID,
 		"payload": map[string]any{
-			"status":      "completed",
-			"duration_ms": 0,
+			"status":         "completed",
+			"duration_ms":    0,
+			"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
+			"accounting_ref": "run-output://run/accounting.json",
 			"tool_trace": map[string]any{
 				"name": "deferred",
 			},
@@ -1444,10 +1452,12 @@ func (w *harnessWorld) requiredNodeStepFieldsAndDecisionActionInvariantsAreEnfor
 		"causation_id":   mustUUIDv7StringOrPanic(),
 		"correlation_id": runID,
 		"payload": map[string]any{
-			"step_id":      stepID,
-			"decision":     "continue",
-			"action_count": 0,
-			"duration_ms":  1,
+			"step_id":        stepID,
+			"decision":       "continue",
+			"action_count":   0,
+			"duration_ms":    1,
+			"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
+			"accounting_ref": "run-output://node/" + nodeID + "/step/" + stepID + "/accounting.json",
 		},
 	})
 	if err != nil {
@@ -1696,6 +1706,38 @@ func (w *harnessWorld) effectiveRunGuardrailsMaxConsecutiveStepFailuresIs(expect
 	}
 	if cfg.Guardrails.MaxConsecutiveStepFailures != expected {
 		return fmt.Errorf("expected guardrails.max_consecutive_step_failures %d, got %d", expected, cfg.Guardrails.MaxConsecutiveStepFailures)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunAccountingPricingVersionIs(expected string) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Accounting.PricingVersion != expected {
+		return fmt.Errorf("expected accounting.pricing_version %q, got %q", expected, cfg.Accounting.PricingVersion)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunAccountingFallbackPricingForProviderModelUsesRates(provider string, model string, expectedInput int, expectedOutput int, expectedReasoning int) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	pricing, ok := cfg.Accounting.PricingFor(provider, model)
+	if !ok {
+		return fmt.Errorf("expected fallback pricing for provider %q model %q", provider, model)
+	}
+	if pricing.InputMicrousdPerMillionTokens != int64(expectedInput) {
+		return fmt.Errorf("expected input rate %d, got %d", expectedInput, pricing.InputMicrousdPerMillionTokens)
+	}
+	if pricing.OutputMicrousdPerMillionTokens != int64(expectedOutput) {
+		return fmt.Errorf("expected output rate %d, got %d", expectedOutput, pricing.OutputMicrousdPerMillionTokens)
+	}
+	if pricing.ReasoningMicrousdPerMillionTokens == nil || *pricing.ReasoningMicrousdPerMillionTokens != int64(expectedReasoning) {
+		return fmt.Errorf("expected reasoning rate %d, got %v", expectedReasoning, pricing.ReasoningMicrousdPerMillionTokens)
 	}
 	return nil
 }
@@ -2059,6 +2101,7 @@ func validateCanonicalEventTypeFixtures() error {
 			"payload": map[string]any{
 				"status":      "completed",
 				"duration_ms": 0,
+				"accounting":  acceptanceAccountingRollup("openai", "gpt-5.1"),
 			},
 		},
 		{
@@ -2088,10 +2131,12 @@ func validateCanonicalEventTypeFixtures() error {
 			"causation_id":   mustUUIDv7StringOrPanic(),
 			"correlation_id": runID,
 			"payload": map[string]any{
-				"step_id":      stepID,
-				"decision":     string(sigilruntime.StepDecisionContinue),
-				"action_count": 1,
-				"duration_ms":  0,
+				"step_id":        stepID,
+				"decision":       string(sigilruntime.StepDecisionContinue),
+				"action_count":   1,
+				"duration_ms":    0,
+				"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
+				"accounting_ref": "run-output://node/" + nodeID + "/step/" + stepID + "/accounting.json",
 			},
 		},
 		{
@@ -2133,6 +2178,8 @@ func validateCanonicalEventTypeFixtures() error {
 				"context_bytes":  1,
 				"answer_bytes":   1,
 				"duration_ms":    1,
+				"accounting":     acceptanceAccountingSummary("openai", "gpt-5.1"),
+				"accounting_ref": "run-output://node/" + nodeID + "/step/" + stepID + "/subcall-1-accounting.json",
 			},
 		},
 		{
@@ -2183,6 +2230,7 @@ func validateCanonicalEventTypeFixtures() error {
 			"payload": map[string]any{
 				"status":      "completed",
 				"duration_ms": 0,
+				"accounting":  acceptanceAccountingRollup("openai", "gpt-5.1"),
 			},
 		},
 		{
@@ -2199,6 +2247,7 @@ func validateCanonicalEventTypeFixtures() error {
 				"error_code":    "runtime.failure",
 				"error_message": "failure",
 				"retryable":     false,
+				"accounting":    acceptanceAccountingRollup("openai", "gpt-5.1"),
 			},
 		},
 		{
@@ -2211,8 +2260,9 @@ func validateCanonicalEventTypeFixtures() error {
 			"causation_id":   mustUUIDv7StringOrPanic(),
 			"correlation_id": runID,
 			"payload": map[string]any{
-				"status": "interrupted",
-				"reason": string(sigilruntime.RunInterruptedReasonUserRequest),
+				"status":     "interrupted",
+				"reason":     string(sigilruntime.RunInterruptedReasonUserRequest),
+				"accounting": acceptanceAccountingRollup("openai", "gpt-5.1"),
 			},
 		},
 	}

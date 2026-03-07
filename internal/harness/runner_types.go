@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/repl"
@@ -19,11 +20,12 @@ type RunInput struct {
 
 // RunResult defines canonical run-start success output contract.
 type RunResult struct {
-	RunID          string `json:"run_id"`
-	State          string `json:"state"`
-	FinalAnswer    string `json:"final_answer"`
-	FinalAnswerRef string `json:"final_answer_ref"`
-	EventsPath     string `json:"events_path"`
+	RunID          string            `json:"run_id"`
+	State          string            `json:"state"`
+	FinalAnswer    string            `json:"final_answer"`
+	FinalAnswerRef string            `json:"final_answer_ref"`
+	EventsPath     string            `json:"events_path"`
+	Accounting     accounting.Rollup `json:"accounting"`
 }
 
 // InferenceClient is the minimal inference interface required by runner.

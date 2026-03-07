@@ -3,10 +3,12 @@ package runtime
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/leefowlercu/sigil/internal/accounting"
 )
 
 func TestParseEventEnvelopeStrictRejectsUnknownEnvelopeField(t *testing.T) {
@@ -193,6 +195,8 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 	contentRef := "run-output://node/turn/1"
 	errorCode := "action.failed"
 	errorMessage := "failed action execution"
+	accountingSummary := testAccountingSummary()
+	accountingRollup := testAccountingRollup()
 	outputRef, err := BuildActionOutputRef(nodeID, stepID, 1)
 	if err != nil {
 		t.Fatalf("failed to build output_ref fixture: %v", err)
@@ -234,6 +238,7 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			payload: NodeCompletedPayload{
 				Status:     "completed",
 				DurationMS: 10,
+				Accounting: accountingRollup,
 			},
 		},
 		{
@@ -260,20 +265,24 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			name:      "node.step.completed continue",
 			eventType: EventTypeNodeStepCompleted,
 			payload: NodeStepCompletedPayload{
-				StepID:      stepID,
-				Decision:    StepDecisionContinue,
-				ActionCount: 1,
-				DurationMS:  9,
+				StepID:        stepID,
+				Decision:      StepDecisionContinue,
+				ActionCount:   1,
+				DurationMS:    9,
+				Accounting:    accountingRollup,
+				AccountingRef: testStepAccountingRef(nodeID, stepID),
 			},
 		},
 		{
 			name:      "node.step.completed final",
 			eventType: EventTypeNodeStepCompleted,
 			payload: NodeStepCompletedPayload{
-				StepID:      stepID,
-				Decision:    StepDecisionFinal,
-				ActionCount: 0,
-				DurationMS:  9,
+				StepID:        stepID,
+				Decision:      StepDecisionFinal,
+				ActionCount:   0,
+				DurationMS:    9,
+				Accounting:    accountingRollup,
+				AccountingRef: testStepAccountingRef(nodeID, stepID),
 			},
 		},
 		{
@@ -310,6 +319,8 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 				ContextBytes:  20,
 				AnswerBytes:   12,
 				DurationMS:    2,
+				Accounting:    accountingSummary,
+				AccountingRef: testSubcallAccountingRef(nodeID, stepID, 1),
 			},
 		},
 		{
@@ -331,6 +342,8 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 				ChildNodeID:   &parentID,
 				ErrorCode:     &errorCode,
 				ErrorMessage:  &errorMessage,
+				Accounting:    accountingSummary,
+				AccountingRef: testSubcallAccountingRef(nodeID, stepID, 2),
 			},
 		},
 		{
@@ -367,6 +380,7 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			payload: RunCompletedPayload{
 				Status:     "completed",
 				DurationMS: 11,
+				Accounting: accountingRollup,
 			},
 		},
 		{
@@ -378,14 +392,16 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 				ErrorMessage: "failed",
 				FailedNodeID: &nodeID,
 				Retryable:    false,
+				Accounting:   accountingRollup,
 			},
 		},
 		{
 			name:      "run.interrupted",
 			eventType: EventTypeRunInterrupted,
 			payload: RunInterruptedPayload{
-				Status: "interrupted",
-				Reason: RunInterruptedReasonUserRequest,
+				Status:     "interrupted",
+				Reason:     RunInterruptedReasonUserRequest,
+				Accounting: accountingRollup,
 			},
 		},
 	}
@@ -619,6 +635,7 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				"configured_value": "1",
 				"observed_value":   "1",
 				"retryable":        false,
+				"accounting":       testAccountingRollup(),
 			},
 			expectInvalid: false,
 		},
@@ -632,6 +649,7 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				"limit_key":      "max_steps_per_node",
 				"observed_value": "1",
 				"retryable":      false,
+				"accounting":     testAccountingRollup(),
 			},
 			expectInvalid: true,
 		},
@@ -644,6 +662,7 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				"failed_node_id":   nodeID,
 				"configured_value": "1",
 				"retryable":        false,
+				"accounting":       testAccountingRollup(),
 			},
 			expectInvalid: false,
 		},
@@ -659,6 +678,7 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				"configured_value": "1",
 				"observed_value":   "1",
 				"retryable":        false,
+				"accounting":       testAccountingRollup(),
 			},
 			expectInvalid: true,
 		},
@@ -674,6 +694,7 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				"configured_value": "1",
 				"observed_value":   "1",
 				"retryable":        false,
+				"accounting":       testAccountingRollup(),
 			},
 			expectInvalid: true,
 		},
@@ -688,6 +709,7 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				"configured_value": nil,
 				"observed_value":   nil,
 				"retryable":        false,
+				"accounting":       testAccountingRollup(),
 			},
 			expectInvalid: true,
 		},
@@ -724,5 +746,411 @@ func TestParseEventEnvelopeStrictValidatesRunFailedGuardrailMetadataInvariants(t
 				t.Fatalf("expected success, got %v", err)
 			}
 		})
+	}
+}
+
+func TestParseEventEnvelopeStrictAcceptsLegacyV1PayloadsWithoutAccountingFieldsForOptionalRefEvents(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	errorCode := "runtime.failure"
+	errorMessage := "failure"
+
+	testCases := []struct {
+		name      string
+		eventType EventType
+		nodeID    *string
+		payload   map[string]any
+	}{
+		{
+			name:      "node.completed",
+			eventType: EventTypeNodeCompleted,
+			nodeID:    &nodeID,
+			payload: map[string]any{
+				"status":      "completed",
+				"duration_ms": 1,
+			},
+		},
+		{
+			name:      "run.completed",
+			eventType: EventTypeRunCompleted,
+			payload: map[string]any{
+				"status":      "completed",
+				"duration_ms": 1,
+			},
+		},
+		{
+			name:      "run.failed",
+			eventType: EventTypeRunFailed,
+			payload: map[string]any{
+				"status":        "failed",
+				"error_code":    errorCode,
+				"error_message": errorMessage,
+				"retryable":     false,
+			},
+		},
+		{
+			name:      "run.interrupted",
+			eventType: EventTypeRunInterrupted,
+			payload: map[string]any{
+				"status": "interrupted",
+				"reason": string(RunInterruptedReasonUserRequest),
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := map[string]any{
+				"event_id":       mustUUIDv7String(t),
+				"schema_version": SchemaVersionV1,
+				"run_id":         runID,
+				"seq":            2,
+				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+				"type":           testCase.eventType,
+				"causation_id":   mustUUIDv7String(t),
+				"correlation_id": runID,
+				"payload":        testCase.payload,
+			}
+			if testCase.nodeID != nil {
+				raw["node_id"] = *testCase.nodeID
+			}
+
+			serialized, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("expected serialization success, got %v", err)
+			}
+
+			event, err := ParseEventEnvelopeStrict(serialized)
+			if err != nil {
+				t.Fatalf("expected legacy v1 event to remain parseable, got %v", err)
+			}
+
+			assertLegacyPayloadAccountingDefaults(t, event.Payload)
+		})
+	}
+}
+
+func TestParseEventEnvelopeStrictRejectsEmptyAccountingRefsForStepAndSubcallEvents(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+
+	testCases := []struct {
+		name      string
+		eventType EventType
+		payload   map[string]any
+	}{
+		{
+			name:      "node.step.completed",
+			eventType: EventTypeNodeStepCompleted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"decision":       string(StepDecisionContinue),
+				"action_count":   1,
+				"duration_ms":    1,
+				"accounting":     testAccountingRollup(),
+				"accounting_ref": "",
+			},
+		},
+		{
+			name:      "node.subcall.executed",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   string(SubcallTypeLLMQuery),
+				"execution_mode": string(SubcallExecutionModePlain),
+				"status":         string(ActionExecutionStatusCompleted),
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   1,
+				"duration_ms":    1,
+				"accounting":     testAccountingSummary(),
+				"accounting_ref": "",
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := map[string]any{
+				"event_id":       mustUUIDv7String(t),
+				"schema_version": SchemaVersionV1,
+				"run_id":         runID,
+				"seq":            2,
+				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+				"type":           testCase.eventType,
+				"node_id":        nodeID,
+				"causation_id":   mustUUIDv7String(t),
+				"correlation_id": runID,
+				"payload":        testCase.payload,
+			}
+
+			serialized, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("expected serialization success, got %v", err)
+			}
+
+			if _, err := ParseEventEnvelopeStrict(serialized); err == nil {
+				t.Fatal("expected strict parse failure for empty accounting_ref")
+			}
+		})
+	}
+}
+
+func TestParseEventEnvelopeStrictPreservesLegacyStepAndSubcallEventsWithoutAccounting(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+
+	testCases := []struct {
+		name      string
+		eventType EventType
+		payload   map[string]any
+	}{
+		{
+			name:      "node.step.completed",
+			eventType: EventTypeNodeStepCompleted,
+			payload: map[string]any{
+				"step_id":      stepID,
+				"decision":     string(StepDecisionContinue),
+				"action_count": 1,
+				"duration_ms":  1,
+			},
+		},
+		{
+			name:      "node.subcall.executed",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   string(SubcallTypeLLMQuery),
+				"execution_mode": string(SubcallExecutionModePlain),
+				"status":         string(ActionExecutionStatusCompleted),
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   1,
+				"duration_ms":    1,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := map[string]any{
+				"event_id":       mustUUIDv7String(t),
+				"schema_version": SchemaVersionV1,
+				"run_id":         runID,
+				"seq":            2,
+				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+				"type":           testCase.eventType,
+				"node_id":        nodeID,
+				"causation_id":   mustUUIDv7String(t),
+				"correlation_id": runID,
+				"payload":        testCase.payload,
+			}
+
+			serialized, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("expected serialization success, got %v", err)
+			}
+
+			event, err := ParseEventEnvelopeStrict(serialized)
+			if err != nil {
+				t.Fatalf("expected legacy v1 event to remain parseable, got %v", err)
+			}
+
+			assertLegacyPayloadAccountingDefaults(t, event.Payload)
+		})
+	}
+}
+
+func TestParseEventEnvelopeStrictRejectsHalfPresentAccountingFieldsForStepAndSubcallEvents(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+
+	testCases := []struct {
+		name      string
+		eventType EventType
+		payload   map[string]any
+	}{
+		{
+			name:      "node.step.completed missing accounting",
+			eventType: EventTypeNodeStepCompleted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"decision":       string(StepDecisionContinue),
+				"action_count":   1,
+				"duration_ms":    1,
+				"accounting_ref": testStepAccountingRef(nodeID, stepID),
+			},
+		},
+		{
+			name:      "node.step.completed missing accounting_ref",
+			eventType: EventTypeNodeStepCompleted,
+			payload: map[string]any{
+				"step_id":      stepID,
+				"decision":     string(StepDecisionContinue),
+				"action_count": 1,
+				"duration_ms":  1,
+				"accounting":   testAccountingRollup(),
+			},
+		},
+		{
+			name:      "node.subcall.executed missing accounting",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   string(SubcallTypeLLMQuery),
+				"execution_mode": string(SubcallExecutionModePlain),
+				"status":         string(ActionExecutionStatusCompleted),
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   1,
+				"duration_ms":    1,
+				"accounting_ref": testSubcallAccountingRef(nodeID, stepID, 1),
+			},
+		},
+		{
+			name:      "node.subcall.executed missing accounting_ref",
+			eventType: EventTypeNodeSubcallExecuted,
+			payload: map[string]any{
+				"step_id":        stepID,
+				"action_index":   1,
+				"subcall_index":  1,
+				"subcall_type":   string(SubcallTypeLLMQuery),
+				"execution_mode": string(SubcallExecutionModePlain),
+				"status":         string(ActionExecutionStatusCompleted),
+				"provider":       "openai",
+				"model":          "gpt-5.1",
+				"prompt_bytes":   1,
+				"context_bytes":  1,
+				"answer_bytes":   1,
+				"duration_ms":    1,
+				"accounting":     testAccountingSummary(),
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			raw := map[string]any{
+				"event_id":       mustUUIDv7String(t),
+				"schema_version": SchemaVersionV1,
+				"run_id":         runID,
+				"seq":            2,
+				"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+				"type":           testCase.eventType,
+				"node_id":        nodeID,
+				"causation_id":   mustUUIDv7String(t),
+				"correlation_id": runID,
+				"payload":        testCase.payload,
+			}
+
+			serialized, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("expected serialization success, got %v", err)
+			}
+
+			if _, err := ParseEventEnvelopeStrict(serialized); err == nil {
+				t.Fatal("expected strict parse failure for half-present accounting fields")
+			}
+		})
+	}
+}
+
+func testAccountingSummary() accounting.Summary {
+	inputTokens := int64(12)
+	outputTokens := int64(5)
+	totalTokens := int64(17)
+	reasoningTokens := int64(2)
+	inputCost := int64(1200)
+	outputCost := int64(400)
+	reasoningCost := int64(150)
+	totalCost := int64(1750)
+
+	return accounting.Summary{
+		Currency:                   accounting.CurrencyUSD,
+		InputTokens:                &inputTokens,
+		OutputTokens:               &outputTokens,
+		TotalTokens:                &totalTokens,
+		ReasoningTokens:            &reasoningTokens,
+		KnownInputCostMicrousd:     &inputCost,
+		KnownOutputCostMicrousd:    &outputCost,
+		KnownReasoningCostMicrousd: &reasoningCost,
+		KnownTotalCostMicrousd:     &totalCost,
+		TokenSource:                accounting.SourceGatewayReported,
+		TokenStatus:                accounting.StatusComplete,
+		CostSource:                 accounting.SourceGatewayReported,
+		CostStatus:                 accounting.StatusComplete,
+		PricingKey: accounting.PricingKey{
+			Provider: "openai",
+			Model:    "gpt-5.1",
+		},
+		PricingVersion:        "v1",
+		MissingTokenItemCount: 0,
+		MissingCostItemCount:  0,
+	}
+}
+
+func testAccountingRollup() accounting.Rollup {
+	return accounting.BuildRollup(
+		"openai",
+		"gpt-5.1",
+		"v1",
+		testAccountingSummary(),
+		accounting.ZeroSummary("openai", "gpt-5.1", "v1"),
+	)
+}
+
+func testStepAccountingRef(nodeID string, stepID string) string {
+	return "run-output://node/" + nodeID + "/step/" + stepID + "/accounting.json"
+}
+
+func testSubcallAccountingRef(nodeID string, stepID string, subcallIndex int) string {
+	return fmt.Sprintf("run-output://node/%s/step/%s/subcall-%d-accounting.json", nodeID, stepID, subcallIndex)
+}
+
+func assertLegacyPayloadAccountingDefaults(t *testing.T, payload any) {
+	t.Helper()
+
+	switch typed := payload.(type) {
+	case NodeCompletedPayload:
+		if typed.Accounting.ModelTotal.Currency != accounting.CurrencyUSD {
+			t.Fatalf("expected default node.completed accounting, got %+v", typed.Accounting)
+		}
+	case NodeStepCompletedPayload:
+		if typed.Accounting.ModelTotal.Currency != accounting.CurrencyUSD {
+			t.Fatalf("expected default node.step.completed accounting, got %+v", typed.Accounting)
+		}
+	case NodeSubcallExecutedPayload:
+		if typed.Accounting.Currency != accounting.CurrencyUSD {
+			t.Fatalf("expected default node.subcall.executed accounting, got %+v", typed.Accounting)
+		}
+	case RunCompletedPayload:
+		if typed.Accounting.ModelTotal.Currency != accounting.CurrencyUSD {
+			t.Fatalf("expected default run.completed accounting, got %+v", typed.Accounting)
+		}
+	case RunFailedPayload:
+		if typed.Accounting.ModelTotal.Currency != accounting.CurrencyUSD {
+			t.Fatalf("expected default run.failed accounting, got %+v", typed.Accounting)
+		}
+	case RunInterruptedPayload:
+		if typed.Accounting.ModelTotal.Currency != accounting.CurrencyUSD {
+			t.Fatalf("expected default run.interrupted accounting, got %+v", typed.Accounting)
+		}
+	default:
+		t.Fatalf("unexpected payload type %T", payload)
 	}
 }

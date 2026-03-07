@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
@@ -142,7 +144,8 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 		return inference.GatewayResponse{}, fmt.Errorf("failed to extract structured response payload; %w", err)
 	}
 
-	usage := extractUsage(decoded)
+	usage, usageReported := extractUsage(decoded)
+	accountingSample := extractAccounting(request, decoded, usage, usageReported)
 	reasoning := extractReasoning(decoded)
 
 	responseID, _ := decoded["id"].(string)
@@ -169,6 +172,8 @@ func (a *Adapter) Infer(ctx context.Context, request inference.GatewayRequest) (
 		FinishStatus:      strings.TrimSpace(status),
 		StructuredPayload: structuredPayload,
 		Usage:             usage,
+		UsageReported:     usageReported,
+		Accounting:        accountingSample,
 		Reasoning:         reasoning,
 		RawMetadata:       rawMetadata,
 	}, nil
@@ -358,16 +363,31 @@ func decodePayloadText(text string) (map[string]any, error) {
 	return payload, nil
 }
 
-func extractUsage(decoded map[string]any) inference.Usage {
+func extractUsage(decoded map[string]any) (inference.Usage, bool) {
 	usageMap := asMap(decoded["usage"])
 	if usageMap == nil {
-		return inference.Usage{}
+		return inference.Usage{}, false
 	}
+	reported := hasAnyKey(usageMap, "input_tokens", "output_tokens", "total_tokens", "prompt_tokens", "completion_tokens")
+	inputKnown := hasAnyKey(usageMap, "input_tokens", "prompt_tokens")
+	outputKnown := hasAnyKey(usageMap, "output_tokens", "completion_tokens")
 
 	usage := inference.Usage{
 		InputTokens:  int64FromAny(usageMap["input_tokens"]),
 		OutputTokens: int64FromAny(usageMap["output_tokens"]),
 		TotalTokens:  int64FromAny(usageMap["total_tokens"]),
+	}
+	if usage.InputTokens == 0 {
+		usage.InputTokens = int64FromAny(usageMap["prompt_tokens"])
+	}
+	if usage.OutputTokens == 0 {
+		usage.OutputTokens = int64FromAny(usageMap["completion_tokens"])
+	}
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = int64FromAny(usageMap["total_tokens"])
+		if usage.TotalTokens == 0 && inputKnown && outputKnown {
+			usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+		}
 	}
 
 	reasoningTokens := int64FromAny(usageMap["reasoning_tokens"])
@@ -375,11 +395,33 @@ func extractUsage(decoded map[string]any) inference.Usage {
 		outputDetails := asMap(usageMap["output_tokens_details"])
 		reasoningTokens = int64FromAny(outputDetails["reasoning_tokens"])
 	}
+	if reasoningTokens == 0 {
+		completionDetails := asMap(usageMap["completion_tokens_details"])
+		reasoningTokens = int64FromAny(completionDetails["reasoning_tokens"])
+	}
 	if reasoningTokens > 0 {
 		usage.ReasoningTokens = &reasoningTokens
 	}
 
-	return usage
+	return usage, reported
+}
+
+func extractAccounting(request inference.GatewayRequest, decoded map[string]any, usage inference.Usage, usageReported bool) inference.AccountingSample {
+	usageMap := asMap(decoded["usage"])
+
+	return accounting.BuildLeafSummary(accounting.LeafInput{
+		Provider:         request.Provider,
+		Model:            request.Model,
+		ReasoningEnabled: request.Reasoning.Enabled,
+		InputTokens:      firstKnownTokenPointer(usageMap, "input_tokens", "prompt_tokens"),
+		OutputTokens:     firstKnownTokenPointer(usageMap, "output_tokens", "completion_tokens"),
+		TotalTokens:      firstKnownInt64Pointer(firstKnownTokenPointer(usageMap, "total_tokens"), knownTokenPointer(usage.TotalTokens, usageReported)),
+		ReasoningTokens:  knownReasoningTokenPointer(usageMap, usage.ReasoningTokens),
+		GatewayTotalCostMicrousd: firstKnownMicrousd(
+			microusdFromAny(usageMap["cost"]),
+			microusdFromAny(decoded["cost"]),
+		),
+	})
 }
 
 func extractReasoning(decoded map[string]any) inference.Reasoning {
@@ -439,6 +481,145 @@ func int64FromAny(value any) int64 {
 	}
 
 	return 0
+}
+
+func microusdFromAny(value any) *int64 {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case json.Number:
+		return microusdFromString(typed.String())
+	case string:
+		return microusdFromString(typed)
+	case float64:
+		return int64Pointer(int64(typed * 1_000_000))
+	case float32:
+		return int64Pointer(int64(float64(typed) * 1_000_000))
+	case int:
+		return int64Pointer(int64(typed * 1_000_000))
+	case int64:
+		return int64Pointer(typed * 1_000_000)
+	default:
+		return nil
+	}
+}
+
+func microusdFromString(raw string) *int64 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	rational, ok := new(big.Rat).SetString(trimmed)
+	if !ok {
+		return nil
+	}
+	rational.Mul(rational, big.NewRat(1_000_000, 1))
+	value, _ := rational.Float64()
+	return int64Pointer(int64(value))
+}
+
+func firstKnownMicrousd(values ...*int64) *int64 {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func firstKnownInt64Pointer(values ...*int64) *int64 {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func hasAnyKey(input map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := input[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func firstKnownTokenPointer(input map[string]any, keys ...string) *int64 {
+	if input == nil {
+		return nil
+	}
+	for _, key := range keys {
+		value, ok := input[key]
+		if !ok {
+			continue
+		}
+		if known := knownInt64Pointer(value); known != nil {
+			return known
+		}
+	}
+	return nil
+}
+
+func knownReasoningTokenPointer(usageMap map[string]any, fallback *int64) *int64 {
+	if usageMap == nil {
+		return cloneInt64Pointer(fallback)
+	}
+	if known := firstKnownTokenPointer(usageMap, "reasoning_tokens"); known != nil {
+		return known
+	}
+	if known := firstKnownTokenPointer(asMap(usageMap["output_tokens_details"]), "reasoning_tokens"); known != nil {
+		return known
+	}
+	if known := firstKnownTokenPointer(asMap(usageMap["completion_tokens_details"]), "reasoning_tokens"); known != nil {
+		return known
+	}
+	return cloneInt64Pointer(fallback)
+}
+
+func knownTokenPointer(value int64, usageReported bool) *int64 {
+	if !usageReported || value == 0 {
+		return nil
+	}
+	return int64Pointer(value)
+}
+
+func knownInt64Pointer(value any) *int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64Pointer(int64(typed))
+	case int32:
+		return int64Pointer(int64(typed))
+	case int64:
+		return int64Pointer(typed)
+	case float64:
+		return int64Pointer(int64(typed))
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return int64Pointer(parsed)
+		}
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err == nil {
+			return int64Pointer(parsed)
+		}
+	}
+
+	return nil
+}
+
+func cloneInt64Pointer(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
+func int64Pointer(value int64) *int64 {
+	copied := value
+	return &copied
 }
 
 func cloneMap(input map[string]any) map[string]any {

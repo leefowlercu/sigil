@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
 
@@ -308,5 +309,268 @@ func TestInferSetsReasoningEffortToNilWhenDisabled(t *testing.T) {
 	}
 	if result.Reasoning.Effort != nil {
 		t.Fatalf("expected reasoning.effort=nil when disabled, got %+v", result.Reasoning)
+	}
+}
+
+func TestInferDerivesFallbackCostWhenGatewayReportsUsageOnly(t *testing.T) {
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		FinishStatus:      "completed",
+		StructuredPayload: validFinalPayload(),
+		UsageReported:     true,
+		Usage: Usage{
+			InputTokens:  1_000_000,
+			OutputTokens: 1_000_000,
+			TotalTokens:  2_000_000,
+		},
+	}}}}
+	service := makeService(t, gateway)
+
+	request := baseRequest()
+	request.Accounting = AccountingConfig{
+		PricingVersion: "v1",
+		FallbackPricing: &accounting.FallbackPricing{
+			InputMicrousdPerMillionTokens:  100,
+			OutputMicrousdPerMillionTokens: 200,
+		},
+	}
+
+	result, runErr := service.Infer(context.Background(), request)
+	if runErr != nil {
+		t.Fatalf("expected inference success, got %v", runErr)
+	}
+	if result.Accounting.CostSource != accounting.SourceFallbackPricing {
+		t.Fatalf("expected fallback pricing cost source, got %q", result.Accounting.CostSource)
+	}
+	if result.Accounting.KnownTotalCostMicrousd == nil || *result.Accounting.KnownTotalCostMicrousd != 300 {
+		t.Fatalf("expected known_total_cost_microusd=300, got %+v", result.Accounting.KnownTotalCostMicrousd)
+	}
+}
+
+func TestInferUsesMixedGatewayAndFallbackCostAccounting(t *testing.T) {
+	inputCost := int64(100)
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		FinishStatus:      "completed",
+		StructuredPayload: validFinalPayload(),
+		UsageReported:     true,
+		Usage: Usage{
+			InputTokens:  1_000_000,
+			OutputTokens: 1_000_000,
+			TotalTokens:  2_000_000,
+		},
+		Accounting: accounting.Summary{
+			Currency:               accounting.CurrencyUSD,
+			KnownInputCostMicrousd: &inputCost,
+			TokenSource:            accounting.SourceGatewayReported,
+			TokenStatus:            accounting.StatusComplete,
+			CostSource:             accounting.SourceGatewayReported,
+			CostStatus:             accounting.StatusPartial,
+			PricingKey:             accounting.PricingKey{Provider: "openai", Model: "gpt-5.1"},
+			MissingTokenItemCount:  0,
+			MissingCostItemCount:   1,
+		},
+	}}}}
+	service := makeService(t, gateway)
+
+	request := baseRequest()
+	request.Accounting = AccountingConfig{
+		PricingVersion: "v1",
+		FallbackPricing: &accounting.FallbackPricing{
+			InputMicrousdPerMillionTokens:  100,
+			OutputMicrousdPerMillionTokens: 200,
+		},
+	}
+
+	result, runErr := service.Infer(context.Background(), request)
+	if runErr != nil {
+		t.Fatalf("expected inference success, got %v", runErr)
+	}
+	if result.Accounting.CostSource != accounting.SourceMixed {
+		t.Fatalf("expected mixed cost source, got %q", result.Accounting.CostSource)
+	}
+	if result.Accounting.KnownInputCostMicrousd == nil || *result.Accounting.KnownInputCostMicrousd != 100 {
+		t.Fatalf("expected gateway input cost 100, got %+v", result.Accounting.KnownInputCostMicrousd)
+	}
+	if result.Accounting.KnownOutputCostMicrousd == nil || *result.Accounting.KnownOutputCostMicrousd != 200 {
+		t.Fatalf("expected fallback output cost 200, got %+v", result.Accounting.KnownOutputCostMicrousd)
+	}
+	if result.Accounting.KnownTotalCostMicrousd == nil || *result.Accounting.KnownTotalCostMicrousd != 300 {
+		t.Fatalf("expected combined total cost 300, got %+v", result.Accounting.KnownTotalCostMicrousd)
+	}
+}
+
+func TestInferPreservesMissingUsageCountersWhenApplyingAccountingNormalization(t *testing.T) {
+	inputTokens := int64(1_000_000)
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		FinishStatus:      "completed",
+		StructuredPayload: validFinalPayload(),
+		UsageReported:     true,
+		Usage: Usage{
+			InputTokens: 1_000_000,
+		},
+		Accounting: accounting.BuildLeafSummary(accounting.LeafInput{
+			Provider:    "openai",
+			Model:       "gpt-5.1",
+			InputTokens: &inputTokens,
+		}),
+	}}}}
+	service := makeService(t, gateway)
+
+	request := baseRequest()
+	request.Accounting = AccountingConfig{
+		PricingVersion: "v1",
+		FallbackPricing: &accounting.FallbackPricing{
+			InputMicrousdPerMillionTokens:  100,
+			OutputMicrousdPerMillionTokens: 200,
+		},
+	}
+
+	result, runErr := service.Infer(context.Background(), request)
+	if runErr != nil {
+		t.Fatalf("expected inference success, got %v", runErr)
+	}
+	if result.Accounting.InputTokens == nil || *result.Accounting.InputTokens != 1_000_000 {
+		t.Fatalf("expected input_tokens=1000000, got %+v", result.Accounting.InputTokens)
+	}
+	if result.Accounting.OutputTokens != nil {
+		t.Fatalf("expected output_tokens to remain unknown, got %+v", result.Accounting.OutputTokens)
+	}
+	if result.Accounting.TotalTokens != nil {
+		t.Fatalf("expected total_tokens to remain unknown, got %+v", result.Accounting.TotalTokens)
+	}
+	if result.Accounting.KnownOutputCostMicrousd != nil {
+		t.Fatalf("expected output fallback cost to remain unknown, got %+v", result.Accounting.KnownOutputCostMicrousd)
+	}
+	if result.Accounting.CostStatus != accounting.StatusPartial {
+		t.Fatalf("expected partial cost status, got %q", result.Accounting.CostStatus)
+	}
+	if result.Accounting.KnownTotalCostMicrousd == nil || *result.Accounting.KnownTotalCostMicrousd != 100 {
+		t.Fatalf("expected fallback subtotal cost 100, got %+v", result.Accounting.KnownTotalCostMicrousd)
+	}
+}
+
+func TestInferBackfillsDerivedTotalTokensWhenGatewayAccountingIsPartial(t *testing.T) {
+	inputTokens := int64(1_000_000)
+	outputTokens := int64(500_000)
+
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		FinishStatus:      "completed",
+		StructuredPayload: validFinalPayload(),
+		UsageReported:     true,
+		Usage: Usage{
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			TotalTokens:  inputTokens + outputTokens,
+		},
+		Accounting: accounting.BuildLeafSummary(accounting.LeafInput{
+			Provider:       "openai",
+			Model:          "gpt-5.1",
+			InputTokens:    &inputTokens,
+			OutputTokens:   &outputTokens,
+			PricingVersion: "v1",
+		}),
+	}}}}
+	service := makeService(t, gateway)
+
+	request := baseRequest()
+	request.Accounting = AccountingConfig{
+		PricingVersion: "v1",
+		FallbackPricing: &accounting.FallbackPricing{
+			InputMicrousdPerMillionTokens:  100,
+			OutputMicrousdPerMillionTokens: 200,
+		},
+	}
+
+	result, runErr := service.Infer(context.Background(), request)
+	if runErr != nil {
+		t.Fatalf("expected inference success, got %v", runErr)
+	}
+	if result.Accounting.TotalTokens == nil || *result.Accounting.TotalTokens != 1_500_000 {
+		t.Fatalf("expected total_tokens=1500000, got %+v", result.Accounting.TotalTokens)
+	}
+	if result.Accounting.TokenStatus != accounting.StatusComplete {
+		t.Fatalf("expected complete token status, got %q", result.Accounting.TokenStatus)
+	}
+	if result.Accounting.KnownTotalCostMicrousd == nil || *result.Accounting.KnownTotalCostMicrousd != 200 {
+		t.Fatalf("expected known_total_cost_microusd=200, got %+v", result.Accounting.KnownTotalCostMicrousd)
+	}
+}
+
+func TestInferPreservesReportedZeroUsageCountersDuringAccountingNormalization(t *testing.T) {
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		FinishStatus:      "completed",
+		StructuredPayload: validFinalPayload(),
+		UsageReported:     true,
+		Usage: Usage{
+			InputTokens:  42,
+			OutputTokens: 0,
+			TotalTokens:  42,
+		},
+	}}}}
+	service := makeService(t, gateway)
+
+	result, runErr := service.Infer(context.Background(), baseRequest())
+	if runErr != nil {
+		t.Fatalf("expected inference success, got %v", runErr)
+	}
+	if result.Accounting.InputTokens == nil || *result.Accounting.InputTokens != 42 {
+		t.Fatalf("expected input_tokens=42, got %+v", result.Accounting.InputTokens)
+	}
+	if result.Accounting.OutputTokens == nil || *result.Accounting.OutputTokens != 0 {
+		t.Fatalf("expected output_tokens=0, got %+v", result.Accounting.OutputTokens)
+	}
+	if result.Accounting.TotalTokens == nil || *result.Accounting.TotalTokens != 42 {
+		t.Fatalf("expected total_tokens=42, got %+v", result.Accounting.TotalTokens)
+	}
+	if result.Accounting.TokenStatus != accounting.StatusComplete {
+		t.Fatalf("expected complete token status, got %q", result.Accounting.TokenStatus)
+	}
+}
+
+func TestInferKeepsFallbackPricingKeyOnRequestedModelWhenGatewayAliasesResponseModel(t *testing.T) {
+	gateway := &sequenceGateway{results: []gatewayResult{{response: GatewayResponse{
+		Provider:          "openai",
+		Model:             "gpt-5.1-alias",
+		FinishStatus:      "completed",
+		StructuredPayload: validFinalPayload(),
+		UsageReported:     true,
+		Usage: Usage{
+			InputTokens:  1_000_000,
+			OutputTokens: 1_000_000,
+			TotalTokens:  2_000_000,
+		},
+	}}}}
+	service := makeService(t, gateway)
+
+	request := baseRequest()
+	request.Accounting = AccountingConfig{
+		PricingVersion: "v1",
+		FallbackPricing: &accounting.FallbackPricing{
+			InputMicrousdPerMillionTokens:  100,
+			OutputMicrousdPerMillionTokens: 200,
+		},
+	}
+
+	result, runErr := service.Infer(context.Background(), request)
+	if runErr != nil {
+		t.Fatalf("expected inference success, got %v", runErr)
+	}
+	if result.Accounting.CostSource != accounting.SourceFallbackPricing {
+		t.Fatalf("expected fallback pricing cost source, got %q", result.Accounting.CostSource)
+	}
+	if result.Accounting.PricingKey.Provider != request.Provider {
+		t.Fatalf("expected pricing key provider %q, got %q", request.Provider, result.Accounting.PricingKey.Provider)
+	}
+	if result.Accounting.PricingKey.Model != request.Model {
+		t.Fatalf("expected pricing key model %q, got %q", request.Model, result.Accounting.PricingKey.Model)
 	}
 }

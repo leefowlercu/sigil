@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/leefowlercu/sigil/internal/accounting"
 )
 
 func TestNewLifecycleWithOptionsInitializesQueuedStateWithUUIDv7RunID(t *testing.T) {
@@ -414,6 +415,47 @@ func TestNodeTerminalEventExclusivityBetweenCompletedAndFailed(t *testing.T) {
 	if !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("expected ErrInvalidTransition, got %v", err)
 	}
+}
+
+func TestFailWithLeavesAccountingRefUnsetWhenCallerOmitsArtifact(t *testing.T) {
+	lifecycle := mustRunningLifecycle(t)
+
+	if err := lifecycle.FailWith(RunFailedPayload{
+		Status:       "failed",
+		ErrorCode:    "runtime.failure",
+		ErrorMessage: "failed",
+		Retryable:    false,
+		Accounting: accounting.BuildRollup(
+			"openai",
+			"gpt-5.1",
+			"v1",
+			accounting.UnavailableSummary("openai", "gpt-5.1", "v1"),
+			accounting.ZeroSummary("openai", "gpt-5.1", "v1"),
+		),
+	}); err != nil {
+		t.Fatalf("expected lifecycle fail success, got %v", err)
+	}
+
+	events, err := lifecycle.PersistedEvents()
+	if err != nil {
+		t.Fatalf("expected persisted events read success, got %v", err)
+	}
+
+	for _, event := range events {
+		if event.Type != EventTypeRunFailed {
+			continue
+		}
+		payload, ok := event.Payload.(RunFailedPayload)
+		if !ok {
+			t.Fatalf("expected run.failed payload type, got %T", event.Payload)
+		}
+		if payload.AccountingRef != nil {
+			t.Fatalf("expected accounting_ref to remain omitted, got %q", *payload.AccountingRef)
+		}
+		return
+	}
+
+	t.Fatal("expected run.failed event")
 }
 
 func mustNewLifecycle(t *testing.T) *Lifecycle {

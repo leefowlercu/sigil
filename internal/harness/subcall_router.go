@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
@@ -34,6 +35,7 @@ type subcallRecord struct {
 	durationMS  int
 	mode        runtime.SubcallExecutionMode
 	childNodeID *string
+	accounting  accounting.Summary
 }
 
 type SubcallRouter struct {
@@ -44,6 +46,8 @@ type SubcallRouter struct {
 	stepID       string
 	actionIndex  int
 	nonRecursive bool
+	turnOutputs  *TurnOutputStore
+	ledger       *accounting.Ledger
 	executeChild childNodeExecutor
 	logger       *slog.Logger
 	batchWorkers int
@@ -62,6 +66,8 @@ type SubcallRouterInput struct {
 	StepID       string
 	ActionIndex  int
 	NonRecursive bool
+	TurnOutputs  *TurnOutputStore
+	Ledger       *accounting.Ledger
 	ExecuteChild childNodeExecutor
 }
 
@@ -81,6 +87,12 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 	if input.ActionIndex < 1 {
 		return nil, fmt.Errorf("action index must be >= 1")
 	}
+	if input.TurnOutputs == nil {
+		return nil, fmt.Errorf("turn output store is required")
+	}
+	if input.Ledger == nil {
+		return nil, fmt.Errorf("accounting ledger is required")
+	}
 	if input.ExecuteChild == nil {
 		return nil, fmt.Errorf("child executor is required")
 	}
@@ -93,6 +105,8 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 		stepID:         input.StepID,
 		actionIndex:    input.ActionIndex,
 		nonRecursive:   input.NonRecursive,
+		turnOutputs:    input.TurnOutputs,
+		ledger:         input.Ledger,
 		executeChild:   input.ExecuteChild,
 		logger:         subcallRouterLogger().With("run_id", input.Lifecycle.RunID(), "node_id", input.Node.ID, "step_id", input.StepID),
 		batchWorkers:   defaultLLMQueryBatchWorkers,
@@ -223,12 +237,13 @@ func (r *SubcallRouter) FatalError() error {
 
 func (r *SubcallRouter) executeLLMQuery(ctx context.Context, request repl.QueryRequest) subcallRecord {
 	start := time.Now().UTC()
-	answer, err := r.inferLLMAnswer(ctx, request.Prompt, request.Context)
+	answer, summary, err := r.inferLLMAnswer(ctx, request.Prompt, request.Context)
 	return subcallRecord{
 		answer:     answer,
 		err:        err,
 		durationMS: durationMS(start),
 		mode:       runtime.SubcallExecutionModePlain,
+		accounting: summary,
 	}
 }
 
@@ -240,18 +255,20 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 			err:        err,
 			durationMS: durationMS(start),
 			mode:       runtime.SubcallExecutionModeFallback,
+			accounting: accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion),
 		}, nil
 	}
 
 	childNode, err := r.lifecycle.CreateChildNode(r.node.ID)
 	if err != nil {
 		if errors.Is(err, runtime.ErrDepthLimitExceeded) {
-			answer, fallbackErr := r.inferLLMAnswer(ctx, request.Prompt, request.Context)
+			answer, summary, fallbackErr := r.inferLLMAnswer(ctx, request.Prompt, request.Context)
 			return subcallRecord{
 				answer:     answer,
 				err:        fallbackErr,
 				durationMS: durationMS(start),
 				mode:       runtime.SubcallExecutionModeFallback,
+				accounting: summary,
 			}, nil
 		}
 
@@ -259,16 +276,19 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 			err:        repl.WrapError(repl.ErrorCodeChildFailure, "rlm_query child creation failed", err),
 			durationMS: durationMS(start),
 			mode:       runtime.SubcallExecutionModeRecursive,
+			accounting: accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion),
 		}, nil
 	}
 
 	result, childErr := r.executeChild(ctx, childNode, request.Prompt, request.Context)
+	childAccounting := r.ledger.NodeRollup(childNode.ID).TreeTotal
 	if childErr != nil {
 		record := subcallRecord{
 			err:         repl.WrapError(repl.ErrorCodeChildFailure, "rlm_query child execution failed", childErr),
 			durationMS:  durationMS(start),
 			mode:        runtime.SubcallExecutionModeRecursive,
 			childNodeID: cloneStringPointer(childNode.ID),
+			accounting:  childAccounting,
 		}
 		if code, ok := CodeOf(childErr); ok && code == ErrorCodeLimitExceeded {
 			r.setFatal(childErr)
@@ -282,17 +302,18 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 		durationMS:  durationMS(start),
 		mode:        runtime.SubcallExecutionModeRecursive,
 		childNodeID: cloneStringPointer(childNode.ID),
+		accounting:  childAccounting,
 	}, nil
 }
 
-func (r *SubcallRouter) inferLLMAnswer(ctx context.Context, prompt string, subContext string) (string, error) {
+func (r *SubcallRouter) inferLLMAnswer(ctx context.Context, prompt string, subContext string) (string, accounting.Summary, error) {
 	userPayload := map[string]string{
 		"prompt":  prompt,
 		"context": subContext,
 	}
 	encodedPayload, err := json.Marshal(userPayload)
 	if err != nil {
-		return "", repl.WrapError(repl.ErrorCodeSubcallInference, "failed to encode plain subcall input", err)
+		return "", accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion), repl.WrapError(repl.ErrorCodeSubcallInference, "failed to encode plain subcall input", err)
 	}
 
 	result, err := r.inference.Infer(ctx, inference.Request{
@@ -313,25 +334,38 @@ func (r *SubcallRouter) inferLLMAnswer(ctx context.Context, prompt string, subCo
 			Enabled: false,
 			Effort:  "",
 		},
+		Accounting: buildInferenceAccountingConfig(r.runConfig),
 	})
 	if err != nil {
-		return "", repl.WrapError(repl.ErrorCodeSubcallInference, "plain subcall inference failed", err)
+		return "", accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion), repl.WrapError(repl.ErrorCodeSubcallInference, "plain subcall inference failed", err)
 	}
 
 	answerRaw, ok := result.ValidatedPayload["answer"]
 	if !ok {
-		return "", repl.WrapError(repl.ErrorCodeSubcallInference, "plain subcall payload missing answer", nil)
+		return "", result.Accounting, repl.WrapError(repl.ErrorCodeSubcallInference, "plain subcall payload missing answer", nil)
 	}
 	answer, ok := answerRaw.(string)
 	if !ok || strings.TrimSpace(answer) == "" {
-		return "", repl.WrapError(repl.ErrorCodeSubcallInference, "plain subcall payload answer must be non-empty", nil)
+		return "", result.Accounting, repl.WrapError(repl.ErrorCodeSubcallInference, "plain subcall payload answer must be non-empty", nil)
 	}
 
-	return answer, nil
+	return answer, result.Accounting, nil
 }
 
 func (r *SubcallRouter) persistRecord(subcallType runtime.SubcallType, request repl.QueryRequest, record subcallRecord) error {
 	subcallIndex := r.nextIndex()
+	subcallAccounting := record.accounting
+	if subcallAccounting.Currency == "" {
+		subcallAccounting = accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion)
+	}
+	r.ledger.RecordSubcall(r.node.ID, r.stepID, subcallAccounting)
+	accountingRef, err := r.turnOutputs.PersistSubcallAccounting(r.lifecycle.RunID(), r.node.ID, r.stepID, subcallIndex, subcallAccounting)
+	if err != nil {
+		wrapped := repl.WrapError(repl.ErrorCodeSubcallEventPersist, "failed to persist subcall accounting output", err)
+		r.setFatal(wrapped)
+		return wrapped
+	}
+
 	trace := ActionSubcallTrace{
 		SubcallIndex:  subcallIndex,
 		SubcallType:   string(subcallType),
@@ -344,6 +378,7 @@ func (r *SubcallRouter) persistRecord(subcallType runtime.SubcallType, request r
 		AnswerBytes:   len(record.answer),
 		DurationMS:    record.durationMS,
 		ChildNodeID:   cloneOptional(record.childNodeID),
+		Accounting:    &subcallAccounting,
 	}
 	payload := runtime.NodeSubcallExecutedPayload{
 		StepID:        r.stepID,
@@ -359,6 +394,8 @@ func (r *SubcallRouter) persistRecord(subcallType runtime.SubcallType, request r
 		AnswerBytes:   len(record.answer),
 		DurationMS:    record.durationMS,
 		ChildNodeID:   cloneOptional(record.childNodeID),
+		Accounting:    subcallAccounting,
+		AccountingRef: accountingRef,
 	}
 
 	if record.err != nil {

@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,5 +35,45 @@ func TestDeterministicGuardrailsCheckRunDurationTripsAtExactDeadline(t *testing.
 	}
 	if limit.ObservedValue != "15" {
 		t.Fatalf("expected observed_value 15, got %q", limit.ObservedValue)
+	}
+}
+
+func TestDeterministicGuardrailsCheckBeforeStepClarifiesAttemptedStepStart(t *testing.T) {
+	guardrails := newDeterministicGuardrails(config.RunGuardrailsConfig{
+		MaxStepsPerNode:            3,
+		MaxTotalStepsPerRun:        10,
+		MaxRunDurationMS:           1000,
+		MaxConsecutiveStepFailures: 1,
+	}, time.Unix(1700000000, 0).UTC())
+
+	for i := 0; i < 3; i++ {
+		guardrails.RecordStepStarted("node-id")
+	}
+
+	err := guardrails.CheckBeforeStep("node-id", time.Unix(1700000000, 0).UTC())
+	if err == nil {
+		t.Fatal("expected max_steps_per_node breach after three started steps")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected guardrail limit metadata, got %v", err)
+	}
+	if limit.LimitKey != limitKeyMaxStepsPerNode {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxStepsPerNode, limit.LimitKey)
+	}
+	if limit.ObservedValue != "3" {
+		t.Fatalf("expected observed_value 3, got %q", limit.ObservedValue)
+	}
+
+	var typed *Error
+	if !errors.As(err, &typed) {
+		t.Fatalf("expected typed harness error, got %T", err)
+	}
+	if !strings.Contains(typed.Message, "attempted=4") {
+		t.Fatalf("expected attempted next-step count in message, got %q", typed.Message)
+	}
+	if !strings.Contains(typed.Message, "while blocking a new step start") {
+		t.Fatalf("expected step-start context in message, got %q", typed.Message)
 	}
 }

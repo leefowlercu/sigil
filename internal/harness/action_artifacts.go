@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/runtime"
 )
 
@@ -41,19 +42,20 @@ type ActionErrorDetail struct {
 
 // ActionSubcallTrace captures one subcall execution observed within a continue action.
 type ActionSubcallTrace struct {
-	SubcallIndex  int     `json:"subcall_index"`
-	SubcallType   string  `json:"subcall_type"`
-	ExecutionMode string  `json:"execution_mode"`
-	Status        string  `json:"status"`
-	Provider      string  `json:"provider"`
-	Model         string  `json:"model"`
-	PromptBytes   int     `json:"prompt_bytes"`
-	ContextBytes  int     `json:"context_bytes"`
-	AnswerBytes   int     `json:"answer_bytes"`
-	DurationMS    int     `json:"duration_ms"`
-	ChildNodeID   *string `json:"child_node_id,omitempty"`
-	ErrorCode     *string `json:"error_code,omitempty"`
-	ErrorMessage  *string `json:"error_message,omitempty"`
+	SubcallIndex  int                 `json:"subcall_index"`
+	SubcallType   string              `json:"subcall_type"`
+	ExecutionMode string              `json:"execution_mode"`
+	Status        string              `json:"status"`
+	Provider      string              `json:"provider"`
+	Model         string              `json:"model"`
+	PromptBytes   int                 `json:"prompt_bytes"`
+	ContextBytes  int                 `json:"context_bytes"`
+	AnswerBytes   int                 `json:"answer_bytes"`
+	DurationMS    int                 `json:"duration_ms"`
+	ChildNodeID   *string             `json:"child_node_id,omitempty"`
+	ErrorCode     *string             `json:"error_code,omitempty"`
+	ErrorMessage  *string             `json:"error_message,omitempty"`
+	Accounting    *accounting.Summary `json:"accounting,omitempty"`
 }
 
 // ActionArtifactStore persists node action artifacts under run-local storage.

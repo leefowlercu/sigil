@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
 
@@ -176,6 +177,7 @@ func (s *Service) normalizeResult(request Request, response GatewayResponse, sch
 		Model:             firstNonEmpty(response.Model, request.Model),
 		GatewayResponseID: response.GatewayResponseID,
 		Usage:             response.Usage,
+		Accounting:        normalizeAccountingSample(request, response),
 		Reasoning: Reasoning{
 			Enabled:   reasoning.Enabled,
 			Effort:    cloneStringPointer(reasoning.Effort),
@@ -198,6 +200,63 @@ func isTransientGatewayFailure(err error) bool {
 	}
 
 	return statusCode >= 500 && statusCode <= 599
+}
+
+func normalizeAccountingSample(request Request, response GatewayResponse) AccountingSample {
+	provider := firstNonEmpty(response.Provider, request.Provider)
+	model := firstNonEmpty(response.Model, request.Model)
+	pricingVersion := strings.TrimSpace(request.Accounting.PricingVersion)
+
+	inputTokens := cloneInt64Pointer(response.Accounting.InputTokens)
+	outputTokens := cloneInt64Pointer(response.Accounting.OutputTokens)
+	totalTokens := cloneInt64Pointer(response.Accounting.TotalTokens)
+	reasoningTokens := cloneInt64Pointer(response.Accounting.ReasoningTokens)
+	hasAccountingTokens := inputTokens != nil || outputTokens != nil || totalTokens != nil || reasoningTokens != nil
+	hasUsageReport := response.UsageReported || response.Usage.ReasoningTokens != nil ||
+		response.Usage.InputTokens > 0 || response.Usage.OutputTokens > 0 || response.Usage.TotalTokens > 0
+	allowZeroUsageBackfill := !hasAccountingTokens
+	if inputTokens == nil {
+		inputTokens = knownUsagePointer(response.Usage.InputTokens, hasUsageReport, allowZeroUsageBackfill)
+	}
+	if outputTokens == nil {
+		outputTokens = knownUsagePointer(response.Usage.OutputTokens, hasUsageReport, allowZeroUsageBackfill)
+	}
+	if totalTokens == nil {
+		totalTokens = knownUsagePointer(response.Usage.TotalTokens, hasUsageReport, allowZeroUsageBackfill)
+		if totalTokens == nil && inputTokens != nil && outputTokens != nil {
+			totalTokens = int64Pointer(*inputTokens + *outputTokens)
+		}
+	}
+	if reasoningTokens == nil {
+		reasoningTokens = cloneInt64Pointer(response.Usage.ReasoningTokens)
+	}
+
+	hasUsage := inputTokens != nil || outputTokens != nil || totalTokens != nil || reasoningTokens != nil
+	hasGatewayCost := response.Accounting.KnownInputCostMicrousd != nil ||
+		response.Accounting.KnownOutputCostMicrousd != nil ||
+		response.Accounting.KnownReasoningCostMicrousd != nil ||
+		response.Accounting.KnownTotalCostMicrousd != nil
+	if !hasUsage && !hasGatewayCost {
+		return accounting.UnavailableSummary(provider, model, pricingVersion)
+	}
+
+	summary := accounting.BuildLeafSummary(accounting.LeafInput{
+		Provider:                     provider,
+		Model:                        model,
+		PricingVersion:               pricingVersion,
+		ReasoningEnabled:             request.Reasoning.Enabled,
+		InputTokens:                  inputTokens,
+		OutputTokens:                 outputTokens,
+		TotalTokens:                  totalTokens,
+		ReasoningTokens:              reasoningTokens,
+		GatewayInputCostMicrousd:     response.Accounting.KnownInputCostMicrousd,
+		GatewayOutputCostMicrousd:    response.Accounting.KnownOutputCostMicrousd,
+		GatewayReasoningCostMicrousd: response.Accounting.KnownReasoningCostMicrousd,
+		GatewayTotalCostMicrousd:     response.Accounting.KnownTotalCostMicrousd,
+		FallbackPricing:              request.Accounting.FallbackPricing,
+	})
+	preserveRequestedFallbackPricingKey(&summary, request)
+	return summary
 }
 
 func firstNonEmpty(values ...string) string {
@@ -231,6 +290,45 @@ func cloneStringPointer(value *string) *string {
 
 	copied := *value
 	return &copied
+}
+
+func cloneInt64Pointer(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+
+	copied := *value
+	return &copied
+}
+
+func int64Pointer(value int64) *int64 {
+	copied := value
+	return &copied
+}
+
+func knownUsagePointer(value int64, known bool, allowZero bool) *int64 {
+	if !known || (value == 0 && !allowZero) {
+		return nil
+	}
+	return int64Pointer(value)
+}
+
+func preserveRequestedFallbackPricingKey(summary *AccountingSample, request Request) {
+	if summary == nil || request.Accounting.FallbackPricing == nil {
+		return
+	}
+	if summary.CostSource != accounting.SourceFallbackPricing && summary.CostSource != accounting.SourceMixed {
+		return
+	}
+
+	provider := strings.TrimSpace(request.Provider)
+	model := strings.TrimSpace(request.Model)
+	if provider != "" {
+		summary.PricingKey.Provider = provider
+	}
+	if model != "" {
+		summary.PricingKey.Model = model
+	}
 }
 
 func validateMessages(messages []Message) error {

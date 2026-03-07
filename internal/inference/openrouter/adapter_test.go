@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
@@ -202,6 +203,165 @@ func TestInferMapsReasoningArtifactsAndReasoningTokens(t *testing.T) {
 	}
 	if response.Reasoning.Artifacts["summary"] != "chain" {
 		t.Fatalf("expected reasoning summary artifact, got %+v", response.Reasoning.Artifacts)
+	}
+}
+
+func TestInferMapsGatewayTotalCostIntoAccountingSample(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_cost","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30,"cost":"0.000123"}}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OPENROUTER_API_KEY", "test-api-key")
+	adapter, err := NewGateway(inference.Request{GatewayConfig: inference.GatewayConfig{BaseURL: server.URL, RequestTimeoutMS: 30000, APIKeyEnv: "OPENROUTER_API_KEY"}})
+	if err != nil {
+		t.Fatalf("expected adapter construction success, got %v", err)
+	}
+
+	schemaDefinition, err := schema.NewRegistry().Resolve(schema.SigilRLMResponseV1SchemaID)
+	if err != nil {
+		t.Fatalf("failed to resolve schema definition: %v", err)
+	}
+
+	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
+		Provider: "openai",
+		Model:    "gpt-5.1",
+		Schema:   schemaDefinition,
+	})
+	if err != nil {
+		t.Fatalf("expected inference success, got %v", err)
+	}
+
+	if response.Accounting.KnownTotalCostMicrousd == nil || *response.Accounting.KnownTotalCostMicrousd != 123 {
+		t.Fatalf("expected known_total_cost_microusd=123, got %+v", response.Accounting.KnownTotalCostMicrousd)
+	}
+}
+
+func TestInferMapsTopLevelGatewayCostIntoAccountingSampleWhenUsageIsAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_top_level_cost","status":"completed","provider":"openai","model":"gpt-5.1","cost":"0.000123","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OPENROUTER_API_KEY", "test-api-key")
+	adapter, err := NewGateway(inference.Request{GatewayConfig: inference.GatewayConfig{BaseURL: server.URL, RequestTimeoutMS: 30000, APIKeyEnv: "OPENROUTER_API_KEY"}})
+	if err != nil {
+		t.Fatalf("expected adapter construction success, got %v", err)
+	}
+
+	schemaDefinition, err := schema.NewRegistry().Resolve(schema.SigilRLMResponseV1SchemaID)
+	if err != nil {
+		t.Fatalf("failed to resolve schema definition: %v", err)
+	}
+
+	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
+		Provider: "openai",
+		Model:    "gpt-5.1",
+		Schema:   schemaDefinition,
+	})
+	if err != nil {
+		t.Fatalf("expected inference success, got %v", err)
+	}
+
+	if response.Accounting.KnownTotalCostMicrousd == nil || *response.Accounting.KnownTotalCostMicrousd != 123 {
+		t.Fatalf("expected known_total_cost_microusd=123, got %+v", response.Accounting.KnownTotalCostMicrousd)
+	}
+	if response.Accounting.CostStatus != accounting.StatusComplete {
+		t.Fatalf("expected cost_status=%q, got %q", accounting.StatusComplete, response.Accounting.CostStatus)
+	}
+}
+
+func TestInferKeepsMissingUsageFieldsUnknownInAccountingSample(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_partial_usage","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":20}}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OPENROUTER_API_KEY", "test-api-key")
+	adapter, err := NewGateway(inference.Request{GatewayConfig: inference.GatewayConfig{BaseURL: server.URL, RequestTimeoutMS: 30000, APIKeyEnv: "OPENROUTER_API_KEY"}})
+	if err != nil {
+		t.Fatalf("expected adapter construction success, got %v", err)
+	}
+
+	schemaDefinition, err := schema.NewRegistry().Resolve(schema.SigilRLMResponseV1SchemaID)
+	if err != nil {
+		t.Fatalf("failed to resolve schema definition: %v", err)
+	}
+
+	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
+		Provider: "openai",
+		Model:    "gpt-5.1",
+		Schema:   schemaDefinition,
+	})
+	if err != nil {
+		t.Fatalf("expected inference success, got %v", err)
+	}
+
+	if response.Accounting.InputTokens == nil || *response.Accounting.InputTokens != 20 {
+		t.Fatalf("expected input_tokens=20, got %+v", response.Accounting.InputTokens)
+	}
+	if response.Accounting.OutputTokens != nil {
+		t.Fatalf("expected output_tokens to remain unknown, got %+v", response.Accounting.OutputTokens)
+	}
+	if response.Accounting.TotalTokens != nil {
+		t.Fatalf("expected total_tokens to remain unknown, got %+v", response.Accounting.TotalTokens)
+	}
+	if response.Accounting.TokenStatus != accounting.StatusPartial {
+		t.Fatalf("expected token_status=%q, got %q", accounting.StatusPartial, response.Accounting.TokenStatus)
+	}
+}
+
+func TestInferDerivesTotalTokensWhenOneReportedSideIsZero(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_zero_output","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":42,"output_tokens":0}}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("OPENROUTER_API_KEY", "test-api-key")
+	adapter, err := NewGateway(inference.Request{GatewayConfig: inference.GatewayConfig{BaseURL: server.URL, RequestTimeoutMS: 30000, APIKeyEnv: "OPENROUTER_API_KEY"}})
+	if err != nil {
+		t.Fatalf("expected adapter construction success, got %v", err)
+	}
+
+	schemaDefinition, err := schema.NewRegistry().Resolve(schema.SigilRLMResponseV1SchemaID)
+	if err != nil {
+		t.Fatalf("failed to resolve schema definition: %v", err)
+	}
+
+	response, err := adapter.Infer(context.Background(), inference.GatewayRequest{
+		Messages: []inference.Message{
+			{Role: inference.MessageRoleSystem, Content: "system"},
+			{Role: inference.MessageRoleUser, Content: "{\"query\":\"prompt\"}"},
+		},
+		Provider: "openai",
+		Model:    "gpt-5.1",
+		Schema:   schemaDefinition,
+	})
+	if err != nil {
+		t.Fatalf("expected inference success, got %v", err)
+	}
+
+	if response.Accounting.TotalTokens == nil || *response.Accounting.TotalTokens != 42 {
+		t.Fatalf("expected total_tokens=42, got %+v", response.Accounting.TotalTokens)
+	}
+	if response.Accounting.TokenStatus != accounting.StatusComplete {
+		t.Fatalf("expected token_status=%q, got %q", accounting.StatusComplete, response.Accounting.TokenStatus)
 	}
 }
 

@@ -44,10 +44,10 @@ func (g *deterministicGuardrails) CheckBeforeStep(nodeID string, now time.Time) 
 
 	nodeSteps := g.stepsByNode[nodeID]
 	if nodeSteps >= g.cfg.MaxStepsPerNode {
-		return g.limitError(limitKeyMaxStepsPerNode, nodeID, "", g.cfg.MaxStepsPerNode, nodeSteps)
+		return g.stepStartLimitError(limitKeyMaxStepsPerNode, nodeID, g.cfg.MaxStepsPerNode, nodeSteps)
 	}
 	if g.totalSteps >= g.cfg.MaxTotalStepsPerRun {
-		return g.limitError(limitKeyMaxTotalStepsPerRun, nodeID, "", g.cfg.MaxTotalStepsPerRun, g.totalSteps)
+		return g.stepStartLimitError(limitKeyMaxTotalStepsPerRun, nodeID, g.cfg.MaxTotalStepsPerRun, g.totalSteps)
 	}
 
 	return nil
@@ -105,6 +105,23 @@ func (g *deterministicGuardrails) checkRunDuration(now time.Time, nodeID string,
 		return g.limitError(limitKeyMaxRunDurationMS, nodeID, stepID, g.cfg.MaxRunDurationMS, elapsedMS)
 	}
 	return nil
+}
+
+func (g *deterministicGuardrails) stepStartLimitError(limitKey string, nodeID string, configured int, observed int) error {
+	attempted := observed + 1
+	message := fmt.Sprintf(
+		"deterministic runtime guardrail breached; %s configured=%d observed=%d attempted=%d while blocking a new step start",
+		limitKey,
+		configured,
+		observed,
+		attempted,
+	)
+	return NewLimitError(message, LimitMetadata{
+		LimitKey:        limitKey,
+		ConfiguredValue: strconv.Itoa(configured),
+		ObservedValue:   strconv.Itoa(observed),
+		NodeID:          nodeID,
+	})
 }
 
 func (g *deterministicGuardrails) limitError(limitKey string, nodeID string, stepID string, configured int, observed int) error {

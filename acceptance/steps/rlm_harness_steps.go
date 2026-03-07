@@ -132,6 +132,7 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^harness effective system prompt is constructed$`, world.harnessEffectiveSystemPromptIsConstructed)
 	ctx.Step(`^effective system prompt equals base prompt plus two newlines plus append text$`, world.effectiveSystemPromptEqualsBasePromptPlusTwoNewlinesPlusAppendText)
 	ctx.Step(`^effective system prompt equals resolved base prompt$`, world.effectiveSystemPromptEqualsResolvedBasePrompt)
+	ctx.Step(`^system prompt requires byte-for-byte previous_action_feedback\.output_ref reuse with context_ref fallback$`, world.systemPromptRequiresByteforbytePrevious_action_feedbackoutput_refReuseWithContext_refFallback)
 
 	ctx.Step(`^harness execution starts$`, world.harnessExecutionStarts)
 	ctx.Step(`^exactly one root node exists with depth (\d+) and null parent$`, world.exactlyOneRootNodeExistsWithDepthAndNullParent)
@@ -560,6 +561,21 @@ func (w *harnessWorld) effectiveSystemPromptEqualsResolvedBasePrompt() error {
 	state := w.rlm()
 	if state.effectivePrompt != state.resolvedPrompt {
 		return fmt.Errorf("expected effective prompt to equal base prompt %q, got %q", state.resolvedPrompt, state.effectivePrompt)
+	}
+	return nil
+}
+
+func (w *harnessWorld) systemPromptRequiresByteforbytePrevious_action_feedbackoutput_refReuseWithContext_refFallback() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"If you cite previous_action_feedback.output_ref, copy it byte-for-byte.",
+		"Do not shorten, rewrite, splice, or synthesize run-artifact UUID segments.",
+		"If you cannot preserve an exact action output_ref, cite context_ref instead of inventing a run-artifact ref.",
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
 	}
 	return nil
 }
@@ -1680,6 +1696,7 @@ func (w *harnessWorld) runfailedPayloadIncludesDeterministicGuardrailMetadata() 
 		"configured_value": "1",
 		"observed_value":   "1",
 		"retryable":        false,
+		"accounting":       acceptanceAccountingRollup("openai", "gpt-5.1"),
 	}
 	w.rlm().guardrailPayloadValidated = false
 	w.rlm().guardrailPayloadErr = nil
@@ -1694,6 +1711,7 @@ func (w *harnessWorld) runfailedPayloadIncludesLimit_keyWithoutConfigured_valueO
 		"failed_node_id": mustUUIDv7StringOrPanic(),
 		"limit_key":      "max_steps_per_node",
 		"retryable":      false,
+		"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
 	}
 	w.rlm().guardrailPayloadValidated = false
 	w.rlm().guardrailPayloadErr = nil
@@ -1711,6 +1729,7 @@ func (w *harnessWorld) runfailedPayloadIncludesNonuuidv7Failed_step_id() error {
 		"configured_value": "1",
 		"observed_value":   "1",
 		"retryable":        false,
+		"accounting":       acceptanceAccountingRollup("openai", "gpt-5.1"),
 	}
 	w.rlm().guardrailPayloadValidated = false
 	w.rlm().guardrailPayloadErr = nil

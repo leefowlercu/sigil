@@ -6,11 +6,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/inference"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
@@ -206,14 +208,7 @@ func hydrateFinalEvidenceRef(result inference.Result, request inference.Request)
 	if !ok || len(evidenceRaw) == 0 {
 		return result
 	}
-	evidenceItem, ok := evidenceRaw[0].(map[string]any)
-	if !ok {
-		return result
-	}
-	refValue, _ := evidenceItem["ref"].(string)
-	if refValue != "__context_ref__" {
-		return result
-	}
+
 	if len(request.Messages) < 2 {
 		return result
 	}
@@ -221,10 +216,39 @@ func hydrateFinalEvidenceRef(result inference.Result, request inference.Request)
 	if err := json.Unmarshal([]byte(request.Messages[1].Content), &envelope); err != nil {
 		return result
 	}
-	if strings.TrimSpace(envelope.ContextMetadata.ContextRef) == "" {
-		return result
+
+	for _, rawItem := range evidenceRaw {
+		evidenceItem, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		refValue, _ := evidenceItem["ref"].(string)
+		switch refValue {
+		case "__context_ref__":
+			if strings.TrimSpace(envelope.ContextMetadata.ContextRef) == "" {
+				continue
+			}
+			evidenceItem["ref"] = envelope.ContextMetadata.ContextRef
+		case "__previous_output_ref__":
+			if envelope.PreviousActionFeedback == nil || strings.TrimSpace(envelope.PreviousActionFeedback.OutputRef) == "" {
+				continue
+			}
+			evidenceItem["ref"] = envelope.PreviousActionFeedback.OutputRef
+		case "__previous_output_ref_malformed__":
+			if envelope.PreviousActionFeedback == nil || strings.TrimSpace(envelope.PreviousActionFeedback.OutputRef) == "" {
+				continue
+			}
+			parsedRef, err := runtime.ParseActionOutputRef(envelope.PreviousActionFeedback.OutputRef)
+			if err != nil {
+				continue
+			}
+			hybridNodeID, ok := buildMalformedHybridActionRefNodeID(parsedRef.NodeID, parsedRef.StepID)
+			if !ok {
+				continue
+			}
+			evidenceItem["ref"] = "run-artifact://node/" + hybridNodeID + "/action-" + strconv.Itoa(parsedRef.ActionIndex) + ".json"
+		}
 	}
-	evidenceItem["ref"] = envelope.ContextMetadata.ContextRef
 	return result
 }
 
@@ -499,6 +523,48 @@ func TestRunnerRunNonRecursiveModeReturnsDepthLimitAndNoChildNodes(t *testing.T)
 	if !strings.Contains(string(artifactBytes), "repl_child_depth_limit") {
 		t.Fatalf("expected non-recursive artifact feedback to include repl_child_depth_limit")
 	}
+
+	var artifact ActionArtifact
+	if err := json.Unmarshal(artifactBytes, &artifact); err != nil {
+		t.Fatalf("expected action artifact decode success, got %v", err)
+	}
+	if len(artifact.Subcalls) != 1 {
+		t.Fatalf("expected one recorded subcall, got %d", len(artifact.Subcalls))
+	}
+	if artifact.Subcalls[0].Accounting == nil {
+		t.Fatal("expected subcall accounting in action artifact")
+	}
+	if artifact.Subcalls[0].Accounting.TokenStatus != accounting.StatusUnavailable {
+		t.Fatalf("expected unavailable artifact token status, got %q", artifact.Subcalls[0].Accounting.TokenStatus)
+	}
+	if artifact.Subcalls[0].Accounting.CostStatus != accounting.StatusUnavailable {
+		t.Fatalf("expected unavailable artifact cost status, got %q", artifact.Subcalls[0].Accounting.CostStatus)
+	}
+	if artifact.Subcalls[0].Accounting.TotalTokens != nil {
+		t.Fatalf("expected artifact total_tokens to remain unknown, got %+v", artifact.Subcalls[0].Accounting.TotalTokens)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	for _, event := range events {
+		if event.Type != runtime.EventTypeNodeSubcallExecuted {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.NodeSubcallExecutedPayload)
+		if !ok {
+			t.Fatalf("expected node.subcall.executed payload type, got %T", event.Payload)
+		}
+		if payload.Accounting.TokenStatus != accounting.StatusUnavailable {
+			t.Fatalf("expected unavailable event token status, got %q", payload.Accounting.TokenStatus)
+		}
+		if payload.Accounting.CostStatus != accounting.StatusUnavailable {
+			t.Fatalf("expected unavailable event cost status, got %q", payload.Accounting.CostStatus)
+		}
+		if payload.Accounting.TotalTokens != nil {
+			t.Fatalf("expected event total_tokens to remain unknown, got %+v", payload.Accounting.TotalTokens)
+		}
+		return
+	}
+	t.Fatal("expected node.subcall.executed event")
 }
 
 func TestRunnerRunRecursiveDepthLimitFallsBackToPlainSubcall(t *testing.T) {
@@ -709,6 +775,8 @@ func TestRunnerRunBatchedPlainSubcallsPersistStableTraceOrdering(t *testing.T) {
 func TestRunnerRunTemplateRenderFailureReturnsTypedError(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{}
+	runCfg := testRunConfig("", "prompt {{.missing}}", "root context", "")
+	runCfg.Accounting.PricingVersion = "pricing-v2"
 
 	runner := NewRunner(
 		WithRunsBaseDir(baseDir),
@@ -720,7 +788,7 @@ func TestRunnerRunTemplateRenderFailureReturnsTypedError(t *testing.T) {
 	_, err := runner.Run(context.Background(), RunInput{
 		AppConfigPath: "./sigil.yaml",
 		RunConfigPath: "./sigil-run.yaml",
-		RunConfig:     testRunConfig("", "prompt {{.missing}}", "root context", ""),
+		RunConfig:     runCfg,
 		TemplateVars:  map[string]string{},
 	})
 	if err == nil {
@@ -733,6 +801,17 @@ func TestRunnerRunTemplateRenderFailureReturnsTypedError(t *testing.T) {
 	}
 	if code != ErrorCodeTemplateRender {
 		t.Fatalf("expected error code %q, got %q", ErrorCodeTemplateRender, code)
+	}
+
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.Accounting.TreeTotal.PricingVersion != runCfg.Accounting.PricingVersion {
+		t.Fatalf("expected pricing_version %q, got %q", runCfg.Accounting.PricingVersion, payload.Accounting.TreeTotal.PricingVersion)
+	}
+	if payload.Accounting.TreeTotal.PricingKey.Provider != runCfg.LLM.Provider {
+		t.Fatalf("expected provider %q, got %q", runCfg.LLM.Provider, payload.Accounting.TreeTotal.PricingKey.Provider)
+	}
+	if payload.Accounting.TreeTotal.PricingKey.Model != runCfg.LLM.Model {
+		t.Fatalf("expected model %q, got %q", runCfg.LLM.Model, payload.Accounting.TreeTotal.PricingKey.Model)
 	}
 }
 
@@ -789,6 +868,20 @@ func TestRunnerRunInferenceFailureAppendsRunFailed(t *testing.T) {
 	}
 	if strings.Index(string(eventsBytes), "node.failed") > strings.Index(string(eventsBytes), "run.failed") {
 		t.Fatalf("expected node.failed to be emitted before run.failed")
+	}
+
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.Accounting.TreeTotal.TokenStatus != accounting.StatusUnavailable {
+		t.Fatalf("expected unavailable token status, got %q", payload.Accounting.TreeTotal.TokenStatus)
+	}
+	if payload.Accounting.TreeTotal.CostStatus != accounting.StatusUnavailable {
+		t.Fatalf("expected unavailable cost status, got %q", payload.Accounting.TreeTotal.CostStatus)
+	}
+	if payload.Accounting.TreeTotal.TotalTokens != nil {
+		t.Fatalf("expected total_tokens to remain unknown, got %+v", payload.Accounting.TreeTotal.TotalTokens)
+	}
+	if payload.Accounting.TreeTotal.KnownTotalCostMicrousd != nil {
+		t.Fatalf("expected known_total_cost_microusd to remain unknown, got %+v", payload.Accounting.TreeTotal.KnownTotalCostMicrousd)
 	}
 }
 
@@ -879,6 +972,68 @@ func TestRunnerRunFailsWithOutputValidationWhenFinalEvidenceIsUnresolvable(t *te
 	}
 }
 
+func TestRunnerRunNormalizesMalformedPreviousActionOutputRefInFinalEvidence(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; fmt.Print("ok")`)},
+			{result: finalResultWithEvidence("done", "__previous_output_ref_malformed__")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+
+	if len(inferenceClient.requests) < 2 {
+		t.Fatalf("expected at least two inference requests, got %d", len(inferenceClient.requests))
+	}
+	var secondStepEnvelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(inferenceClient.requests[1].Messages[1].Content), &secondStepEnvelope); err != nil {
+		t.Fatalf("expected second-step envelope decode success, got %v", err)
+	}
+	if secondStepEnvelope.PreviousActionFeedback == nil {
+		t.Fatal("expected second-step previous_action_feedback")
+	}
+	expectedRef := secondStepEnvelope.PreviousActionFeedback.OutputRef
+	if strings.TrimSpace(expectedRef) == "" {
+		t.Fatal("expected previous_action_feedback.output_ref")
+	}
+
+	outputPath, err := resolveRunOutputPath(result.FinalAnswerRef)
+	if err != nil {
+		t.Fatalf("expected final answer ref path resolution success, got %v", err)
+	}
+	finalAnswerPath := filepath.Join(append([]string{baseDir, result.RunID, "outputs"}, outputPath...)...)
+	encoded, err := os.ReadFile(finalAnswerPath)
+	if err != nil {
+		t.Fatalf("expected final answer artifact read success, got %v", err)
+	}
+
+	var artifact finalAnswerArtifact
+	if err := json.Unmarshal(encoded, &artifact); err != nil {
+		t.Fatalf("expected final answer artifact decode success, got %v", err)
+	}
+	if len(artifact.Evidence) != 1 {
+		t.Fatalf("expected one evidence item, got %d", len(artifact.Evidence))
+	}
+	if artifact.Evidence[0].Ref != expectedRef {
+		t.Fatalf("expected normalized evidence ref %q, got %q", expectedRef, artifact.Evidence[0].Ref)
+	}
+}
+
 func TestRunnerRunFailsWhenMaxStepsPerNodeGuardrailBreached(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
@@ -921,6 +1076,9 @@ func TestRunnerRunFailsWhenMaxStepsPerNodeGuardrailBreached(t *testing.T) {
 	payload := mustReadRunFailedPayload(t, baseDir)
 	if payload.LimitKey == nil || *payload.LimitKey != limitKeyMaxStepsPerNode {
 		t.Fatalf("expected run.failed limit_key %q, got %v", limitKeyMaxStepsPerNode, payload.LimitKey)
+	}
+	if !strings.Contains(payload.ErrorMessage, "attempted=2") {
+		t.Fatalf("expected run.failed error_message to clarify attempted step start, got %q", payload.ErrorMessage)
 	}
 }
 
@@ -1520,6 +1678,25 @@ func finalResult(answer string) inference.Result {
 	}
 }
 
+func finalResultWithEvidence(answer string, ref string) inference.Result {
+	return inference.Result{
+		SchemaID: "sigil.rlm.response.v1",
+		ValidatedPayload: map[string]any{
+			"decision": "final",
+			"final": map[string]any{
+				"answer":   answer,
+				"evidence": []any{map[string]any{"ref": ref}},
+			},
+		},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_final",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
+}
+
 func testRunConfig(prompt string, promptTemplate string, contextValue string, contextTemplate string) config.RunConfig {
 	cfg := config.NewDefaultRunConfig()
 	cfg.Prompt = prompt
@@ -1535,6 +1712,73 @@ func testRunConfig(prompt string, promptTemplate string, contextValue string, co
 	cfg.RLM.Enabled = true
 	cfg.RLM.MaxDepth = 3
 	return cfg
+}
+
+func TestRunnerRunIncludesAccountingInRunResultAndEvents(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(12)
+	outputTokens := int64(5)
+	totalTokens := int64(17)
+	totalCost := int64(1750)
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: inference.Result{
+				SchemaID:          schema.SigilRLMResponseV1SchemaID,
+				ValidatedPayload:  map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "__context_ref__"}}}},
+				Gateway:           "openrouter",
+				Provider:          "openai",
+				Model:             "gpt-5.1",
+				GatewayResponseID: "resp_final",
+				FinishStatus:      "completed",
+				RawMetadata:       map[string]any{},
+				Accounting: accounting.BuildLeafSummary(accounting.LeafInput{
+					Provider:                 "openai",
+					Model:                    "gpt-5.1",
+					PricingVersion:           "v1",
+					InputTokens:              &inputTokens,
+					OutputTokens:             &outputTokens,
+					TotalTokens:              &totalTokens,
+					GatewayTotalCostMicrousd: &totalCost,
+				}),
+			}},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+		TemplateVars:  map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.Accounting.TreeTotal.TotalTokens == nil || *result.Accounting.TreeTotal.TotalTokens != 17 {
+		t.Fatalf("expected run accounting tree total_tokens=17, got %+v", result.Accounting.TreeTotal.TotalTokens)
+	}
+	if result.Accounting.TreeTotal.KnownTotalCostMicrousd == nil || *result.Accounting.TreeTotal.KnownTotalCostMicrousd != 1750 {
+		t.Fatalf("expected run accounting known_total_cost_microusd=1750, got %+v", result.Accounting.TreeTotal.KnownTotalCostMicrousd)
+	}
+
+	eventsBytes, err := os.ReadFile(result.EventsPath)
+	if err != nil {
+		t.Fatalf("expected events file read success, got %v", err)
+	}
+	eventsText := string(eventsBytes)
+	if !strings.Contains(eventsText, `"accounting_ref":"run-output://run/accounting.json"`) {
+		t.Fatalf("expected run.completed accounting_ref in events, got %q", eventsText)
+	}
+	if !strings.Contains(eventsText, `"accounting_ref":"run-output://node/`) {
+		t.Fatalf("expected node.step.completed accounting_ref in events, got %q", eventsText)
+	}
 }
 
 func TestRunResultIsJSONSerializable(t *testing.T) {

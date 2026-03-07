@@ -170,12 +170,12 @@ func ParseEventEnvelopeStrict(raw []byte) (EventEnvelope, error) {
 		Payload:       payload,
 	}
 
-	validated, err := validateAndNormalizeEvent(event)
-	if err != nil {
+	event.Timestamp = event.Timestamp.UTC()
+	if err := validateEventShape(event); err != nil {
 		return EventEnvelope{}, err
 	}
 
-	return validated, nil
+	return event, nil
 }
 
 func validateAndNormalizeEvent(event EventEnvelope) (EventEnvelope, error) {
@@ -334,9 +334,11 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		return payload, nil
 	case EventTypeNodeCompleted:
 		allowed := map[string]struct{}{
-			"status":      {},
-			"duration_ms": {},
-			"output_ref":  {},
+			"status":         {},
+			"duration_ms":    {},
+			"output_ref":     {},
+			"accounting":     {},
+			"accounting_ref": {},
 		}
 		required := map[string]struct{}{
 			"status":      {},
@@ -354,6 +356,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		}
 		if payload.OutputRef != nil && strings.TrimSpace(*payload.OutputRef) == "" {
 			return nil, fmt.Errorf("node.completed output_ref must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		if payload.AccountingRef != nil && strings.TrimSpace(*payload.AccountingRef) == "" {
+			return nil, fmt.Errorf("node.completed accounting_ref must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+			return nil, fmt.Errorf("node.completed accounting %w; %w", err, ErrInvalidEvent)
 		}
 		return payload, nil
 	case EventTypeNodeFailed:
@@ -419,10 +427,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		return payload, nil
 	case EventTypeNodeStepCompleted:
 		allowed := map[string]struct{}{
-			"step_id":      {},
-			"decision":     {},
-			"action_count": {},
-			"duration_ms":  {},
+			"step_id":        {},
+			"decision":       {},
+			"action_count":   {},
+			"duration_ms":    {},
+			"accounting":     {},
+			"accounting_ref": {},
 		}
 		required := map[string]struct{}{
 			"step_id":      {},
@@ -433,6 +443,10 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		var payload NodeStepCompletedPayload
 		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
 			return nil, err
+		}
+		payloadObj, err := decodeJSONObjectStrict(payloadRaw)
+		if err != nil {
+			return nil, fmt.Errorf("payload must be a JSON object; %w", ErrInvalidEvent)
 		}
 		if err := validateUUIDv7String(payload.StepID); err != nil {
 			return nil, fmt.Errorf("node.step.completed step_id must be UUIDv7; %w", ErrInvalidEvent)
@@ -451,6 +465,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		}
 		if payload.Decision == StepDecisionFinal && payload.ActionCount != 0 {
 			return nil, fmt.Errorf("node.step.completed decision=final requires action_count=0; %w", ErrInvalidEvent)
+		}
+		if err := validatePairedAccountingFields(payloadObj, "accounting", "accounting_ref", "node.step.completed", payload.AccountingRef); err != nil {
+			return nil, err
+		}
+		if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+			return nil, fmt.Errorf("node.step.completed accounting %w; %w", err, ErrInvalidEvent)
 		}
 		return payload, nil
 	case EventTypeNodeTurnUser, EventTypeNodeTurnModel:
@@ -497,6 +517,8 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			"answer_bytes":   {},
 			"duration_ms":    {},
 			"child_node_id":  {},
+			"accounting":     {},
+			"accounting_ref": {},
 			"error_code":     {},
 			"error_message":  {},
 		}
@@ -517,6 +539,10 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		var payload NodeSubcallExecutedPayload
 		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
 			return nil, err
+		}
+		payloadObj, err := decodeJSONObjectStrict(payloadRaw)
+		if err != nil {
+			return nil, fmt.Errorf("payload must be a JSON object; %w", ErrInvalidEvent)
 		}
 		if err := validateUUIDv7String(payload.StepID); err != nil {
 			return nil, fmt.Errorf("node.subcall.executed step_id must be UUIDv7; %w", ErrInvalidEvent)
@@ -553,6 +579,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		}
 		if payload.DurationMS < 0 {
 			return nil, fmt.Errorf("node.subcall.executed duration_ms must be >= 0; %w", ErrInvalidEvent)
+		}
+		if err := validatePairedAccountingFields(payloadObj, "accounting", "accounting_ref", "node.subcall.executed", payload.AccountingRef); err != nil {
+			return nil, err
+		}
+		if err := ensureSummaryOrDefault(&payload.Accounting, payload.Provider, payload.Model); err != nil {
+			return nil, fmt.Errorf("node.subcall.executed accounting %w; %w", err, ErrInvalidEvent)
 		}
 		if payload.ExecutionMode == SubcallExecutionModeRecursive {
 			if payload.ChildNodeID == nil {
@@ -644,6 +676,8 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			"status":           {},
 			"duration_ms":      {},
 			"final_answer_ref": {},
+			"accounting":       {},
+			"accounting_ref":   {},
 		}
 		required := map[string]struct{}{
 			"status":      {},
@@ -662,6 +696,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		if payload.FinalAnswerRef != nil && strings.TrimSpace(*payload.FinalAnswerRef) == "" {
 			return nil, fmt.Errorf("run.completed final_answer_ref must be non-empty when present; %w", ErrInvalidEvent)
 		}
+		if payload.AccountingRef != nil && strings.TrimSpace(*payload.AccountingRef) == "" {
+			return nil, fmt.Errorf("run.completed accounting_ref must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+			return nil, fmt.Errorf("run.completed accounting %w; %w", err, ErrInvalidEvent)
+		}
 		return payload, nil
 	case EventTypeRunFailed:
 		allowed := map[string]struct{}{
@@ -674,6 +714,8 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			"configured_value": {},
 			"observed_value":   {},
 			"retryable":        {},
+			"accounting":       {},
+			"accounting_ref":   {},
 		}
 		required := map[string]struct{}{
 			"status":        {},
@@ -737,6 +779,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		if payload.ObservedValue != nil && strings.TrimSpace(*payload.ObservedValue) == "" {
 			return nil, fmt.Errorf("run.failed observed_value must be non-empty when present; %w", ErrInvalidEvent)
 		}
+		if payload.AccountingRef != nil && strings.TrimSpace(*payload.AccountingRef) == "" {
+			return nil, fmt.Errorf("run.failed accounting_ref must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+			return nil, fmt.Errorf("run.failed accounting %w; %w", err, ErrInvalidEvent)
+		}
 		return payload, nil
 	case EventTypeRunInterrupted:
 		allowed := map[string]struct{}{
@@ -744,6 +792,8 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			"reason":              {},
 			"interrupted_by":      {},
 			"interrupted_node_id": {},
+			"accounting":          {},
+			"accounting_ref":      {},
 		}
 		required := map[string]struct{}{
 			"status": {},
@@ -766,6 +816,12 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			if err := validateUUIDv7String(*payload.InterruptedNodeID); err != nil {
 				return nil, fmt.Errorf("run.interrupted interrupted_node_id must be UUIDv7 when present; %w", ErrInvalidEvent)
 			}
+		}
+		if payload.AccountingRef != nil && strings.TrimSpace(*payload.AccountingRef) == "" {
+			return nil, fmt.Errorf("run.interrupted accounting_ref must be non-empty when present; %w", ErrInvalidEvent)
+		}
+		if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+			return nil, fmt.Errorf("run.interrupted accounting %w; %w", err, ErrInvalidEvent)
 		}
 		return payload, nil
 	default:
@@ -798,6 +854,24 @@ func fieldIsExplicitNull(obj map[string]json.RawMessage, field string) bool {
 		return false
 	}
 	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
+}
+
+func validatePairedAccountingFields(obj map[string]json.RawMessage, accountingField string, accountingRefField string, eventType string, accountingRef string) error {
+	_, accountingPresent := obj[accountingField]
+	_, accountingRefPresent := obj[accountingRefField]
+	if accountingPresent != accountingRefPresent {
+		return fmt.Errorf("%s accounting and accounting_ref must both be present or both be omitted; %w", eventType, ErrInvalidEvent)
+	}
+	if !accountingPresent {
+		return nil
+	}
+	if fieldIsExplicitNull(obj, accountingField) {
+		return fmt.Errorf("%s accounting must not be null when present; %w", eventType, ErrInvalidEvent)
+	}
+	if fieldIsExplicitNull(obj, accountingRefField) || strings.TrimSpace(accountingRef) == "" {
+		return fmt.Errorf("%s accounting_ref must be non-empty; %w", eventType, ErrInvalidEvent)
+	}
+	return nil
 }
 
 func validateEventShape(event EventEnvelope) error {

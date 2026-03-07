@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/leefowlercu/sigil/internal/accounting"
 )
 
 // Lifecycle encapsulates mutable run lifecycle state and node-scoped activity.
@@ -251,7 +252,15 @@ func (l *Lifecycle) Complete() error {
 
 // CompleteWith transitions running -> completed with optional final answer reference.
 func (l *Lifecycle) CompleteWith(finalAnswerRef *string) error {
+	return l.CompleteWithAccounting(finalAnswerRef, unavailableRollupForLifecycle(), nil)
+}
+
+// CompleteWithAccounting transitions running -> completed with accounting metadata.
+func (l *Lifecycle) CompleteWithAccounting(finalAnswerRef *string, runAccounting accounting.Rollup, accountingRef *string) error {
 	if err := l.validateTransition(RunStateCompleted); err != nil {
+		return err
+	}
+	if err := ensureRollupOrDefault(&runAccounting); err != nil {
 		return err
 	}
 
@@ -259,6 +268,8 @@ func (l *Lifecycle) CompleteWith(finalAnswerRef *string) error {
 		Status:         "completed",
 		DurationMS:     0,
 		FinalAnswerRef: cloneStringPointer(finalAnswerRef),
+		Accounting:     runAccounting,
+		AccountingRef:  cloneStringPointer(accountingRef),
 	}); err != nil {
 		return fmt.Errorf("failed to persist run.completed event; %w", err)
 	}
@@ -278,12 +289,16 @@ func (l *Lifecycle) Fail() error {
 		ErrorCode:    "runtime.failure",
 		ErrorMessage: "unrecoverable runtime failure",
 		Retryable:    false,
+		Accounting:   unavailableRollupForLifecycle(),
 	})
 }
 
 // FailWith transitions running -> failed with caller-provided typed failure payload.
 func (l *Lifecycle) FailWith(payload RunFailedPayload) error {
 	if err := l.validateTransition(RunStateFailed); err != nil {
+		return err
+	}
+	if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
 		return err
 	}
 
@@ -303,21 +318,30 @@ func (l *Lifecycle) FailWith(payload RunFailedPayload) error {
 
 // Interrupt transitions running -> interrupted.
 func (l *Lifecycle) Interrupt() error {
+	return l.InterruptWith(RunInterruptedPayload{
+		Status:     "interrupted",
+		Reason:     RunInterruptedReasonUserRequest,
+		Accounting: unavailableRollupForLifecycle(),
+	})
+}
+
+// InterruptWith transitions running -> interrupted with caller-provided payload.
+func (l *Lifecycle) InterruptWith(payload RunInterruptedPayload) error {
 	if err := l.validateTransition(RunStateInterrupted); err != nil {
 		return err
 	}
+	if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+		return err
+	}
 
-	if _, err := l.eventStore.AppendNext(EventTypeRunInterrupted, nil, RunInterruptedPayload{
-		Status: "interrupted",
-		Reason: RunInterruptedReasonUserRequest,
-	}); err != nil {
+	if _, err := l.eventStore.AppendNext(EventTypeRunInterrupted, nil, payload); err != nil {
 		return fmt.Errorf("failed to persist run.interrupted event; %w", err)
 	}
 
 	l.state = RunStateInterrupted
 	lifecycleLogger().Warn("run transitioned to interrupted",
 		"run_id", l.runID,
-		"reason", RunInterruptedReasonUserRequest,
+		"reason", payload.Reason,
 	)
 	return nil
 }
@@ -474,6 +498,12 @@ func (l *Lifecycle) AppendNodeSubcallExecuted(nodeID string, payload NodeSubcall
 	if _, ok := l.nodeByID[nodeID]; !ok {
 		return fmt.Errorf("node %q does not exist in run %q; %w", nodeID, l.runID, ErrNodeNotFound)
 	}
+	if err := ensureSummaryOrDefault(&payload.Accounting, payload.Provider, payload.Model); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payload.AccountingRef) == "" {
+		payload.AccountingRef = defaultStepSubcallAccountingRef(nodeID, payload.StepID, payload.SubcallIndex)
+	}
 
 	if _, err := l.eventStore.AppendNext(EventTypeNodeSubcallExecuted, &nodeID, payload); err != nil {
 		return fmt.Errorf("failed to persist node.subcall.executed event; %w", err)
@@ -544,6 +574,12 @@ func (l *Lifecycle) AppendNodeStepCompleted(nodeID string, payload NodeStepCompl
 	if _, ok := l.nodeByID[nodeID]; !ok {
 		return fmt.Errorf("node %q does not exist in run %q; %w", nodeID, l.runID, ErrNodeNotFound)
 	}
+	if err := ensureRollupOrDefault(&payload.Accounting); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payload.AccountingRef) == "" {
+		payload.AccountingRef = defaultStepAccountingRef(nodeID, payload.StepID)
+	}
 
 	if _, err := l.eventStore.AppendNext(EventTypeNodeStepCompleted, &nodeID, payload); err != nil {
 		return fmt.Errorf("failed to persist node.step.completed event; %w", err)
@@ -563,6 +599,11 @@ func (l *Lifecycle) AppendNodeStepCompleted(nodeID string, payload NodeStepCompl
 
 // CompleteNode appends node.completed for an existing node.
 func (l *Lifecycle) CompleteNode(nodeID string, outputRef *string) error {
+	return l.CompleteNodeWithAccounting(nodeID, outputRef, unavailableRollupForLifecycle(), nil)
+}
+
+// CompleteNodeWithAccounting appends node.completed for an existing node.
+func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, outputRef *string, nodeAccounting accounting.Rollup, accountingRef *string) error {
 	if l.state != RunStateRunning {
 		return fmt.Errorf("cannot complete node while run state is %q; %w", l.state, ErrRunNotRunning)
 	}
@@ -572,11 +613,16 @@ func (l *Lifecycle) CompleteNode(nodeID string, outputRef *string) error {
 	if err := l.ensureNodeTerminalAvailable(nodeID); err != nil {
 		return err
 	}
+	if err := ensureRollupOrDefault(&nodeAccounting); err != nil {
+		return err
+	}
 
 	payload := NodeCompletedPayload{
-		Status:     "completed",
-		DurationMS: 0,
-		OutputRef:  cloneStringPointer(outputRef),
+		Status:        "completed",
+		DurationMS:    0,
+		OutputRef:     cloneStringPointer(outputRef),
+		Accounting:    nodeAccounting,
+		AccountingRef: cloneStringPointer(accountingRef),
 	}
 	if _, err := l.eventStore.AppendNext(EventTypeNodeCompleted, &nodeID, payload); err != nil {
 		return fmt.Errorf("failed to persist node.completed event; %w", err)
@@ -697,4 +743,42 @@ func valueOrEmptyString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func ensureSummaryOrDefault(summary *accounting.Summary, provider string, model string) error {
+	if summary == nil {
+		return fmt.Errorf("accounting summary is required")
+	}
+	if summary.Currency == "" {
+		*summary = accounting.UnavailableSummary(provider, model, "")
+	}
+	return accounting.ValidateSummary(*summary)
+}
+
+func ensureRollupOrDefault(rollup *accounting.Rollup) error {
+	if rollup == nil {
+		return fmt.Errorf("accounting rollup is required")
+	}
+	if rollup.ModelTotal.Currency == "" {
+		*rollup = unavailableRollupForLifecycle()
+	}
+	return accounting.ValidateRollup(*rollup)
+}
+
+func unavailableRollupForLifecycle() accounting.Rollup {
+	return accounting.BuildRollup(
+		"",
+		"",
+		"",
+		accounting.UnavailableSummary("", "", ""),
+		accounting.ZeroSummary("", "", ""),
+	)
+}
+
+func defaultStepAccountingRef(nodeID string, stepID string) string {
+	return fmt.Sprintf("run-output://node/%s/step/%s/accounting.json", nodeID, stepID)
+}
+
+func defaultStepSubcallAccountingRef(nodeID string, stepID string, subcallIndex int) string {
+	return fmt.Sprintf("run-output://node/%s/step/%s/subcall-%d-accounting.json", nodeID, stepID, subcallIndex)
 }

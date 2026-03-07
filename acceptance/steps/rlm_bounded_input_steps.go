@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/cucumber/godog"
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
 	sigilharness "github.com/leefowlercu/sigil/internal/harness"
 	sigilinference "github.com/leefowlercu/sigil/internal/inference"
@@ -101,6 +102,22 @@ func registerRLMBoundedInputSteps(ctx *godog.ScenarioContext, world *harnessWorl
 	ctx.Step(`^bounded model-input execution is active for a node step$`, world.boundedModelinputExecutionIsActiveForANodeStep)
 	ctx.Step(`^step and turn events are persisted under bounded model-input execution$`, world.stepAndTurnEventsArePersistedUnderBoundedModelinputExecution)
 	ctx.Step(`^canonical run event ordering and references remain valid$`, world.canonicalRunEventOrderingAndReferencesRemainValid)
+	ctx.Step(`^a harness runner captures provider-reported accounting for a final step$`, world.aHarnessRunnerCapturesProviderreportedAccountingForAFinalStep)
+	ctx.Step(`^a harness runner captures fallback-priced accounting for a final step$`, world.aHarnessRunnerCapturesFallbackpricedAccountingForAFinalStep)
+	ctx.Step(`^accounting artifacts are persisted for the completed run$`, world.accountingArtifactsArePersistedForTheCompletedRun)
+	ctx.Step(`^successful run summary and terminal events include accounting$`, world.successfulRunSummaryAndTerminalEventsIncludeAccounting)
+	ctx.Step(`^a recursive harness run captures subtree accounting$`, world.aRecursiveHarnessRunCapturesSubtreeAccounting)
+	ctx.Step(`^accounting rollups are inspected$`, world.accountingRollupsAreInspected)
+	ctx.Step(`^recursive accounting tree total includes child node totals$`, world.recursiveAccountingTreeTotalIncludesChildNodeTotals)
+	ctx.Step(`^fallback pricing-derived accounting cost is preserved in completed run accounting$`, world.fallbackPricingderivedAccountingCostIsPreservedInCompletedRunAccounting)
+	ctx.Step(`^subcall events and action artifacts include leaf accounting summaries$`, world.subcallEventsAndActionArtifactsIncludeLeafAccountingSummaries)
+	ctx.Step(`^a harness runner captures partial accounting for a final step$`, world.aHarnessRunnerCapturesPartialAccountingForAFinalStep)
+	ctx.Step(`^partial accounting totals remain marked partial instead of zero-complete$`, world.partialAccountingTotalsRemainMarkedPartialInsteadOfZerocomplete)
+	ctx.Step(`^a running lifecycle captures partial terminal accounting$`, world.aRunningLifecycleCapturesPartialTerminalAccounting)
+	ctx.Step(`^a failed terminal event is persisted with accounting$`, world.aFailedTerminalEventIsPersistedWithAccounting)
+	ctx.Step(`^an interrupted terminal event is persisted with accounting$`, world.anInterruptedTerminalEventIsPersistedWithAccounting)
+	ctx.Step(`^failed terminal events include partial accounting$`, world.failedTerminalEventsIncludePartialAccounting)
+	ctx.Step(`^interrupted terminal events include partial accounting$`, world.interruptedTerminalEventsIncludePartialAccounting)
 }
 
 func (w *harnessWorld) aHarnessRunnerIsConfiguredWithRawContext(rawContext string) error {
@@ -250,6 +267,9 @@ func (w *harnessWorld) previousactionFeedbackSummaryIncludesOutput_refAndBounded
 	}
 	if strings.TrimSpace(feedback.OutputRef) == "" {
 		return fmt.Errorf("expected non-empty previous_action_feedback.output_ref")
+	}
+	if _, err := sigilruntime.ParseActionOutputRef(feedback.OutputRef); err != nil {
+		return fmt.Errorf("expected canonical previous_action_feedback.output_ref, got %q: %w", feedback.OutputRef, err)
 	}
 	if !feedback.StdoutTruncated && !feedback.StderrTruncated {
 		return fmt.Errorf("expected at least one bounded preview truncation flag to be true")
@@ -565,6 +585,340 @@ func (w *harnessWorld) canonicalRunEventOrderingAndReferencesRemainValid() error
 		indexByType[sigilruntime.EventTypeNodeTurnUser] < indexByType[sigilruntime.EventTypeNodeTurnModel] &&
 		indexByType[sigilruntime.EventTypeNodeTurnModel] < indexByType[sigilruntime.EventTypeNodeStepCompleted]) {
 		return fmt.Errorf("expected canonical node step/turn ordering under bounded model-input execution")
+	}
+	return nil
+}
+
+func (w *harnessWorld) aHarnessRunnerCapturesProviderreportedAccountingForAFinalStep() error {
+	cfg := boundedRunConfig("root prompt", "root context")
+	result := boundedFinalResult("done")
+	result.Accounting = acceptanceAccountingSummary("openai", "gpt-5.1")
+	return w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{{result: result}})
+}
+
+func (w *harnessWorld) aHarnessRunnerCapturesFallbackpricedAccountingForAFinalStep() error {
+	cfg := boundedRunConfig("root prompt", "root context")
+	result := boundedFinalResult("done")
+	result.Accounting = acceptanceFallbackAccountingSummary("openai", "gpt-5.1")
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{{result: result}}); err != nil {
+		return err
+	}
+	return w.accountingArtifactsArePersistedForTheCompletedRun()
+}
+
+func (w *harnessWorld) accountingArtifactsArePersistedForTheCompletedRun() error {
+	events, err := readEventsFromPath(w.rlm().boundedRunResult.EventsPath)
+	if err != nil {
+		return err
+	}
+	w.rlm().boundedPersistedEvents = events
+	return nil
+}
+
+func (w *harnessWorld) successfulRunSummaryAndTerminalEventsIncludeAccounting() error {
+	state := w.rlm()
+	if state.boundedRunErr != nil {
+		return fmt.Errorf("expected completed run, got %v", state.boundedRunErr)
+	}
+	if state.boundedRunResult.Accounting.TreeTotal.TotalTokens == nil || *state.boundedRunResult.Accounting.TreeTotal.TotalTokens == 0 {
+		return fmt.Errorf("expected non-zero run summary accounting total_tokens, got %+v", state.boundedRunResult.Accounting.TreeTotal)
+	}
+	if state.boundedRunResult.Accounting.TreeTotal.CostStatus != accounting.StatusComplete {
+		return fmt.Errorf("expected complete run summary cost status, got %q", state.boundedRunResult.Accounting.TreeTotal.CostStatus)
+	}
+
+	runAccountingPath, err := resolveRunOutputPath(w.runsBaseDir(), state.boundedRunResult.RunID, "run-output://run/accounting.json")
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(runAccountingPath); err != nil {
+		return fmt.Errorf("expected run accounting artifact %q, got %v", runAccountingPath, err)
+	}
+
+	var sawStepCompleted bool
+	var sawRunCompleted bool
+	var sawModelTurnAccounting bool
+	for _, event := range state.boundedPersistedEvents {
+		switch event.Type {
+		case sigilruntime.EventTypeNodeStepCompleted:
+			payload, ok := event.Payload.(sigilruntime.NodeStepCompletedPayload)
+			if !ok {
+				return fmt.Errorf("expected node.step.completed payload type, got %T", event.Payload)
+			}
+			if strings.TrimSpace(payload.AccountingRef) == "" {
+				return fmt.Errorf("expected node.step.completed accounting_ref")
+			}
+			sawStepCompleted = true
+		case sigilruntime.EventTypeRunCompleted:
+			payload, ok := event.Payload.(sigilruntime.RunCompletedPayload)
+			if !ok {
+				return fmt.Errorf("expected run.completed payload type, got %T", event.Payload)
+			}
+			if payload.AccountingRef == nil || strings.TrimSpace(*payload.AccountingRef) == "" {
+				return fmt.Errorf("expected run.completed accounting_ref")
+			}
+			if payload.Accounting.TreeTotal.TotalTokens == nil || *payload.Accounting.TreeTotal.TotalTokens == 0 {
+				return fmt.Errorf("expected non-zero run.completed accounting tree_total")
+			}
+			sawRunCompleted = true
+		case sigilruntime.EventTypeNodeTurnModel:
+			payload, ok := event.Payload.(sigilruntime.NodeTurnPayload)
+			if !ok {
+				return fmt.Errorf("expected node.turn.model payload type, got %T", event.Payload)
+			}
+			modelTurnPath, err := resolveRunOutputPath(w.runsBaseDir(), state.boundedRunResult.RunID, payload.ContentRef)
+			if err != nil {
+				return err
+			}
+			encoded, err := os.ReadFile(modelTurnPath)
+			if err != nil {
+				return err
+			}
+			artifact := map[string]any{}
+			if err := json.Unmarshal(encoded, &artifact); err != nil {
+				return err
+			}
+			if _, ok := artifact["accounting"].(map[string]any); ok {
+				sawModelTurnAccounting = true
+			}
+		}
+	}
+	if !sawStepCompleted {
+		return fmt.Errorf("expected node.step.completed event with accounting_ref")
+	}
+	if !sawRunCompleted {
+		return fmt.Errorf("expected run.completed event with accounting")
+	}
+	if !sawModelTurnAccounting {
+		return fmt.Errorf("expected node.turn.model artifact to include accounting")
+	}
+	return nil
+}
+
+func (w *harnessWorld) aRecursiveHarnessRunCapturesSubtreeAccounting() error {
+	cfg := boundedRunConfig("root prompt", "root context")
+	rootContinue := boundedContinueResult(`import "fmt"; answer, err := rlm_query("child prompt", "child context payload"); if err != nil { panic(err) }; fmt.Print(answer)`)
+	rootContinue.Accounting = acceptanceAccountingSummary("openai", "gpt-5.1")
+	childFinal := boundedFinalResult("child final")
+	childFinal.Accounting = acceptanceAccountingSummary("openai", "gpt-5.1")
+	rootFinal := boundedFinalResult("root final")
+	rootFinal.Accounting = acceptanceAccountingSummary("openai", "gpt-5.1")
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{
+		{result: rootContinue},
+		{result: childFinal},
+		{result: rootFinal},
+	}); err != nil {
+		return err
+	}
+	return w.accountingArtifactsArePersistedForTheCompletedRun()
+}
+
+func (w *harnessWorld) accountingRollupsAreInspected() error {
+	if len(w.rlm().boundedPersistedEvents) == 0 {
+		return fmt.Errorf("expected persisted events before accounting inspection")
+	}
+	return nil
+}
+
+func (w *harnessWorld) recursiveAccountingTreeTotalIncludesChildNodeTotals() error {
+	rollup := w.rlm().boundedRunResult.Accounting
+	if rollup.DirectSubcallsTotal.TotalTokens == nil || *rollup.DirectSubcallsTotal.TotalTokens == 0 {
+		return fmt.Errorf("expected non-zero direct_subcalls_total.total_tokens, got %+v", rollup.DirectSubcallsTotal)
+	}
+	if rollup.ModelTotal.TotalTokens == nil || rollup.TreeTotal.TotalTokens == nil {
+		return fmt.Errorf("expected model_total and tree_total token totals, got %+v", rollup)
+	}
+	if *rollup.TreeTotal.TotalTokens <= *rollup.ModelTotal.TotalTokens {
+		return fmt.Errorf("expected tree_total.total_tokens %d to exceed model_total.total_tokens %d", *rollup.TreeTotal.TotalTokens, *rollup.ModelTotal.TotalTokens)
+	}
+	if rollup.TreeTotal.CostStatus != accounting.StatusComplete {
+		return fmt.Errorf("expected complete tree_total cost status, got %q", rollup.TreeTotal.CostStatus)
+	}
+	return nil
+}
+
+func (w *harnessWorld) fallbackPricingderivedAccountingCostIsPreservedInCompletedRunAccounting() error {
+	rollup := w.rlm().boundedRunResult.Accounting
+	if rollup.TreeTotal.CostSource != accounting.SourceFallbackPricing {
+		return fmt.Errorf("expected fallback_pricing cost source, got %q", rollup.TreeTotal.CostSource)
+	}
+	if rollup.TreeTotal.CostStatus != accounting.StatusComplete {
+		return fmt.Errorf("expected complete fallback-priced cost status, got %q", rollup.TreeTotal.CostStatus)
+	}
+	if rollup.TreeTotal.KnownTotalCostMicrousd == nil || *rollup.TreeTotal.KnownTotalCostMicrousd <= 0 {
+		return fmt.Errorf("expected non-zero fallback-priced known_total_cost_microusd, got %+v", rollup.TreeTotal)
+	}
+	return nil
+}
+
+func (w *harnessWorld) subcallEventsAndActionArtifactsIncludeLeafAccountingSummaries() error {
+	state := w.rlm()
+	var sawSubcallEvent bool
+	var sawActionArtifact bool
+
+	artifactStore, err := sigilharness.NewActionArtifactStore(w.runsBaseDir())
+	if err != nil {
+		return err
+	}
+
+	for _, event := range state.boundedPersistedEvents {
+		switch event.Type {
+		case sigilruntime.EventTypeNodeSubcallExecuted:
+			payload, ok := event.Payload.(sigilruntime.NodeSubcallExecutedPayload)
+			if !ok {
+				return fmt.Errorf("expected node.subcall.executed payload type, got %T", event.Payload)
+			}
+			if strings.TrimSpace(payload.AccountingRef) == "" {
+				return fmt.Errorf("expected node.subcall.executed accounting_ref")
+			}
+			if payload.Accounting.TotalTokens == nil || *payload.Accounting.TotalTokens == 0 {
+				return fmt.Errorf("expected node.subcall.executed accounting total_tokens, got %+v", payload.Accounting)
+			}
+			sawSubcallEvent = true
+		case sigilruntime.EventTypeNodeActionExecuted:
+			payload, ok := event.Payload.(sigilruntime.NodeActionExecutedPayload)
+			if !ok {
+				return fmt.Errorf("expected node.action.executed payload type, got %T", event.Payload)
+			}
+			artifact, err := artifactStore.Read(state.boundedRunResult.RunID, payload.OutputRef)
+			if err != nil {
+				return err
+			}
+			if len(artifact.Subcalls) == 0 {
+				return fmt.Errorf("expected action artifact subcalls trace")
+			}
+			if artifact.Subcalls[0].Accounting == nil {
+				return fmt.Errorf("expected action artifact subcall accounting summary")
+			}
+			if artifact.Subcalls[0].Accounting.TotalTokens == nil || *artifact.Subcalls[0].Accounting.TotalTokens == 0 {
+				return fmt.Errorf("expected action artifact subcall accounting total_tokens, got %+v", artifact.Subcalls[0].Accounting)
+			}
+			sawActionArtifact = true
+		}
+	}
+
+	if !sawSubcallEvent {
+		return fmt.Errorf("expected node.subcall.executed event with accounting")
+	}
+	if !sawActionArtifact {
+		return fmt.Errorf("expected node.action.executed artifact with subcall accounting")
+	}
+	return nil
+}
+
+func (w *harnessWorld) aHarnessRunnerCapturesPartialAccountingForAFinalStep() error {
+	cfg := boundedRunConfig("root prompt", "root context")
+	result := boundedFinalResult("done")
+	result.Accounting = acceptancePartialAccountingSummary("openai", "gpt-5.1")
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{{result: result}}); err != nil {
+		return err
+	}
+	return w.accountingArtifactsArePersistedForTheCompletedRun()
+}
+
+func (w *harnessWorld) partialAccountingTotalsRemainMarkedPartialInsteadOfZerocomplete() error {
+	rollup := w.rlm().boundedRunResult.Accounting
+	if rollup.TreeTotal.TokenStatus != accounting.StatusComplete {
+		return fmt.Errorf("expected complete token status, got %q", rollup.TreeTotal.TokenStatus)
+	}
+	if rollup.TreeTotal.CostStatus != accounting.StatusPartial {
+		return fmt.Errorf("expected partial cost status, got %q", rollup.TreeTotal.CostStatus)
+	}
+	if rollup.TreeTotal.KnownTotalCostMicrousd == nil {
+		return fmt.Errorf("expected known subtotal cost under partial status")
+	}
+	return nil
+}
+
+func (w *harnessWorld) aRunningLifecycleCapturesPartialTerminalAccounting() error {
+	if err := w.resetLifecycleToState(sigilruntime.RunStateRunning); err != nil {
+		return err
+	}
+	w.rlm().boundedPersistedEvents = nil
+	return nil
+}
+
+func (w *harnessWorld) aFailedTerminalEventIsPersistedWithAccounting() error {
+	if w.lifecycle == nil {
+		return fmt.Errorf("expected lifecycle")
+	}
+	if err := w.lifecycle.FailWith(sigilruntime.RunFailedPayload{
+		Status:       "failed",
+		ErrorCode:    "runtime.failure",
+		ErrorMessage: "failure",
+		Retryable:    false,
+		Accounting:   acceptancePartialAccountingRollup("openai", "gpt-5.1"),
+	}); err != nil {
+		return err
+	}
+	return w.captureBoundedLifecycleEvents()
+}
+
+func (w *harnessWorld) anInterruptedTerminalEventIsPersistedWithAccounting() error {
+	if w.lifecycle == nil {
+		return fmt.Errorf("expected lifecycle")
+	}
+	if err := w.lifecycle.InterruptWith(sigilruntime.RunInterruptedPayload{
+		Status:     "interrupted",
+		Reason:     sigilruntime.RunInterruptedReasonUserRequest,
+		Accounting: acceptancePartialAccountingRollup("openai", "gpt-5.1"),
+	}); err != nil {
+		return err
+	}
+	return w.captureBoundedLifecycleEvents()
+}
+
+func (w *harnessWorld) failedTerminalEventsIncludePartialAccounting() error {
+	for index := len(w.rlm().boundedPersistedEvents) - 1; index >= 0; index-- {
+		event := w.rlm().boundedPersistedEvents[index]
+		if event.Type != sigilruntime.EventTypeRunFailed {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.RunFailedPayload)
+		if !ok {
+			return fmt.Errorf("expected run.failed payload type, got %T", event.Payload)
+		}
+		return assertPartialTerminalAccounting(payload.Accounting)
+	}
+	return fmt.Errorf("expected run.failed event with accounting")
+}
+
+func (w *harnessWorld) interruptedTerminalEventsIncludePartialAccounting() error {
+	for index := len(w.rlm().boundedPersistedEvents) - 1; index >= 0; index-- {
+		event := w.rlm().boundedPersistedEvents[index]
+		if event.Type != sigilruntime.EventTypeRunInterrupted {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.RunInterruptedPayload)
+		if !ok {
+			return fmt.Errorf("expected run.interrupted payload type, got %T", event.Payload)
+		}
+		return assertPartialTerminalAccounting(payload.Accounting)
+	}
+	return fmt.Errorf("expected run.interrupted event with accounting")
+}
+
+func (w *harnessWorld) captureBoundedLifecycleEvents() error {
+	if w.lifecycle == nil {
+		return fmt.Errorf("expected lifecycle")
+	}
+	events, err := w.lifecycle.PersistedEvents()
+	if err != nil {
+		return err
+	}
+	w.rlm().boundedPersistedEvents = events
+	return nil
+}
+
+func assertPartialTerminalAccounting(rollup accounting.Rollup) error {
+	if rollup.TreeTotal.TokenStatus != accounting.StatusComplete {
+		return fmt.Errorf("expected complete token status, got %q", rollup.TreeTotal.TokenStatus)
+	}
+	if rollup.TreeTotal.CostStatus != accounting.StatusPartial {
+		return fmt.Errorf("expected partial cost status, got %q", rollup.TreeTotal.CostStatus)
+	}
+	if rollup.TreeTotal.KnownTotalCostMicrousd == nil {
+		return fmt.Errorf("expected known subtotal cost under partial terminal accounting")
 	}
 	return nil
 }

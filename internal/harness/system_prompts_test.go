@@ -95,6 +95,9 @@ func TestResolveBaseRendersSchemaFromRegistry(t *testing.T) {
 	if !strings.Contains(prompt, `"evidence"`) {
 		t.Fatalf("expected prompt schema block to include evidence field, got %q", prompt)
 	}
+	if !strings.Contains(prompt, "copy it byte-for-byte") {
+		t.Fatalf("expected prompt to instruct verbatim action output_ref copying, got %q", prompt)
+	}
 }
 
 func TestResolveBaseFailsWhenSchemaRegistryMissing(t *testing.T) {

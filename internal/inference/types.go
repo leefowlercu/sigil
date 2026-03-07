@@ -3,6 +3,7 @@ package inference
 import (
 	"context"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference/schema"
 )
 
@@ -23,13 +24,14 @@ type Message struct {
 
 // Request is the gateway-agnostic inference input contract.
 type Request struct {
-	Messages      []Message       `json:"messages"`
-	SchemaID      string          `json:"schema_id"`
-	Gateway       string          `json:"gateway"`
-	Provider      string          `json:"provider"`
-	Model         string          `json:"model"`
-	GatewayConfig GatewayConfig   `json:"gateway_config"`
-	Reasoning     ReasoningConfig `json:"reasoning"`
+	Messages      []Message        `json:"messages"`
+	SchemaID      string           `json:"schema_id"`
+	Gateway       string           `json:"gateway"`
+	Provider      string           `json:"provider"`
+	Model         string           `json:"model"`
+	GatewayConfig GatewayConfig    `json:"gateway_config"`
+	Reasoning     ReasoningConfig  `json:"reasoning"`
+	Accounting    AccountingConfig `json:"accounting"`
 }
 
 // GatewayConfig carries gateway transport configuration values.
@@ -53,6 +55,15 @@ type Usage struct {
 	ReasoningTokens *int64 `json:"reasoning_tokens,omitempty"`
 }
 
+// AccountingConfig carries inference-side accounting policy and fallback pricing.
+type AccountingConfig struct {
+	PricingVersion  string                      `json:"pricing_version"`
+	FallbackPricing *accounting.FallbackPricing `json:"fallback_pricing,omitempty"`
+}
+
+// AccountingSample captures normalized accounting for one inference response.
+type AccountingSample = accounting.Summary
+
 // Reasoning captures normalized reasoning output fields.
 type Reasoning struct {
 	Enabled   bool           `json:"enabled"`
@@ -62,16 +73,17 @@ type Reasoning struct {
 
 // Result is the canonical normalized successful inference output contract.
 type Result struct {
-	SchemaID          string         `json:"schema_id"`
-	ValidatedPayload  map[string]any `json:"validated_payload"`
-	Gateway           string         `json:"gateway"`
-	Provider          string         `json:"provider"`
-	Model             string         `json:"model"`
-	GatewayResponseID string         `json:"gateway_response_id"`
-	Usage             Usage          `json:"usage"`
-	Reasoning         Reasoning      `json:"reasoning"`
-	FinishStatus      string         `json:"finish_status"`
-	RawMetadata       map[string]any `json:"raw_metadata"`
+	SchemaID          string           `json:"schema_id"`
+	ValidatedPayload  map[string]any   `json:"validated_payload"`
+	Gateway           string           `json:"gateway"`
+	Provider          string           `json:"provider"`
+	Model             string           `json:"model"`
+	GatewayResponseID string           `json:"gateway_response_id"`
+	Usage             Usage            `json:"usage"`
+	Accounting        AccountingSample `json:"accounting"`
+	Reasoning         Reasoning        `json:"reasoning"`
+	FinishStatus      string           `json:"finish_status"`
+	RawMetadata       map[string]any   `json:"raw_metadata"`
 }
 
 // GatewayRequest is the normalized request sent from inference core to gateway adapters.
@@ -91,6 +103,8 @@ type GatewayResponse struct {
 	FinishStatus      string
 	StructuredPayload map[string]any
 	Usage             Usage
+	UsageReported     bool
+	Accounting        AccountingSample
 	Reasoning         Reasoning
 	RawMetadata       map[string]any
 }

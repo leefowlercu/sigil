@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference"
 )
 
@@ -39,19 +40,20 @@ type userTurnMessageArtifact struct {
 }
 
 type modelTurnArtifact struct {
-	RunID         string         `json:"run_id"`
-	NodeID        string         `json:"node_id"`
-	StepID        string         `json:"step_id"`
-	SchemaID      string         `json:"schema_id"`
-	Validated     map[string]any `json:"validated_payload"`
-	Gateway       string         `json:"gateway"`
-	Provider      string         `json:"provider"`
-	Model         string         `json:"model"`
-	GatewayRespID string         `json:"gateway_response_id"`
-	FinishStatus  string         `json:"finish_status"`
-	Reasoning     any            `json:"reasoning"`
-	Usage         any            `json:"usage"`
-	RawMetadata   map[string]any `json:"raw_metadata"`
+	RunID         string             `json:"run_id"`
+	NodeID        string             `json:"node_id"`
+	StepID        string             `json:"step_id"`
+	SchemaID      string             `json:"schema_id"`
+	Validated     map[string]any     `json:"validated_payload"`
+	Gateway       string             `json:"gateway"`
+	Provider      string             `json:"provider"`
+	Model         string             `json:"model"`
+	GatewayRespID string             `json:"gateway_response_id"`
+	FinishStatus  string             `json:"finish_status"`
+	Reasoning     any                `json:"reasoning"`
+	Usage         any                `json:"usage"`
+	Accounting    accounting.Summary `json:"accounting"`
+	RawMetadata   map[string]any     `json:"raw_metadata"`
 }
 
 type contextArtifact struct {
@@ -146,6 +148,7 @@ func (s *TurnOutputStore) PersistModelTurn(runID string, nodeID string, stepID s
 		FinishStatus:  result.FinishStatus,
 		Reasoning:     result.Reasoning,
 		Usage:         result.Usage,
+		Accounting:    result.Accounting,
 		RawMetadata:   result.RawMetadata,
 	}
 	if err := writeOutputArtifact(path, payload); err != nil {
