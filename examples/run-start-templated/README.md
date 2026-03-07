@@ -6,6 +6,9 @@ This example runs `sigil run start` with template variables provided via
 The bundled `context.txt` is intentionally large (~350KB) and contains one true
 needle token among many noisy chunks and decoys.
 
+The example question is intentionally written as just the task to solve. It
+does not mention harness internals like recursion, steps, or `rlm_query`.
+
 The bundled `sigil-run.yaml` is configured for `openai/gpt-5.3-codex`.
 Its fallback pricing matches the OpenRouter price card for
 `openai/gpt-5.3-codex`, which also matches the OpenAI model page as of
@@ -46,7 +49,7 @@ context_value="$(cat ./examples/run-start-templated/context.txt)"
 ./sigil run start \
   --config ./examples/run-start-templated/sigil.yaml \
   --run-config ./examples/run-start-templated/sigil-run.yaml \
-  --var question="Find the one true token matching SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-[0-9]{4}. Tokens ending with XXXX are decoys and invalid. Use recursive decomposition with REPL + rlm_query before final answer. Return exactly: token=<value>; chunk=<chunk-id>; evidence=<full line containing token>." \
+  --var question="Find the one true token matching SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-[0-9]{4}. Tokens ending with XXXX are decoys and invalid. Return exactly: token=<value>; chunk=<chunk-id>; evidence=<full line containing token>." \
   --var external_context="$context_value"
 ```
 
@@ -65,7 +68,7 @@ context_value="$(cat ./examples/run-start-templated/context.txt)"
 ./sigil run start -o json \
   --config ./examples/run-start-templated/sigil.yaml \
   --run-config ./examples/run-start-templated/sigil-run.yaml \
-  --var question="Find the one true token matching SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-[0-9]{4}. Tokens ending with XXXX are decoys and invalid. Use recursive decomposition with REPL + rlm_query before final answer. Return exactly: token=<value>; chunk=<chunk-id>; evidence=<full line containing token>." \
+  --var question="Find the one true token matching SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-[0-9]{4}. Tokens ending with XXXX are decoys and invalid. Return exactly: token=<value>; chunk=<chunk-id>; evidence=<full line containing token>." \
   --var external_context="$context_value"
 ```
 

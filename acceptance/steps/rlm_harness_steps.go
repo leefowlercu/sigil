@@ -595,6 +595,7 @@ func (w *harnessWorld) openaiSystemPromptUsesBlockSectionsAndHardFinalizationGat
 		"<recovery_rules>",
 		"decision=final is allowed only when all of the following are true:",
 		"Do not finalize on a guess, on partial formatting, or on unsupported evidence.",
+		`{"decision":"final","final":{"answer":"NONE"`,
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {
@@ -610,7 +611,11 @@ func (w *harnessWorld) openaiSystemPromptIncludesSearchDisciplineAndTimeoutRecov
 		"Each continue action may perform at most 4 recursive subcalls and at most 8 total subcalls.",
 		"If more expansion is needed, finish the current action, record what narrowed successfully, and use a new step before expanding again.",
 		"Do NOT use rlm_query_batched for coarse search over unknown full-context partitions.",
+		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
+		"If execution_state.recursive_subcalls_allowed=false, stay local for this step even if recursive APIs are available.",
 		"If an action times out or previous_action_feedback.error_message indicates timeout, reduce chunk size and fan-out on the next step and prefer REPL or llm_query before more recursion.",
+		"If a complete local scan of the current context finds no matching evidence, finalize absence now rather than repartitioning the same context again.",
+		"include span_start or span_end only when you know exact integer offsets",
 		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only.",
 	}
 	for _, snippet := range requiredSnippets {
@@ -678,6 +683,8 @@ func (w *harnessWorld) anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlo
 		"If you cite previous_action_feedback.output_ref, copy it byte-for-byte.",
 		"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
 		"If you need structured data, ask the subcall to return minified JSON text inside the answer string and parse that string in REPL.",
+		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
+		"Include span_start or span_end only when you know exact integer offsets; otherwise omit span fields entirely.",
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {

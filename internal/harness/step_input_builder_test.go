@@ -31,6 +31,45 @@ func TestBuildContextMetadataReturnsDeterministicIdentity(t *testing.T) {
 	if metadata.ContextRef != contextRef {
 		t.Fatalf("expected context_ref=%q, got %q", contextRef, metadata.ContextRef)
 	}
+	if !isSmallContext(metadata) {
+		t.Fatalf("expected metadata to be classified as small context")
+	}
+}
+
+func TestBuildStepExecutionStateIncludesBudgetsAndRecursionPolicy(t *testing.T) {
+	metadata := buildContextMetadata("line-1\nline-2", "run-output://node/test/context.json")
+	node := runtime.Node{ID: "node-1", Depth: 2}
+	reason := "small context already used recursive subcalls in this node; stay local in later steps"
+
+	state := buildStepExecutionState(node, 5, 3, 61, 7, 249, metadata, &PreviousActionFeedback{}, false, &reason)
+
+	if state.NodeDepth != 2 {
+		t.Fatalf("expected node_depth=2, got %d", state.NodeDepth)
+	}
+	if state.MaxDepth != 5 {
+		t.Fatalf("expected max_depth=5, got %d", state.MaxDepth)
+	}
+	if state.RemainingDepth != 3 {
+		t.Fatalf("expected remaining_depth=3, got %d", state.RemainingDepth)
+	}
+	if state.NodeStepsUsed != 3 || state.NodeStepsRemaining != 61 {
+		t.Fatalf("expected node step budget snapshot 3/61, got %d/%d", state.NodeStepsUsed, state.NodeStepsRemaining)
+	}
+	if state.RunStepsUsed != 7 || state.RunStepsRemaining != 249 {
+		t.Fatalf("expected run step budget snapshot 7/249, got %d/%d", state.RunStepsUsed, state.RunStepsRemaining)
+	}
+	if !state.SameContextAsPreviousStep {
+		t.Fatalf("expected same_context_as_previous_step=true")
+	}
+	if !state.SmallContext {
+		t.Fatalf("expected small_context=true")
+	}
+	if state.RecursiveSubcallsAllowed {
+		t.Fatalf("expected recursive_subcalls_allowed=false")
+	}
+	if state.RecursiveSubcallsReason == nil || *state.RecursiveSubcallsReason != reason {
+		t.Fatalf("expected recursive_subcalls_reason=%q, got %+v", reason, state.RecursiveSubcallsReason)
+	}
 }
 
 func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
@@ -64,6 +103,10 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 			Message: "undefined: missing",
 			Line:    intPointer(3),
 			Column:  intPointer(4),
+		},
+		Subcalls: []ActionSubcallTrace{
+			{ExecutionMode: string(runtime.SubcallExecutionModeRecursive), Status: string(runtime.ActionExecutionStatusCompleted)},
+			{ExecutionMode: string(runtime.SubcallExecutionModeFallback), Status: string(runtime.ActionExecutionStatusFailed)},
 		},
 	}
 	outputRef, err := store.Persist(artifact)
@@ -115,6 +158,18 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 	}
 	if feedback.ErrorDetail.Line == nil || *feedback.ErrorDetail.Line != 3 {
 		t.Fatalf("expected line=3, got %+v", feedback.ErrorDetail.Line)
+	}
+	if feedback.SubcallSummary == nil {
+		t.Fatal("expected subcall_summary to be propagated")
+	}
+	if feedback.SubcallSummary.TotalCount != 2 {
+		t.Fatalf("expected total_count=2, got %d", feedback.SubcallSummary.TotalCount)
+	}
+	if feedback.SubcallSummary.RecursiveCount != 1 || feedback.SubcallSummary.FallbackCount != 1 {
+		t.Fatalf("expected recursive/fallback counts 1/1, got %d/%d", feedback.SubcallSummary.RecursiveCount, feedback.SubcallSummary.FallbackCount)
+	}
+	if feedback.SubcallSummary.CompletedCount != 1 || feedback.SubcallSummary.FailedCount != 1 {
+		t.Fatalf("expected completed/failed counts 1/1, got %d/%d", feedback.SubcallSummary.CompletedCount, feedback.SubcallSummary.FailedCount)
 	}
 }
 

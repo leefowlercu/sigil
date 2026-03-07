@@ -310,6 +310,8 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 	}
 	contextMetadata := buildContextMetadata(baseContext, contextRef)
 	var previousFeedback *PreviousActionFeedback
+	recursiveSubcallsAllowed := true
+	var recursiveSubcallsReason *string
 	for {
 		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
 			return nodeExecutionResult{}, interruptErr
@@ -327,6 +329,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.started", err)
 		}
 		execCtx.guardrails.RecordStepStarted(node.ID)
+		budgetSnapshot := execCtx.guardrails.StepBudgetSnapshot(node.ID)
 		stepID := stepStarted.StepID
 		failedStepID = &stepID
 		logger.Debug("started node step",
@@ -334,7 +337,19 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			"step_index", stepStarted.StepIndex,
 		)
 
-		envelope, err := buildStepInputEnvelope(prompt, stepStarted.StepIndex, contextMetadata, previousFeedback)
+		executionState := buildStepExecutionState(
+			node,
+			execCtx.lifecycle.MaxDepth(),
+			budgetSnapshot.NodeStepsUsed,
+			budgetSnapshot.NodeStepsRemaining,
+			budgetSnapshot.RunStepsUsed,
+			budgetSnapshot.RunStepsRemaining,
+			contextMetadata,
+			previousFeedback,
+			recursiveSubcallsAllowed,
+			recursiveSubcallsReason,
+		)
+		envelope, err := buildStepInputEnvelope(prompt, stepStarted.StepIndex, contextMetadata, executionState, previousFeedback)
 		if err != nil {
 			logger.Error("failed to build deterministic step input envelope", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to build deterministic step input envelope", err)
@@ -447,16 +462,17 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "continuation payload is required for continue decision", nil)
 			}
 			subcalls, subcallErr := NewSubcallRouter(SubcallRouterInput{
-				Lifecycle:    execCtx.lifecycle,
-				Inference:    execCtx.inference,
-				RunConfig:    execCtx.runConfig,
-				Node:         node,
-				StepID:       stepStarted.StepID,
-				ActionIndex:  1,
-				NonRecursive: execCtx.nonRecursive,
-				TurnOutputs:  execCtx.turnOutputs,
-				Ledger:       execCtx.ledger,
-				Guardrails:   execCtx.guardrails,
+				Lifecycle:      execCtx.lifecycle,
+				Inference:      execCtx.inference,
+				RunConfig:      execCtx.runConfig,
+				Node:           node,
+				StepID:         stepStarted.StepID,
+				ActionIndex:    1,
+				ForceLocalOnly: !executionState.RecursiveSubcallsAllowed,
+				NonRecursive:   execCtx.nonRecursive,
+				TurnOutputs:    execCtx.turnOutputs,
+				Ledger:         execCtx.ledger,
+				Guardrails:     execCtx.guardrails,
 				ExecuteChild: func(queryCtx context.Context, child runtime.Node, subPrompt string, subContext string) (nodeExecutionResult, error) {
 					logger.Info("executing recursive child node subcall",
 						"step_id", stepStarted.StepID,
@@ -563,6 +579,15 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to build repl feedback", feedbackErr)
 			}
 			previousFeedback = feedback
+			if executionState.SmallContext && recursiveSubcallsAllowed && feedback.SubcallSummary != nil && feedback.SubcallSummary.RecursiveCount > 0 {
+				reason := "small context already used recursive subcalls in this node; stay local in later steps"
+				recursiveSubcallsAllowed = false
+				recursiveSubcallsReason = &reason
+				logger.Info("switching node to local-only recursive subcall fallback",
+					"node_id", node.ID,
+					"step_id", stepStarted.StepID,
+				)
+			}
 			continue
 		}
 

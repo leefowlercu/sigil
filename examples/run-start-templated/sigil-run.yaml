@@ -1,12 +1,3 @@
-system_prompt_append: |
-  You are running a needle-in-a-haystack recursive retrieval test.
-  Do not rely on shallow scanning of the full context.
-  Use at least one continue step before finalizing.
-  In REPL, partition the context into chunks, then call rlm_query on sub-context slices.
-  Use recursive narrowing to locate the single valid needle token.
-  The valid target token format is SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-[0-9]{4}.
-  Any token ending in XXXX is a decoy and must be rejected.
-
 prompt_template: |
   {{.question}}
 

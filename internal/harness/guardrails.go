@@ -31,6 +31,13 @@ type deterministicGuardrails struct {
 	consecutiveStepFailure int
 }
 
+type stepBudgetSnapshot struct {
+	NodeStepsUsed      int
+	NodeStepsRemaining int
+	RunStepsUsed       int
+	RunStepsRemaining  int
+}
+
 func newDeterministicGuardrails(cfg config.RunGuardrailsConfig, startTime time.Time) (*deterministicGuardrails, error) {
 	if startTime.IsZero() {
 		startTime = time.Now().UTC()
@@ -110,6 +117,28 @@ func (g *deterministicGuardrails) ResetConsecutiveFailures() {
 
 func (g *deterministicGuardrails) Deadline() time.Time {
 	return g.deadline
+}
+
+func (g *deterministicGuardrails) StepBudgetSnapshot(nodeID string) stepBudgetSnapshot {
+	if g == nil {
+		return stepBudgetSnapshot{}
+	}
+	nodeStepsUsed := g.stepsByNode[nodeID]
+	nodeStepsRemaining := g.cfg.MaxStepsPerNode - nodeStepsUsed
+	if nodeStepsRemaining < 0 {
+		nodeStepsRemaining = 0
+	}
+	runStepsUsed := g.totalSteps
+	runStepsRemaining := g.cfg.MaxTotalStepsPerRun - runStepsUsed
+	if runStepsRemaining < 0 {
+		runStepsRemaining = 0
+	}
+	return stepBudgetSnapshot{
+		NodeStepsUsed:      nodeStepsUsed,
+		NodeStepsRemaining: nodeStepsRemaining,
+		RunStepsUsed:       runStepsUsed,
+		RunStepsRemaining:  runStepsRemaining,
+	}
 }
 
 func (g *deterministicGuardrails) CheckRunAccounting(nodeID string, stepID string, treeTotal accounting.Summary) error {

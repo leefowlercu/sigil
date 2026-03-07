@@ -1327,6 +1327,12 @@ Feature: Sigil baseline CLI and config contracts
     When rlm_query is invoked from node-local Go REPL context
     Then plain subcall fallback answer is returned and child node is not created
 
+  Scenario: Falls back to llm_query after a small-context node already used recursive subcalls in a prior step
+    Given a small-context harness runner already used recursive subcalls in a prior continue step
+    When the next step invokes rlm_query on that same node
+    Then the next-step execution state disables recursive subcalls
+    And repeated small-context rlm_query uses plain fallback without creating another child node
+
   Scenario: Returns child final answer to caller REPL context on successful subcall
     Given an active parent node with child node in progress
     And child node inference result is decision final with answer "child answer"
@@ -1404,10 +1410,20 @@ Feature: Sigil baseline CLI and config contracts
     When model-step inference input is constructed for first step
     Then user step envelope contains deterministic query step index and context metadata
 
+  Scenario: Includes execution_state with depth step budgets and recursion-permission metadata in user step envelope
+    Given a harness runner is configured with raw context "needle in haystack context"
+    When model-step inference input is constructed for first step
+    Then user step envelope includes execution_state with depth step budgets and recursion-permission metadata
+
   Scenario: Includes bounded previous-action feedback summary with output_ref and preview truncation metadata
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
     Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+
+  Scenario: Includes previous_action_feedback.subcall_summary with deterministic counts by execution mode and status
+    Given a harness runner has previous continue action subcall feedback
+    When model-step inference input is constructed for next step
+    Then previous-action feedback includes deterministic subcall summary counts
 
   Scenario: Omits previous-action feedback block on first step before any continue action executes
     Given a harness runner is configured with raw context "needle in haystack context"

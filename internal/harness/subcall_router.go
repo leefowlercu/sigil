@@ -46,19 +46,20 @@ type subcallRecord struct {
 }
 
 type SubcallRouter struct {
-	lifecycle    *runtime.Lifecycle
-	inference    InferenceClient
-	runConfig    config.RunConfig
-	node         runtime.Node
-	stepID       string
-	actionIndex  int
-	nonRecursive bool
-	turnOutputs  *TurnOutputStore
-	ledger       *accounting.Ledger
-	guardrails   *deterministicGuardrails
-	executeChild childNodeExecutor
-	logger       *slog.Logger
-	batchWorkers int
+	lifecycle      *runtime.Lifecycle
+	inference      InferenceClient
+	runConfig      config.RunConfig
+	node           runtime.Node
+	stepID         string
+	actionIndex    int
+	forceLocalOnly bool
+	nonRecursive   bool
+	turnOutputs    *TurnOutputStore
+	ledger         *accounting.Ledger
+	guardrails     *deterministicGuardrails
+	executeChild   childNodeExecutor
+	logger         *slog.Logger
+	batchWorkers   int
 
 	mu             sync.Mutex
 	nextSubcallIdx int
@@ -67,17 +68,18 @@ type SubcallRouter struct {
 }
 
 type SubcallRouterInput struct {
-	Lifecycle    *runtime.Lifecycle
-	Inference    InferenceClient
-	RunConfig    config.RunConfig
-	Node         runtime.Node
-	StepID       string
-	ActionIndex  int
-	NonRecursive bool
-	TurnOutputs  *TurnOutputStore
-	Ledger       *accounting.Ledger
-	Guardrails   *deterministicGuardrails
-	ExecuteChild childNodeExecutor
+	Lifecycle      *runtime.Lifecycle
+	Inference      InferenceClient
+	RunConfig      config.RunConfig
+	Node           runtime.Node
+	StepID         string
+	ActionIndex    int
+	ForceLocalOnly bool
+	NonRecursive   bool
+	TurnOutputs    *TurnOutputStore
+	Ledger         *accounting.Ledger
+	Guardrails     *deterministicGuardrails
+	ExecuteChild   childNodeExecutor
 }
 
 func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
@@ -113,6 +115,7 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 		node:           input.Node,
 		stepID:         input.StepID,
 		actionIndex:    input.ActionIndex,
+		forceLocalOnly: input.ForceLocalOnly,
 		nonRecursive:   input.NonRecursive,
 		turnOutputs:    input.TurnOutputs,
 		ledger:         input.Ledger,
@@ -270,6 +273,16 @@ func (r *SubcallRouter) executeRLMQuery(ctx context.Context, request repl.QueryR
 			durationMS: durationMS(start),
 			mode:       runtime.SubcallExecutionModeFallback,
 			accounting: accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion),
+		}, nil
+	}
+	if r.forceLocalOnly {
+		answer, summary, fallbackErr := r.inferLLMAnswer(ctx, request.Prompt, request.Context)
+		return subcallRecord{
+			answer:     answer,
+			err:        fallbackErr,
+			durationMS: durationMS(start),
+			mode:       runtime.SubcallExecutionModeFallback,
+			accounting: summary,
 		}, nil
 	}
 

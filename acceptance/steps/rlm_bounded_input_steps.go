@@ -15,6 +15,7 @@ import (
 	"github.com/leefowlercu/sigil/internal/config"
 	sigilharness "github.com/leefowlercu/sigil/internal/harness"
 	sigilinference "github.com/leefowlercu/sigil/internal/inference"
+	sigilschema "github.com/leefowlercu/sigil/internal/inference/schema"
 	sigilruntime "github.com/leefowlercu/sigil/internal/runtime"
 )
 
@@ -76,10 +77,13 @@ func registerRLMBoundedInputSteps(ctx *godog.ScenarioContext, world *harnessWorl
 	ctx.Step(`^full raw context is excluded from outbound model-step inference messages$`, world.fullRawContextIsExcludedFromOutboundModelstepInferenceMessages)
 	ctx.Step(`^model-step inference messages are ordered system then user$`, world.modelstepInferenceMessagesAreOrderedSystemThenUser)
 	ctx.Step(`^user step envelope contains deterministic query step index and context metadata$`, world.userStepEnvelopeContainsDeterministicQueryStepIndexAndContextMetadata)
+	ctx.Step(`^user step envelope includes execution_state with depth step budgets and recursion-permission metadata$`, world.userStepEnvelopeIncludesExecution_stateWithDepthStepBudgetsAndRecursionpermissionMetadata)
 
 	ctx.Step(`^a harness runner has previous continue action feedback$`, world.aHarnessRunnerHasPreviousContinueActionFeedback)
+	ctx.Step(`^a harness runner has previous continue action subcall feedback$`, world.aHarnessRunnerHasPreviousContinueActionSubcallFeedback)
 	ctx.Step(`^model-step inference input is constructed for next step$`, world.modelstepInferenceInputIsConstructedForNextStep)
 	ctx.Step(`^previous-action feedback summary includes output_ref and bounded preview truncation metadata$`, world.previousactionFeedbackSummaryIncludesOutput_refAndBoundedPreviewTruncationMetadata)
+	ctx.Step(`^previous-action feedback includes deterministic subcall summary counts$`, world.previousactionFeedbackIncludesDeterministicSubcallSummaryCounts)
 	ctx.Step(`^previous-action feedback block is omitted from user step envelope$`, world.previousactionFeedbackBlockIsOmittedFromUserStepEnvelope)
 	ctx.Step(`^action artifact remains source of truth for full stdout and stderr while model input uses bounded previews$`, world.actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrWhileModelInputUsesBoundedPreviews)
 
@@ -94,6 +98,10 @@ func registerRLMBoundedInputSteps(ctx *godog.ScenarioContext, world *harnessWorl
 	ctx.Step(`^non-recursive harness mode is active$`, world.nonrecursiveHarnessModeIsActive)
 	ctx.Step(`^model-step inference input is constructed for non-recursive step$`, world.modelstepInferenceInputIsConstructedForNonrecursiveStep)
 	ctx.Step(`^bounded model-input contract is applied in non-recursive mode$`, world.boundedModelinputContractIsAppliedInNonrecursiveMode)
+	ctx.Step(`^a small-context harness runner already used recursive subcalls in a prior continue step$`, world.aSmallcontextHarnessRunnerAlreadyUsedRecursiveSubcallsInAPriorContinueStep)
+	ctx.Step(`^the next step invokes rlm_query on that same node$`, world.theNextStepInvokesRlm_queryOnThatSameNode)
+	ctx.Step(`^the next-step execution state disables recursive subcalls$`, world.theNextstepExecutionStateDisablesRecursiveSubcalls)
+	ctx.Step(`^repeated small-context rlm_query uses plain fallback without creating another child node$`, world.repeatedSmallcontextRlm_queryUsesPlainFallbackWithoutCreatingAnotherChildNode)
 
 	ctx.Step(`^step-envelope serialization or persistence failure is injected$`, world.stepenvelopeSerializationOrPersistenceFailureIsInjected)
 	ctx.Step(`^harness run execution handles bounded model-input failure$`, world.harnessRunExecutionHandlesBoundedModelinputFailure)
@@ -212,6 +220,32 @@ func (w *harnessWorld) userStepEnvelopeContainsDeterministicQueryStepIndexAndCon
 	return nil
 }
 
+func (w *harnessWorld) userStepEnvelopeIncludesExecution_stateWithDepthStepBudgetsAndRecursionpermissionMetadata() error {
+	state := w.rlm().boundedFirstEnvelope.ExecutionState
+	if state.NodeDepth != 0 || state.MaxDepth != 3 || state.RemainingDepth != 3 {
+		return fmt.Errorf("expected execution_state depth 0/3/3, got %+v", state)
+	}
+	if state.NodeStepsUsed != 1 || state.NodeStepsRemaining != 63 {
+		return fmt.Errorf("expected node step budget 1/63, got %d/%d", state.NodeStepsUsed, state.NodeStepsRemaining)
+	}
+	if state.RunStepsUsed != 1 || state.RunStepsRemaining != 255 {
+		return fmt.Errorf("expected run step budget 1/255, got %d/%d", state.RunStepsUsed, state.RunStepsRemaining)
+	}
+	if state.SameContextAsPreviousStep {
+		return fmt.Errorf("expected same_context_as_previous_step=false on first step")
+	}
+	if !state.SmallContext {
+		return fmt.Errorf("expected small_context=true for first-step fixture")
+	}
+	if !state.RecursiveSubcallsAllowed {
+		return fmt.Errorf("expected recursive_subcalls_allowed=true on first step")
+	}
+	if state.RecursiveSubcallsReason != nil {
+		return fmt.Errorf("expected recursive_subcalls_reason omitted on first step, got %+v", state.RecursiveSubcallsReason)
+	}
+	return nil
+}
+
 func (w *harnessWorld) aHarnessRunnerHasPreviousContinueActionFeedback() error {
 	state := w.rlm()
 	state.boundedRawContext = "needle in haystack context"
@@ -253,6 +287,28 @@ func (w *harnessWorld) aHarnessRunnerHasPreviousContinueActionFeedback() error {
 	return nil
 }
 
+func (w *harnessWorld) aHarnessRunnerHasPreviousContinueActionSubcallFeedback() error {
+	state := w.rlm()
+	state.boundedRawContext = "root context"
+	cfg := boundedRunConfig("root prompt", state.boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{
+		{result: boundedContinueResult(`import "fmt"; answer := ""; var queryErr error; answer, queryErr = llm_query("child prompt", "child context"); if queryErr != nil { panic(queryErr) }; fmt.Print(answer)`)},
+		{result: boundedPlainAnswerResult("child answer")},
+		{result: boundedFinalResult("done")},
+	}); err != nil {
+		return err
+	}
+	if len(state.boundedRequests) < 3 {
+		return fmt.Errorf("expected at least three captured inference requests")
+	}
+	nextEnvelope, err := decodeEnvelopeFromRequest(state.boundedRequests[2])
+	if err != nil {
+		return err
+	}
+	state.boundedNextEnvelope = nextEnvelope
+	return nil
+}
+
 func (w *harnessWorld) modelstepInferenceInputIsConstructedForNextStep() error {
 	if w.rlm().boundedNextEnvelope.Query == "" {
 		return fmt.Errorf("expected bounded next-step envelope to be constructed")
@@ -279,6 +335,21 @@ func (w *harnessWorld) previousactionFeedbackSummaryIncludesOutput_refAndBounded
 	}
 	if feedback.StderrTruncated && len(feedback.StderrPreview) != 2048 {
 		return fmt.Errorf("expected stderr preview size 2048 when truncated, got %d", len(feedback.StderrPreview))
+	}
+	return nil
+}
+
+func (w *harnessWorld) previousactionFeedbackIncludesDeterministicSubcallSummaryCounts() error {
+	feedback := w.rlm().boundedNextEnvelope.PreviousActionFeedback
+	if feedback == nil || feedback.SubcallSummary == nil {
+		return fmt.Errorf("expected previous_action_feedback.subcall_summary")
+	}
+	summary := feedback.SubcallSummary
+	if summary.TotalCount != 1 || summary.PlainCount != 1 || summary.CompletedCount != 1 {
+		return fmt.Errorf("expected one completed plain subcall, got %+v", *summary)
+	}
+	if summary.RecursiveCount != 0 || summary.FallbackCount != 0 || summary.FailedCount != 0 {
+		return fmt.Errorf("expected zero recursive fallback and failed counts, got %+v", *summary)
 	}
 	return nil
 }
@@ -470,6 +541,84 @@ func (w *harnessWorld) boundedModelinputContractIsAppliedInNonrecursiveMode() er
 	}
 	if envelope.PreviousActionFeedback == nil {
 		return fmt.Errorf("expected previous_action_feedback in non-recursive second step envelope")
+	}
+	return nil
+}
+
+func (w *harnessWorld) aSmallcontextHarnessRunnerAlreadyUsedRecursiveSubcallsInAPriorContinueStep() error {
+	state := w.rlm()
+	state.boundedRawContext = "small root context"
+	cfg := boundedRunConfig("root prompt", state.boundedRawContext)
+	if err := w.executeBoundedHarnessRun(cfg, []boundedInferenceResponse{
+		{result: boundedContinueResult(`import "fmt"; answer := ""; var queryErr error; answer, queryErr = rlm_query("child prompt", "child context"); if queryErr != nil { panic(queryErr) }; fmt.Print(answer)`)},
+		{result: boundedFinalResult("child one")},
+		{result: boundedContinueResult(`import "fmt"; answer := ""; var queryErr error; answer, queryErr = rlm_query("second child prompt", "second child context"); if queryErr != nil { panic(queryErr) }; fmt.Print(answer)`)},
+		{result: boundedPlainAnswerResult("fallback answer")},
+		{result: boundedFinalResult("done")},
+	}); err != nil {
+		return err
+	}
+	if len(state.boundedRequests) < 5 {
+		return fmt.Errorf("expected five captured inference requests, got %d", len(state.boundedRequests))
+	}
+	nextEnvelope, err := decodeEnvelopeFromRequest(state.boundedRequests[2])
+	if err != nil {
+		return err
+	}
+	state.boundedNextEnvelope = nextEnvelope
+	events, err := readEventsFromPath(state.boundedRunResult.EventsPath)
+	if err != nil {
+		return err
+	}
+	state.boundedPersistedEvents = events
+	return nil
+}
+
+func (w *harnessWorld) theNextStepInvokesRlm_queryOnThatSameNode() error {
+	if len(w.rlm().boundedRequests) < 5 {
+		return fmt.Errorf("expected repeated small-context run to execute before invocation assertion")
+	}
+	return nil
+}
+
+func (w *harnessWorld) theNextstepExecutionStateDisablesRecursiveSubcalls() error {
+	state := w.rlm().boundedNextEnvelope.ExecutionState
+	if state.RecursiveSubcallsAllowed {
+		return fmt.Errorf("expected recursive_subcalls_allowed=false, got %+v", state)
+	}
+	if state.RecursiveSubcallsReason == nil || !strings.Contains(*state.RecursiveSubcallsReason, "small context") {
+		return fmt.Errorf("expected recursive_subcalls_reason to explain small-context local-only mode, got %+v", state.RecursiveSubcallsReason)
+	}
+	return nil
+}
+
+func (w *harnessWorld) repeatedSmallcontextRlm_queryUsesPlainFallbackWithoutCreatingAnotherChildNode() error {
+	state := w.rlm()
+	plainSubcalls := 0
+	for _, request := range state.boundedRequests {
+		if request.SchemaID == sigilschema.SigilLLMAnswerV1SchemaID {
+			plainSubcalls++
+			if len(request.Messages) < 2 || !strings.Contains(request.Messages[1].Content, `"second child prompt"`) {
+				return fmt.Errorf("expected fallback plain subcall payload for repeated rlm_query, got %+v", request.Messages)
+			}
+		}
+	}
+	if plainSubcalls != 1 {
+		return fmt.Errorf("expected exactly one fallback plain subcall request, got %d", plainSubcalls)
+	}
+
+	recursiveChildren := 0
+	for _, event := range state.boundedPersistedEvents {
+		if event.Type != sigilruntime.EventTypeNodeStarted {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.NodeStartedPayload)
+		if ok && payload.Role == sigilruntime.NodeRoleRecursiveSubcall {
+			recursiveChildren++
+		}
+	}
+	if recursiveChildren != 1 {
+		return fmt.Errorf("expected only the first step to create a recursive child node, got %d", recursiveChildren)
 	}
 	return nil
 }
@@ -991,6 +1140,19 @@ func boundedFinalResult(answer string) sigilinference.Result {
 		Provider:          "openai",
 		Model:             "gpt-5.1",
 		GatewayResponseID: "resp_final",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
+}
+
+func boundedPlainAnswerResult(answer string) sigilinference.Result {
+	return sigilinference.Result{
+		SchemaID:          sigilschema.SigilLLMAnswerV1SchemaID,
+		ValidatedPayload:  map[string]any{"answer": answer},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_plain",
 		FinishStatus:      "completed",
 		RawMetadata:       map[string]any{},
 	}

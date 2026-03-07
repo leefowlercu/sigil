@@ -466,6 +466,106 @@ func TestRunnerRunIncludesPreviousActionFeedbackOnSubsequentStep(t *testing.T) {
 	}
 }
 
+func TestRunnerRunIncludesExecutionStateInStepEnvelope(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResult("done")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	rawContext := "needle in haystack context"
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", rawContext, ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if len(inferenceClient.requests) != 1 {
+		t.Fatalf("expected one inference request, got %d", len(inferenceClient.requests))
+	}
+
+	var envelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(inferenceClient.requests[0].Messages[1].Content), &envelope); err != nil {
+		t.Fatalf("expected step envelope decode success, got %v", err)
+	}
+	if envelope.ExecutionState.NodeDepth != 0 || envelope.ExecutionState.MaxDepth != 3 || envelope.ExecutionState.RemainingDepth != 3 {
+		t.Fatalf("expected depth state 0/3/3, got %+v", envelope.ExecutionState)
+	}
+	if envelope.ExecutionState.NodeStepsUsed != 1 || envelope.ExecutionState.NodeStepsRemaining != 63 {
+		t.Fatalf("expected node step budget 1/63, got %d/%d", envelope.ExecutionState.NodeStepsUsed, envelope.ExecutionState.NodeStepsRemaining)
+	}
+	if envelope.ExecutionState.RunStepsUsed != 1 || envelope.ExecutionState.RunStepsRemaining != 255 {
+		t.Fatalf("expected run step budget 1/255, got %d/%d", envelope.ExecutionState.RunStepsUsed, envelope.ExecutionState.RunStepsRemaining)
+	}
+	if envelope.ExecutionState.SameContextAsPreviousStep {
+		t.Fatalf("expected same_context_as_previous_step=false on first step")
+	}
+	if !envelope.ExecutionState.SmallContext {
+		t.Fatalf("expected small_context=true for small root context")
+	}
+	if !envelope.ExecutionState.RecursiveSubcallsAllowed {
+		t.Fatalf("expected recursive_subcalls_allowed=true on first step")
+	}
+	if envelope.ExecutionState.RecursiveSubcallsReason != nil {
+		t.Fatalf("expected recursive_subcalls_reason omitted, got %+v", envelope.ExecutionState.RecursiveSubcallsReason)
+	}
+}
+
+func TestRunnerRunIncludesSubcallSummaryInPreviousActionFeedback(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; answer := ""; var queryErr error; answer, queryErr = llm_query("child prompt", "child context"); if queryErr != nil { panic(queryErr) }; fmt.Print(answer)`)},
+			{result: plainAnswerResult("child answer")},
+			{result: finalResult("done")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if len(inferenceClient.requests) != 3 {
+		t.Fatalf("expected three inference requests, got %d", len(inferenceClient.requests))
+	}
+
+	var secondEnvelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(inferenceClient.requests[2].Messages[1].Content), &secondEnvelope); err != nil {
+		t.Fatalf("expected second-step envelope decode success, got %v", err)
+	}
+	if secondEnvelope.PreviousActionFeedback == nil || secondEnvelope.PreviousActionFeedback.SubcallSummary == nil {
+		t.Fatalf("expected previous_action_feedback.subcall_summary in second step")
+	}
+	summary := secondEnvelope.PreviousActionFeedback.SubcallSummary
+	if summary.TotalCount != 1 || summary.PlainCount != 1 || summary.CompletedCount != 1 {
+		t.Fatalf("expected one completed plain subcall, got %+v", *summary)
+	}
+	if summary.RecursiveCount != 0 || summary.FallbackCount != 0 || summary.FailedCount != 0 {
+		t.Fatalf("expected no recursive, fallback, or failed subcalls, got %+v", *summary)
+	}
+}
+
 func TestRunnerRunPropagatesCompileDiagnosticsInNextStepFeedback(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
@@ -609,6 +709,75 @@ func TestRunnerRunNonRecursiveModeReturnsDepthLimitAndNoChildNodes(t *testing.T)
 		return
 	}
 	t.Fatal("expected node.subcall.executed event")
+}
+
+func TestRunnerRunFallsBackToPlainSubcallsAfterSmallContextRecursiveStep(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; answer := ""; var queryErr error; answer, queryErr = rlm_query("child prompt", "child context"); if queryErr != nil { panic(queryErr) }; fmt.Print(answer)`)},
+			{result: finalResult("child one")},
+			{result: continueResult(`import "fmt"; answer := ""; var queryErr error; answer, queryErr = rlm_query("second child prompt", "second child context"); if queryErr != nil { panic(queryErr) }; fmt.Print(answer)`)},
+			{result: plainAnswerResult("fallback answer")},
+			{result: finalResult("done")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "small root context", ""),
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+	if len(inferenceClient.requests) != 5 {
+		t.Fatalf("expected five inference requests, got %d", len(inferenceClient.requests))
+	}
+
+	var secondRootEnvelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(inferenceClient.requests[2].Messages[1].Content), &secondRootEnvelope); err != nil {
+		t.Fatalf("expected second root envelope decode success, got %v", err)
+	}
+	if secondRootEnvelope.ExecutionState.RecursiveSubcallsAllowed {
+		t.Fatalf("expected second root step to disable recursive subcalls, got %+v", secondRootEnvelope.ExecutionState)
+	}
+	if secondRootEnvelope.ExecutionState.RecursiveSubcallsReason == nil || !strings.Contains(*secondRootEnvelope.ExecutionState.RecursiveSubcallsReason, "small context") {
+		t.Fatalf("expected recursive_subcalls_reason to explain small-context local-only mode, got %+v", secondRootEnvelope.ExecutionState.RecursiveSubcallsReason)
+	}
+
+	plainSubcallRequest := inferenceClient.requests[3]
+	if plainSubcallRequest.SchemaID != schema.SigilLLMAnswerV1SchemaID {
+		t.Fatalf("expected repeated small-context rlm_query to use plain subcall schema, got %q", plainSubcallRequest.SchemaID)
+	}
+	if len(plainSubcallRequest.Messages) < 2 || !strings.Contains(plainSubcallRequest.Messages[1].Content, `"second child prompt"`) {
+		t.Fatalf("expected plain subcall payload to include second child prompt, got %+v", plainSubcallRequest.Messages)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	recursiveChildren := 0
+	for _, event := range events {
+		if event.Type != runtime.EventTypeNodeStarted {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.NodeStartedPayload)
+		if ok && payload.Role == runtime.NodeRoleRecursiveSubcall {
+			recursiveChildren++
+		}
+	}
+	if recursiveChildren != 1 {
+		t.Fatalf("expected only the first step to create a recursive child node, got %d", recursiveChildren)
+	}
 }
 
 func TestRunnerRunRecursiveDepthLimitFallsBackToPlainSubcall(t *testing.T) {
@@ -2355,6 +2524,19 @@ func continueResultWithAccounting(replCode string, summary accounting.Summary) i
 	result := continueResult(replCode)
 	result.Accounting = summary
 	return result
+}
+
+func plainAnswerResult(answer string) inference.Result {
+	return inference.Result{
+		SchemaID:          schema.SigilLLMAnswerV1SchemaID,
+		ValidatedPayload:  map[string]any{"answer": answer},
+		Gateway:           "openrouter",
+		Provider:          "openai",
+		Model:             "gpt-5.1",
+		GatewayResponseID: "resp_plain",
+		FinishStatus:      "completed",
+		RawMetadata:       map[string]any{},
+	}
 }
 
 func finalResult(answer string) inference.Result {

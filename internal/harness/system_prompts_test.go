@@ -151,11 +151,16 @@ func TestResolveBaseOpenAIPromptIncludesPromptRegressionShields(t *testing.T) {
 	assertContainsAll(t, prompt,
 		"Each continue action may perform at most 4 recursive subcalls and at most 8 total subcalls.",
 		"If more expansion is needed, finish the current action, record what narrowed successfully, and use a new step before expanding again.",
+		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
+		"If execution_state.recursive_subcalls_allowed=false, stay local for this step even if recursive APIs are available.",
 		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only.",
 		"If an action times out or previous_action_feedback.error_message indicates timeout, reduce chunk size and fan-out on the next step",
+		"If a complete local scan of the current context finds no matching evidence, finalize absence now rather than repartitioning the same context again.",
+		"include span_start or span_end only when you know exact integer offsets",
 		`{"ref":"run-artifact://node/019cc5fc-b991-7b33-bb66-c4e2508378f8/step/019cc5fc-b99b-7b33-bb66-c4e2508378f8/action-1.json"}`,
 		`{"decision":"continue","continuation":`,
 		`{"decision":"final","final":`,
+		`{"decision":"final","final":{"answer":"NONE"`,
 	)
 }
 
