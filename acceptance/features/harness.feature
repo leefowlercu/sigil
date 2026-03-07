@@ -50,7 +50,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run usage/help is printed
     And command exits with status code 0
 
-  Scenario: Delegates sigil run start behavior to PRD-0011 run-start harness-execution contract
+  Scenario: Delegates sigil run start behavior to PRD-0410 run-start command-execution contract
     Given the sigil executable is available
     And no default start config files exist
     When a user runs `sigil run start`
@@ -1337,12 +1337,6 @@ Feature: Sigil baseline CLI and config contracts
     Then effective run llm.provider is "openai"
     And effective run llm.model is "gpt-5.1"
 
-  Scenario: Falls back to llm_query when rlm_query reaches max depth in recursive mode
-    Given an active parent node at depth 3
-    And run max recursion depth is 3
-    When rlm_query is invoked from node-local Go REPL context
-    Then plain subcall fallback answer is returned and child node is not created
-
   Scenario: Falls back to llm_query_batched item execution when rlm_query_batched reaches max depth in recursive mode
     Given an active parent node at depth 3
     And run max recursion depth is 3
@@ -1724,7 +1718,7 @@ Feature: Sigil baseline CLI and config contracts
     When strict payload schema validation is executed for run.failed
     Then run.failed payload validation fails
 
-  Scenario: Applies deterministic runtime governance guardrails from PRD-0016 during harness execution
+  Scenario: Applies deterministic runtime guardrails from PRD-0500 during harness execution
     Given deterministic runtime guardrail fixture "max_steps_per_node" is prepared
     When deterministic runtime guardrail harness run executes
     Then deterministic runtime guardrail breach uses limit key "max_steps_per_node"

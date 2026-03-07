@@ -26,7 +26,7 @@ type RetryPolicy struct {
 	Sleep       func(ctx context.Context, delay time.Duration) error
 }
 
-// DefaultRetryPolicy returns PRD-0008 retry defaults.
+// DefaultRetryPolicy returns PRD-0300 retry defaults.
 func DefaultRetryPolicy() RetryPolicy {
 	return RetryPolicy{
 		MaxAttempts: defaultMaxAttempts,
