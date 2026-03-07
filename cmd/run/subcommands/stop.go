@@ -1,7 +1,6 @@
 package subcommands
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/leefowlercu/sigil/internal/clioutput"
 	"github.com/leefowlercu/sigil/internal/runtime"
 	"github.com/spf13/cobra"
 )
@@ -40,6 +40,8 @@ func NewStopCmd() *cobra.Command {
 			"This command validates the provided run ID, inspects the authoritative events.jsonl state for that run, writes stop-request metadata, sends SIGTERM to the active local CLI process, and waits until a terminal run state is observed.",
 		Example: "# Gracefully stop one running CLI run\n" +
 			"  sigil run stop 019c7714-3b77-74d1-9866-e1f484aae2ab\n\n" +
+			"# Return machine-readable JSON output\n" +
+			"  sigil run stop -o json 019c7714-3b77-74d1-9866-e1f484aae2ab\n\n" +
 			"# Show stop command help\n" +
 			"  sigil run stop --help",
 		PreRunE: validateStopInputs,
@@ -160,11 +162,16 @@ func waitForTerminalStopState(cmd *cobra.Command, result stopResult, processMeta
 }
 
 func writeStopResult(cmd *cobra.Command, result stopResult) error {
-	encoder := json.NewEncoder(cmd.OutOrStdout())
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(result); err != nil {
-		stopLogger().Error("failed to write stop result", "run_id", result.RunID, "error", err)
-		return fmt.Errorf("failed to write stop result; %w", err)
+	if clioutput.ResolveFormat(cmd) == clioutput.FormatJSON {
+		if err := clioutput.WriteJSON(cmd.OutOrStdout(), result); err != nil {
+			stopLogger().Error("failed to write stop result", "run_id", result.RunID, "error", err)
+			return fmt.Errorf("failed to write stop result; %w", err)
+		}
+	} else {
+		if err := clioutput.WriteStopText(cmd.OutOrStdout(), result.RunID, result.StopRequested, result.State, result.EventsPath); err != nil {
+			stopLogger().Error("failed to write stop result", "run_id", result.RunID, "error", err)
+			return fmt.Errorf("failed to write stop result; %w", err)
+		}
 	}
 	stopLogger().Info("run stop command completed",
 		"run_id", result.RunID,

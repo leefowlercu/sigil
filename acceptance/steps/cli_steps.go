@@ -354,6 +354,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^stop usage/help is printed$`, world.stopUsageHelpIsPrinted)
 	ctx.Step(`^a local CLI run is actively executing$`, world.aLocalCLIRunIsActivelyExecuting)
 	ctx.Step("^a user runs `sigil run stop` for the active run$", world.aUserRunsSigilRunStopForTheActiveRun)
+	ctx.Step("^a user runs `sigil run stop -o json` for the active run$", world.aUserRunsSigilRunStopJSONForTheActiveRun)
 	ctx.Step(`^the active run transitions to "([^"]*)"$`, world.theActiveRunTransitionsTo)
 	ctx.Step(`^stdout contains one JSON stop result with run_id stop_requested state and events_path$`, world.stdoutContainsOneJSONStopResultWithRunIDStopRequestedStateAndEventsPath)
 	ctx.Step(`^the run lifecycle and stop request metadata are inspected$`, world.theRunLifecycleAndStopRequestMetadataAreInspected)
@@ -373,6 +374,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^interrupted stop handling does not append synthetic node\.failed or node\.step\.completed records$`, world.interruptedStopHandlingDoesNotAppendSyntheticNodeFailedOrNodeStepCompletedRecords)
 	ctx.Step(`^no default start config files exist$`, world.noDefaultStartConfigFilesExist)
 	ctx.Step(`^no default run config files exist$`, world.noDefaultRunConfigFilesExist)
+	ctx.Step(`^CLI run start mock responses are configured for "([^"]*)"$`, world.cliRunStartMockResponsesAreConfiguredFor)
 
 	registerRLMHarnessSteps(ctx, world)
 	registerInferenceSteps(ctx, world)
@@ -2043,7 +2045,20 @@ func (w *harnessWorld) aUserRunsSigilRunStopForTheActiveRun() error {
 		return fmt.Errorf("expected active run id before executing stop")
 	}
 
-	invocation, err := w.executeStopCommandForRun(w.activeRunID, "active")
+	invocation, err := w.executeStopCommandForRun(w.activeRunID, "active", "text")
+	if err != nil {
+		return err
+	}
+	w.activeStopInvocation = invocation
+	return nil
+}
+
+func (w *harnessWorld) aUserRunsSigilRunStopJSONForTheActiveRun() error {
+	if strings.TrimSpace(w.activeRunID) == "" {
+		return fmt.Errorf("expected active run id before executing stop")
+	}
+
+	invocation, err := w.executeStopCommandForRun(w.activeRunID, "active-json", "json")
 	if err != nil {
 		return err
 	}
@@ -2056,10 +2071,7 @@ func (w *harnessWorld) theActiveRunTransitionsTo(expectedStateRaw string) error 
 	if err != nil {
 		return err
 	}
-	if w.activeStopInvocation.Result == nil {
-		return fmt.Errorf("expected active stop result before checking transition")
-	}
-	if w.activeStopInvocation.Result.State != string(expectedState) {
+	if w.activeStopInvocation.Result != nil && w.activeStopInvocation.Result.State != string(expectedState) {
 		return fmt.Errorf("expected stop result state %q, got %q", expectedState, w.activeStopInvocation.Result.State)
 	}
 
@@ -2113,7 +2125,7 @@ func (w *harnessWorld) theRunLifecycleAndStopRequestMetadataAreInspected() error
 	w.activeProcessMetadata = metadata
 	w.activeProcessSeen = true
 
-	invocation, err := w.executeStopCommandForRun(w.activeRunID, "metadata-inspection")
+	invocation, err := w.executeStopCommandForRun(w.activeRunID, "metadata-inspection", "text")
 	if err != nil {
 		return err
 	}
@@ -2188,7 +2200,7 @@ func (w *harnessWorld) localCLICompletedFailedAndInterruptedRunsExist() error {
 func (w *harnessWorld) terminalStopCommandsAreExecutedForThoseRuns() error {
 	w.terminalStopInvocations = w.terminalStopInvocations[:0]
 	for _, runID := range w.terminalRunIDs {
-		invocation, err := w.executeStopCommandForRun(runID, "terminal-"+runID)
+		invocation, err := w.executeStopCommandForRun(runID, "terminal-"+runID, "json")
 		if err != nil {
 			return err
 		}
@@ -2233,7 +2245,7 @@ func (w *harnessWorld) stopCommandsAreExecutedForThoseRacingRuns() error {
 		if err := w.startRunControlHelper(testCase.mode); err != nil {
 			return err
 		}
-		invocation, err := w.executeStopCommandForRun(w.activeRunID, testCase.name)
+		invocation, err := w.executeStopCommandForRun(w.activeRunID, testCase.name, "json")
 		if err != nil {
 			return err
 		}
@@ -2346,7 +2358,7 @@ func (w *harnessWorld) stopCommandsAreExecutedForThoseInvalidControlCases() erro
 	w.invalidStopInvocations = make([]stopInvocation, 0, len(order))
 	for _, name := range order {
 		runID := w.invalidCaseRunIDs[name]
-		invocation, err := w.executeStopCommandForRun(runID, name)
+		invocation, err := w.executeStopCommandForRun(runID, name, "text")
 		if err != nil {
 			return err
 		}
@@ -2527,8 +2539,13 @@ func (w *harnessWorld) capturePersistedEvents() error {
 	return nil
 }
 
-func (w *harnessWorld) executeStopCommandForRun(runID string, name string) (stopInvocation, error) {
-	if err := w.aUserRuns(fmt.Sprintf("sigil run stop %s", runID)); err != nil {
+func (w *harnessWorld) executeStopCommandForRun(runID string, name string, outputFormat string) (stopInvocation, error) {
+	commandLine := fmt.Sprintf("sigil run stop %s", runID)
+	if strings.TrimSpace(outputFormat) == "json" {
+		commandLine = fmt.Sprintf("sigil run stop -o json %s", runID)
+	}
+
+	if err := w.aUserRuns(commandLine); err != nil {
 		return stopInvocation{}, err
 	}
 
@@ -2540,7 +2557,7 @@ func (w *harnessWorld) executeStopCommandForRun(runID string, name string) (stop
 		Stderr:   w.lastStderr,
 		Err:      w.lastErr,
 	}
-	if w.lastExitCode == 0 {
+	if w.lastExitCode == 0 && strings.TrimSpace(outputFormat) == "json" {
 		result, err := parseAcceptanceStopResult(w.lastStdout)
 		if err != nil {
 			return stopInvocation{}, err
@@ -2556,6 +2573,97 @@ func (w *harnessWorld) executeStopCommandForRun(runID string, name string) (stop
 		w.activeRunEventsPath = invocation.Result.EventsPath
 	}
 	return invocation, nil
+}
+
+func (w *harnessWorld) cliRunStartMockResponsesAreConfiguredFor(fixture string) error {
+	if strings.TrimSpace(fixture) == "" {
+		return fmt.Errorf("CLI run start fixture is required")
+	}
+	if w.inferenceMockServer == nil {
+		w.inferenceMockServer = newOpenRouterMockServer()
+	}
+
+	responses, err := cliRunStartResponsesForFixture(fixture)
+	if err != nil {
+		return err
+	}
+	w.inferenceMockServer.SetResponses(responses...)
+	return nil
+}
+
+func cliRunStartResponsesForFixture(fixture string) ([]mockGatewayResponse, error) {
+	switch fixture {
+	case "recursive-progress":
+		return []mockGatewayResponse{
+			{
+				statusCode: 200,
+				body: continueGatewayResponseBody(
+					`import "fmt"; answer, err := rlm_query("child prompt", "child context"); if err != nil { panic(err) }; fmt.Print(answer)`,
+				),
+			},
+			{statusCode: 200, body: finalGatewayResponseBody("child final")},
+			{statusCode: 200, body: finalGatewayResponseBody("root final")},
+		}, nil
+	case "fallback-progress":
+		return []mockGatewayResponse{
+			{
+				statusCode: 200,
+				body: continueGatewayResponseBody(
+					`import "fmt"; answer, err := rlm_query("child prompt", "child context"); if err != nil { panic(err) }; fmt.Print(answer)`,
+				),
+			},
+			{statusCode: 200, body: llmAnswerValidGatewayResponseBody()},
+			{statusCode: 200, body: finalGatewayResponseBody("root final")},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported CLI run start fixture %q", fixture)
+	}
+}
+
+func continueGatewayResponseBody(replCode string) map[string]any {
+	return map[string]any{
+		"id":       "resp_cli_continue",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": fmt.Sprintf(
+							`{"decision":"continue","continuation":{"repl_code":%q,"intent":"visualize architecture","expected_observation":"subcall progress is rendered"}}`,
+							replCode,
+						),
+					},
+				},
+			},
+		},
+		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+	}
+}
+
+func finalGatewayResponseBody(answer string) map[string]any {
+	return map[string]any{
+		"id":       "resp_cli_final",
+		"status":   "completed",
+		"provider": "openai",
+		"model":    "gpt-5.1",
+		"output": []any{
+			map[string]any{
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": fmt.Sprintf(
+							`{"decision":"final","final":{"answer":%q,"evidence":[{"ref":"__context_ref__"}],"confidence":"medium"}}`,
+							answer,
+						),
+					},
+				},
+			},
+		},
+		"usage": map[string]any{"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+	}
 }
 
 func parseAcceptanceStopResult(stdout string) (acceptanceStopResult, error) {

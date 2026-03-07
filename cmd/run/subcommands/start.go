@@ -2,7 +2,6 @@ package subcommands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/leefowlercu/sigil/internal/clioutput"
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/harness"
 	"github.com/leefowlercu/sigil/internal/runtime"
@@ -41,6 +41,8 @@ func NewStartCmd() *cobra.Command {
 			"  sigil run start\n\n" +
 			"# Start with explicit config paths\n" +
 			"  sigil run start --config ./configs/sigil.yaml --run-config ./configs/sigil-run.yaml\n\n" +
+			"# Start with machine-readable JSON output\n" +
+			"  sigil run start -o json\n\n" +
 			"# Start with template variables\n" +
 			"  sigil run start --var customer=acme --var environment=prod",
 		PreRunE: validateStartInputs,
@@ -187,7 +189,25 @@ func runStartCommand(cmd *cobra.Command, _ []string) error {
 		"rlm_max_depth", runCfg.RLM.MaxDepth,
 	)
 
-	runner := harness.NewRunner()
+	format := clioutput.ResolveFormat(cmd)
+	var textRenderer *clioutput.StartTextRenderer
+	runnerOptions := make([]harness.RunnerOption, 0, 1)
+	if format == clioutput.FormatText {
+		textRenderer = clioutput.NewStartTextRenderer(cmd.OutOrStdout())
+		textRenderer.WritePreflight(clioutput.StartPreflight{
+			ConfigPath:       startConfigPath,
+			RunConfigPath:    startRunConfigPath,
+			Gateway:          runCfg.LLM.Gateway,
+			Provider:         runCfg.LLM.Provider,
+			Model:            runCfg.LLM.Model,
+			ReasoningEnabled: runCfg.LLM.Reasoning.Enabled,
+			RLMEnabled:       runCfg.RLM.Enabled,
+			RLMMaxDepth:      runCfg.RLM.MaxDepth,
+		})
+		runnerOptions = append(runnerOptions, harness.WithEventObserver(textRenderer.ObserveEvent))
+	}
+
+	runner := harness.NewRunner(runnerOptions...)
 	runContext, cancel := context.WithCancelCause(cmd.Context())
 	defer cancel(nil)
 	signalCh := make(chan os.Signal, 1)
@@ -213,17 +233,29 @@ func runStartCommand(cmd *cobra.Command, _ []string) error {
 			logAttrs = append(logAttrs, "error_code", code)
 		}
 		runStartLogger().Error("run start command failed", logAttrs...)
+		if textRenderer != nil && textRenderer.Err() != nil {
+			return fmt.Errorf("failed to write run progress output; %w", textRenderer.Err())
+		}
 		return fmt.Errorf("failed to execute harness run; %w", err)
 	}
 
-	encoder := json.NewEncoder(cmd.OutOrStdout())
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(result); err != nil {
-		runStartLogger().Error("failed to write run summary output",
-			"run_id", result.RunID,
-			"error", err,
-		)
-		return fmt.Errorf("failed to write run summary; %w", err)
+	if format == clioutput.FormatJSON {
+		if err := clioutput.WriteJSON(cmd.OutOrStdout(), result); err != nil {
+			runStartLogger().Error("failed to write run summary output",
+				"run_id", result.RunID,
+				"error", err,
+			)
+			return fmt.Errorf("failed to write run summary; %w", err)
+		}
+	} else if textRenderer != nil {
+		textRenderer.WriteCompletedSummary(result)
+		if err := textRenderer.Err(); err != nil {
+			runStartLogger().Error("failed to write run summary output",
+				"run_id", result.RunID,
+				"error", err,
+			)
+			return fmt.Errorf("failed to write run summary; %w", err)
+		}
 	}
 
 	runStartLogger().Info("run start command completed",

@@ -342,6 +342,106 @@ func TestRunStartFailsWhenExplicitRunConfigPathIsMissing(t *testing.T) {
 	}
 }
 
+func TestRunStartDefaultsToHumanReadableTextOutput(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
+
+	stdout, _, err := executeRootCommand(t, workDir, nil, "run", "start")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !strings.Contains(stdout, "Run start") {
+		t.Fatalf("expected text preflight header, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Run running: run_id=") {
+		t.Fatalf("expected live run progress output, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Run summary") {
+		t.Fatalf("expected text summary footer, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "State: completed") {
+		t.Fatalf("expected completed state in text summary, got %q", stdout)
+	}
+	if strings.HasPrefix(strings.TrimSpace(stdout), "{") {
+		t.Fatalf("expected default text output, got %q", stdout)
+	}
+}
+
+func TestRunStartJSONOutputPreservesSummaryShape(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
+
+	stdout, _, err := executeRootCommand(t, workDir, nil, "--output", "json", "run", "start")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var result struct {
+		RunID          string `json:"run_id"`
+		State          string `json:"state"`
+		FinalAnswer    string `json:"final_answer"`
+		FinalAnswerRef string `json:"final_answer_ref"`
+		EventsPath     string `json:"events_path"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("expected JSON summary, got %v", err)
+	}
+	if result.RunID == "" || result.FinalAnswerRef == "" || result.EventsPath == "" {
+		t.Fatalf("expected non-empty JSON summary fields, got %+v", result)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+	if result.FinalAnswer == "" {
+		t.Fatalf("expected final answer in JSON output, got %+v", result)
+	}
+}
+
+func TestRootUsageRemainsTextWhenOutputJSONIsRequested(t *testing.T) {
+	stdout, _, err := executeRootCommand(t, t.TempDir(), nil, "--output", "json")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !strings.Contains(stdout, "Usage:") {
+		t.Fatalf("expected usage output, got %q", stdout)
+	}
+	if strings.HasPrefix(strings.TrimSpace(stdout), "{") {
+		t.Fatalf("expected text usage output, got %q", stdout)
+	}
+}
+
+func TestRunUsageRemainsTextWhenOutputJSONIsRequested(t *testing.T) {
+	stdout, _, err := executeRootCommand(t, t.TempDir(), nil, "--output", "json", "run")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !strings.Contains(stdout, "sigil run") {
+		t.Fatalf("expected run usage output, got %q", stdout)
+	}
+	if strings.HasPrefix(strings.TrimSpace(stdout), "{") {
+		t.Fatalf("expected text usage output, got %q", stdout)
+	}
+}
+
+func TestInvalidOutputFlagReturnsValidationError(t *testing.T) {
+	_, stderr, err := executeRootCommand(t, t.TempDir(), nil, "--output", "yaml", "run")
+	if err == nil {
+		t.Fatal("expected output flag validation error")
+	}
+
+	if !strings.Contains(err.Error(), "output must be one of: text, json") {
+		t.Fatalf("expected output validation error, got %v", err)
+	}
+	if !strings.Contains(stderr, "output must be one of: text, json") {
+		t.Fatalf("expected stderr to include output validation error, got %q", stderr)
+	}
+}
+
 func executeRootCommand(t *testing.T, workingDir string, env map[string]string, args ...string) (string, string, error) {
 	t.Helper()
 
@@ -422,11 +522,13 @@ func executeRootCommand(t *testing.T, workingDir string, env map[string]string, 
 }
 
 func isRunStartCommand(args []string) bool {
-	if len(args) < 2 {
-		return false
+	for index := 0; index+1 < len(args); index++ {
+		if args[index] == "run" && args[index+1] == "start" {
+			return true
+		}
 	}
 
-	return args[0] == "run" && args[1] == "start"
+	return false
 }
 
 func writeFile(t *testing.T, path string, content string) {

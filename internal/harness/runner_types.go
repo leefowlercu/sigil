@@ -43,6 +43,7 @@ type Runner struct {
 	promptResolver   *SystemPromptResolver
 	replFactory      repl.SessionFactory
 	inferenceFactory InferenceFactory
+	eventObservers   []runtime.EventObserver
 }
 
 // RunnerOption mutates runner construction behavior.
@@ -73,6 +74,16 @@ func WithREPLSessionFactory(factory repl.SessionFactory) RunnerOption {
 func WithInferenceFactory(factory InferenceFactory) RunnerOption {
 	return func(r *Runner) {
 		r.inferenceFactory = factory
+	}
+}
+
+// WithEventObserver registers one lifecycle event observer for the run.
+func WithEventObserver(observer runtime.EventObserver) RunnerOption {
+	return func(r *Runner) {
+		if observer == nil {
+			return
+		}
+		r.eventObservers = append(r.eventObservers, observer)
 	}
 }
 

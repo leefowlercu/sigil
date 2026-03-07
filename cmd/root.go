@@ -6,10 +6,13 @@ import (
 	"strings"
 
 	"github.com/leefowlercu/sigil/cmd/run"
+	"github.com/leefowlercu/sigil/internal/clioutput"
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/logging"
 	"github.com/spf13/cobra"
 )
+
+var rootOutputFormat clioutput.Format
 
 // Execute runs the root CLI command for sigil.
 func Execute() error {
@@ -18,6 +21,8 @@ func Execute() error {
 
 // NewRootCmd builds the root command and full command tree.
 func NewRootCmd() *cobra.Command {
+	rootOutputFormat = clioutput.FormatText
+
 	rootCmd := &cobra.Command{
 		Use:   "sigil",
 		Short: "Show Sigil command usage and entrypoints",
@@ -31,6 +36,7 @@ func NewRootCmd() *cobra.Command {
 		RunE:              runRootCommand,
 	}
 
+	clioutput.AddOutputFlag(rootCmd, &rootOutputFormat)
 	rootCmd.AddCommand(run.NewRunCmd())
 
 	return rootCmd

@@ -118,6 +118,9 @@ type EventEnvelope struct {
 	Payload       any       `json:"payload"`
 }
 
+// EventObserver receives canonical events after durable append and fsync succeed.
+type EventObserver func(EventEnvelope)
+
 // RunQueuedPayload is the strict payload for run.queued.
 type RunQueuedPayload struct {
 	Source        RunQueuedSource `json:"source"`
@@ -256,5 +259,7 @@ type LifecycleOptions struct {
 	AppConfigPath   *string
 	RunConfigPath   *string
 	MaxDepth        int
+	Now             func() time.Time
 	ProcessMetadata *ProcessMetadata
+	EventObservers  []EventObserver
 }

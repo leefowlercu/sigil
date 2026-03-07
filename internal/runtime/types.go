@@ -1,5 +1,7 @@
 package runtime
 
+import "time"
+
 // RunState is the lifecycle state for a run.
 type RunState string
 
@@ -22,6 +24,7 @@ type Node struct {
 	RunID        string
 	Depth        int
 	ParentNodeID *string
+	StartedAt    time.Time
 }
 
 // NodeActivityKind identifies node-scoped runtime activity type.

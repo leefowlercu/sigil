@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/leefowlercu/sigil/internal/accounting"
@@ -14,8 +15,10 @@ type Lifecycle struct {
 	runID            string
 	state            RunState
 	rootNodeID       string
+	runStartedAt     time.Time
 	nodes            []Node
 	nodeByID         map[string]Node
+	nodeStartedAt    map[string]time.Time
 	nodeTerminalByID map[string]EventType
 	stepByNode       map[string]int
 	activities       []NodeActivity
@@ -42,16 +45,18 @@ func NewLifecycleWithOptions(opts LifecycleOptions) (*Lifecycle, error) {
 		return nil, fmt.Errorf("failed to generate run_id; %w", err)
 	}
 
-	store, err := NewEventStore(normalizedOpts.RunsBaseDir, runID)
+	store, err := NewEventStoreWithOptions(normalizedOpts.RunsBaseDir, runID, normalizedOpts.EventObservers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize run event store; %w", err)
 	}
+	store.nowFn = normalizedOpts.Now
 
 	lifecycle := &Lifecycle{
 		runID:            runID,
 		state:            RunStateQueued,
 		nodes:            make([]Node, 0, 4),
 		nodeByID:         make(map[string]Node),
+		nodeStartedAt:    make(map[string]time.Time),
 		nodeTerminalByID: make(map[string]EventType),
 		stepByNode:       make(map[string]int),
 		activities:       make([]NodeActivity, 0, 8),
@@ -116,6 +121,11 @@ func (l *Lifecycle) State() RunState {
 	return l.state
 }
 
+// RunStartedAt returns the run.running timestamp captured when execution began.
+func (l *Lifecycle) RunStartedAt() time.Time {
+	return l.runStartedAt
+}
+
 // EventStore returns the lifecycle event store instance.
 func (l *Lifecycle) EventStore() *EventStore {
 	return l.eventStore
@@ -171,25 +181,30 @@ func (l *Lifecycle) StartExecution() error {
 		ParentNodeID: nil,
 	}
 
-	if _, err := l.eventStore.AppendNext(EventTypeRunRunning, nil, RunRunningPayload{
+	runRunningEvent, err := l.eventStore.AppendNext(EventTypeRunRunning, nil, RunRunningPayload{
 		Executor: "rlm",
 		MaxDepth: l.options.MaxDepth,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to persist run.running event; %w", err)
 	}
 
-	if _, err := l.eventStore.AppendNext(EventTypeNodeStarted, &rootNode.ID, NodeStartedPayload{
+	rootStartedEvent, err := l.eventStore.AppendNext(EventTypeNodeStarted, &rootNode.ID, NodeStartedPayload{
 		Depth:        rootNode.Depth,
 		ParentNodeID: rootNode.ParentNodeID,
 		Role:         NodeRoleRoot,
 		Attempt:      1,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to persist root node.started event; %w", err)
 	}
+	l.runStartedAt = runRunningEvent.Timestamp
+	rootNode.StartedAt = rootStartedEvent.Timestamp
 
 	l.state = RunStateRunning
 	l.nodes = append(l.nodes, rootNode)
 	l.nodeByID[rootNode.ID] = rootNode
+	l.nodeStartedAt[rootNode.ID] = rootNode.StartedAt
 	l.rootNodeID = rootNode.ID
 
 	lifecycleLogger().Info("started run execution",
@@ -236,17 +251,20 @@ func (l *Lifecycle) CreateChildNode(parentNodeID string) (Node, error) {
 		ParentNodeID: &parentID,
 	}
 
-	if _, err := l.eventStore.AppendNext(EventTypeNodeStarted, &childNode.ID, NodeStartedPayload{
+	childStartedEvent, err := l.eventStore.AppendNext(EventTypeNodeStarted, &childNode.ID, NodeStartedPayload{
 		Depth:        childNode.Depth,
 		ParentNodeID: cloneStringPointer(childNode.ParentNodeID),
 		Role:         NodeRoleRecursiveSubcall,
 		Attempt:      1,
-	}); err != nil {
+	})
+	if err != nil {
 		return Node{}, fmt.Errorf("failed to persist child node.started event; %w", err)
 	}
+	childNode.StartedAt = childStartedEvent.Timestamp
 
 	l.nodes = append(l.nodes, childNode)
 	l.nodeByID[childNode.ID] = childNode
+	l.nodeStartedAt[childNode.ID] = childNode.StartedAt
 
 	lifecycleLogger().Info("created child node",
 		"run_id", l.runID,
@@ -276,10 +294,11 @@ func (l *Lifecycle) CompleteWithAccounting(finalAnswerRef *string, runAccounting
 	if err := ensureRollupOrDefault(&runAccounting); err != nil {
 		return err
 	}
+	durationMS := elapsedDurationMS(l.runStartedAt, l.now())
 
 	if _, err := l.eventStore.AppendNext(EventTypeRunCompleted, nil, RunCompletedPayload{
 		Status:         "completed",
-		DurationMS:     0,
+		DurationMS:     durationMS,
 		FinalAnswerRef: cloneStringPointer(finalAnswerRef),
 		Accounting:     runAccounting,
 		AccountingRef:  cloneStringPointer(accountingRef),
@@ -631,10 +650,11 @@ func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, outputRef *string,
 	if err := ensureRollupOrDefault(&nodeAccounting); err != nil {
 		return err
 	}
+	durationMS := elapsedDurationMS(l.nodeStartedAt[nodeID], l.now())
 
 	payload := NodeCompletedPayload{
 		Status:        "completed",
-		DurationMS:    0,
+		DurationMS:    durationMS,
 		OutputRef:     cloneStringPointer(outputRef),
 		Accounting:    nodeAccounting,
 		AccountingRef: cloneStringPointer(accountingRef),
@@ -648,6 +668,7 @@ func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, outputRef *string,
 		"node_id", nodeID,
 		"output_ref", valueOrEmptyString(outputRef),
 	)
+	delete(l.nodeStartedAt, nodeID)
 	l.nodeTerminalByID[nodeID] = EventTypeNodeCompleted
 
 	return nil
@@ -674,6 +695,7 @@ func (l *Lifecycle) AppendNodeFailed(nodeID string, payload NodeFailedPayload) e
 		"node_id", nodeID,
 		"error_code", payload.ErrorCode,
 	)
+	delete(l.nodeStartedAt, nodeID)
 	l.nodeTerminalByID[nodeID] = EventTypeNodeFailed
 
 	return nil
@@ -741,8 +763,34 @@ func normalizeLifecycleOptions(options LifecycleOptions) (LifecycleOptions, erro
 	if normalized.MaxDepth < 0 {
 		return LifecycleOptions{}, fmt.Errorf("max depth must be >= 0; %w", ErrInvalidEvent)
 	}
+	if normalized.Now == nil {
+		normalized.Now = func() time.Time {
+			return time.Now().UTC()
+		}
+	}
 
 	return normalized, nil
+}
+
+func (l *Lifecycle) now() time.Time {
+	if l == nil || l.options.Now == nil {
+		return time.Now().UTC()
+	}
+
+	return l.options.Now().UTC()
+}
+
+func elapsedDurationMS(start time.Time, end time.Time) int {
+	if start.IsZero() {
+		return 0
+	}
+
+	delta := int(end.Sub(start).Milliseconds())
+	if delta < 0 {
+		return 0
+	}
+
+	return delta
 }
 
 func stringsTrimmed(raw string) string {

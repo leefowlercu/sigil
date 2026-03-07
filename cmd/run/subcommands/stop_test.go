@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/leefowlercu/sigil/internal/clioutput"
 	"github.com/leefowlercu/sigil/internal/runtime"
+	"github.com/spf13/cobra"
 )
 
 const testStopRunID = "019c7714-3b77-74d1-9866-e1f484aae2ab"
@@ -112,6 +114,7 @@ func TestRunStopCommandWritesTerminalNoOpJSONResult(t *testing.T) {
 				stopCmd := NewStopCmd()
 				var stdout bytes.Buffer
 				stopCmd.SetOut(&stdout)
+				setStopTestOutputFormat(t, stopCmd, clioutput.FormatJSON)
 				if err := validateStopInputs(stopCmd, []string{lifecycle.RunID()}); err != nil {
 					t.Fatalf("expected validation success, got %v", err)
 				}
@@ -258,6 +261,7 @@ func TestRunStopCommandSucceedsWhenTerminalStateWinsAfterStopRequest(t *testing.
 		stopCmd := NewStopCmd()
 		var stdout bytes.Buffer
 		stopCmd.SetOut(&stdout)
+		setStopTestOutputFormat(t, stopCmd, clioutput.FormatJSON)
 		if err := validateStopInputs(stopCmd, []string{lifecycle.RunID()}); err != nil {
 			t.Fatalf("expected validation success, got %v", err)
 		}
@@ -275,6 +279,48 @@ func TestRunStopCommandSucceedsWhenTerminalStateWinsAfterStopRequest(t *testing.
 		}
 		if result.State != string(runtime.RunStateCompleted) {
 			t.Fatalf("expected completed state after race, got %q", result.State)
+		}
+	})
+}
+
+func TestRunStopCommandWritesTextResultByDefault(t *testing.T) {
+	withStopTestWorkingDir(t, func() {
+		lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+			RunsBaseDir: runtime.DefaultRunsBaseDir,
+			MaxDepth:    3,
+		})
+		if err != nil {
+			t.Fatalf("expected lifecycle creation success, got %v", err)
+		}
+		t.Cleanup(func() {
+			_ = lifecycle.Close()
+		})
+		if err := lifecycle.StartExecution(); err != nil {
+			t.Fatalf("expected lifecycle start success, got %v", err)
+		}
+		if err := lifecycle.Complete(); err != nil {
+			t.Fatalf("expected lifecycle completion success, got %v", err)
+		}
+
+		stopCmd := NewStopCmd()
+		var stdout bytes.Buffer
+		stopCmd.SetOut(&stdout)
+		if err := validateStopInputs(stopCmd, []string{lifecycle.RunID()}); err != nil {
+			t.Fatalf("expected validation success, got %v", err)
+		}
+		if err := runStopCommand(stopCmd, nil); err != nil {
+			t.Fatalf("expected text stop result success, got %v", err)
+		}
+
+		rendered := stdout.String()
+		if !strings.Contains(rendered, "Run stop result") {
+			t.Fatalf("expected text stop summary, got %q", rendered)
+		}
+		if !strings.Contains(rendered, "Stop requested: false") {
+			t.Fatalf("expected stop_requested text field, got %q", rendered)
+		}
+		if !strings.Contains(rendered, "State: completed") {
+			t.Fatalf("expected completed state text field, got %q", rendered)
 		}
 	})
 }
@@ -319,4 +365,14 @@ func withStopTestWorkingDir(t *testing.T, fn func()) {
 	})
 
 	fn()
+}
+
+func setStopTestOutputFormat(t *testing.T, cmd *cobra.Command, format clioutput.Format) {
+	t.Helper()
+
+	var boundFormat clioutput.Format
+	clioutput.AddOutputFlag(cmd, &boundFormat)
+	if err := cmd.PersistentFlags().Set("output", string(format)); err != nil {
+		t.Fatalf("failed to set output flag: %v", err)
+	}
 }

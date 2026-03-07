@@ -50,6 +50,15 @@ Feature: Sigil baseline CLI and config contracts
     Then run usage/help is printed
     And command exits with status code 0
 
+  Scenario: Keeps root and run help text when output json is requested
+    Given the sigil executable is available
+    When a user runs `sigil --output json`
+    Then root usage/help is printed
+    And command exits with status code 0
+    When a user runs `sigil run --output json`
+    Then run usage/help is printed
+    And command exits with status code 0
+
   Scenario: Delegates sigil run start behavior to PRD-0410 run-start command-execution contract
     Given the sigil executable is available
     And no default start config files exist
@@ -75,9 +84,31 @@ Feature: Sigil baseline CLI and config contracts
     Then command exits non-zero
     And command error contains `accepts 1 arg(s), received 2`
 
-  Scenario: Interrupts an actively running CLI run and prints a terminal JSON stop result
+  Scenario: Rejects invalid inherited output value for sigil run start
+    Given the sigil executable is available
+    When a user runs `sigil run start --output yaml`
+    Then command exits non-zero
+    And command error contains `output must be one of: text, json`
+
+  Scenario: Rejects invalid inherited output value for sigil run stop
+    Given the sigil executable is available
+    When a user runs `sigil run stop --output yaml 019c7714-3b77-74d1-9866-e1f484aae2ab`
+    Then command exits non-zero
+    And command error contains `output must be one of: text, json`
+
+  Scenario: Interrupts an actively running CLI run and prints a human-readable stop result by default
     Given a local CLI run is actively executing
     When a user runs `sigil run stop` for the active run
+    Then the active run transitions to "interrupted"
+    And command output contains `Run stop result`
+    And command output contains `Run ID:`
+    And command output contains `Stop requested: true`
+    And command output contains `State: interrupted`
+    And command output contains `Events path:`
+
+  Scenario: Interrupts an actively running CLI run and prints a terminal JSON stop result when output json is requested
+    Given a local CLI run is actively executing
+    When a user runs `sigil run stop -o json` for the active run
     Then the active run transitions to "interrupted"
     And stdout contains one JSON stop result with run_id stop_requested state and events_path
 
@@ -87,12 +118,12 @@ Feature: Sigil baseline CLI and config contracts
     Then process.json exists for the active run
     And stop-request.json is written before SIGTERM is issued
 
-  Scenario: Returns terminal no-op stop results for completed failed or interrupted runs
+  Scenario: Returns terminal no-op JSON stop results for completed failed or interrupted runs when output json is requested
     Given local CLI completed failed and interrupted runs exist
     When terminal stop commands are executed for those runs
     Then each terminal stop command exits with status code 0 and returns stop_requested=false
 
-  Scenario: Waits for terminal state and reports completed or failed when stop loses the race
+  Scenario: Waits for terminal state and reports completed or failed JSON results when stop loses the race under output json
     Given stop requests lose the race to completed and failed local CLI runs
     When stop commands are executed for those racing runs
     Then the JSON stop results contain stop_requested=true and the observed terminal states
@@ -556,7 +587,7 @@ Feature: Sigil baseline CLI and config contracts
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
     Then command exits with status code 0
-    And command output contains `"run_id"`
+    And command output contains `Run summary`
 
   Scenario: Emits run.queued with source cli.run.start and resolved config-path metadata
     Given application config exists at "./sigil.yaml" with:
@@ -566,7 +597,8 @@ Feature: Sigil baseline CLI and config contracts
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
     Then command exits with status code 0
-    And command output contains `"state":"completed"`
+    And command output contains `Run queued: run_id=`
+    And command output contains `Run running: run_id=`
 
   Scenario: Starts lifecycle and root node before first inference step
     Given a run in "queued" state
@@ -651,7 +683,8 @@ Feature: Sigil baseline CLI and config contracts
       """
     When a user runs `sigil run start`
     Then command exits with status code 0
-    And command output contains `"state":"completed"`
+    And command output contains `Profile: non-recursive`
+    And command output contains `State: completed`
 
   Scenario: Returns typed depth-limit error for all rlm_query calls in non-recursive mode
     Given non-recursive harness mode is active
@@ -664,7 +697,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run transitions to "completed"
     And run completion references terminal root final output
 
-  Scenario: Prints JSON run summary on successful completion
+  Scenario: Prints human-readable run progress and terminal summary by default
     Given application config exists at "./sigil.yaml" with:
       """
       log_level: info
@@ -672,11 +705,74 @@ Feature: Sigil baseline CLI and config contracts
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
     Then command exits with status code 0
+    And command output contains `Run start`
+    And command output contains `Run queued: run_id=`
+    And command output contains `Run running: run_id=`
+    And command output contains `Run summary`
+    And command output contains `State: completed`
+    And command output contains `Events path:`
+    And command output contains `Final answer ref:`
+    And command output contains `Final answer:`
+    And command output contains `Accounting:`
+
+  Scenario: Prints JSON run summary on successful completion when output json is requested
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run config file exists at "./sigil-run.yaml"
+    When a user runs `sigil run start -o json`
+    Then command exits with status code 0
     And command output contains `"run_id"`
     And command output contains `"final_answer_ref"`
     And command output contains `"events_path"`
     And command output contains `"final_answer"`
     And command output contains `"accounting"`
+
+  Scenario: Shows recursive child-node growth in text output
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: root prompt
+      context: root context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      rlm:
+        enabled: true
+        max_depth: 2
+      """
+    And CLI run start mock responses are configured for "recursive-progress"
+    When a user runs `sigil run start`
+    Then command exits with status code 0
+    And command output contains `Profile: recursive`
+    And command output contains `role=recursive_subcall parent_node_id=`
+    And command output contains `mode=recursive`
+
+  Scenario: Shows fallback subcall mode in text output when recursion depth is exceeded
+    Given application config exists at "./sigil.yaml" with:
+      """
+      log_level: info
+      """
+    And run configuration exists at "./sigil-run.yaml" with:
+      """
+      prompt: root prompt
+      context: root context
+      llm:
+        provider: openai
+        model: gpt-5.1
+      rlm:
+        enabled: true
+        max_depth: 0
+      """
+    And CLI run start mock responses are configured for "fallback-progress"
+    When a user runs `sigil run start`
+    Then command exits with status code 0
+    And command output contains `Profile: recursive`
+    And command output contains `mode=fallback`
 
   Scenario: Exits non-zero with typed failure metadata on unrecoverable harness inference or template errors
     Given application config exists at "./sigil.yaml" with:

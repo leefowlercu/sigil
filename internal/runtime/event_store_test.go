@@ -3,6 +3,7 @@ package runtime
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,6 +85,59 @@ func TestEventStoreAppendNextWritesJSONLinesAndFsyncs(t *testing.T) {
 		if _, err := ParseEventEnvelopeStrict([]byte(line)); err != nil {
 			t.Fatalf("expected strict parse success for line %q, got %v", line, err)
 		}
+	}
+}
+
+func TestEventStoreNotifiesObserversAfterFsync(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	runID := mustUUIDv7String(t)
+
+	fsynced := false
+	observed := make([]EventEnvelope, 0, 1)
+	var store *EventStore
+	var observerErr error
+
+	store, observerErr = NewEventStoreWithOptions(baseDir, runID, []EventObserver{
+		func(event EventEnvelope) {
+			if !fsynced {
+				observerErr = fmt.Errorf("observer ran before fsync completed")
+				return
+			}
+			if store.SyncCount() != 1 {
+				observerErr = fmt.Errorf("observer ran before sync count updated")
+				return
+			}
+			observed = append(observed, event)
+		},
+	})
+	if observerErr != nil {
+		t.Fatalf("expected event store creation success, got %v", observerErr)
+	}
+	if store == nil {
+		t.Fatal("expected non-nil event store")
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	store.fsyncFn = func(file *os.File) error {
+		fsynced = true
+		return nil
+	}
+
+	event, err := store.AppendNext(EventTypeRunQueued, nil, RunQueuedPayload{
+		Source: RunQueuedSourceInternalResume,
+	})
+	if err != nil {
+		t.Fatalf("expected append success, got %v", err)
+	}
+	if observerErr != nil {
+		t.Fatalf("expected observer success, got %v", observerErr)
+	}
+	if len(observed) != 1 {
+		t.Fatalf("expected one observed event, got %d", len(observed))
+	}
+	if observed[0].EventID != event.EventID {
+		t.Fatalf("expected observed event_id %q, got %q", event.EventID, observed[0].EventID)
 	}
 }
 

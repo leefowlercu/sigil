@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/leefowlercu/sigil/internal/accounting"
@@ -64,6 +65,15 @@ func TestStartExecutionTransitionsToRunningAndCreatesSingleRootNode(t *testing.T
 	if rootNode.RunID != lifecycle.RunID() {
 		t.Fatalf("expected root node run_id %q, got %q", lifecycle.RunID(), rootNode.RunID)
 	}
+	if lifecycle.RunStartedAt().IsZero() {
+		t.Fatal("expected non-zero run started_at")
+	}
+	if rootNode.StartedAt.IsZero() {
+		t.Fatal("expected non-zero root node started_at")
+	}
+	if rootNode.StartedAt.Before(lifecycle.RunStartedAt()) {
+		t.Fatalf("expected root node started_at %s to be >= run started_at %s", rootNode.StartedAt, lifecycle.RunStartedAt())
+	}
 	assertUUIDv7String(t, rootNode.ID)
 }
 
@@ -107,7 +117,98 @@ func TestCreateChildNodeUsesParentDepthPlusOne(t *testing.T) {
 	if childNode.RunID != lifecycle.RunID() {
 		t.Fatalf("expected child run_id %q, got %q", lifecycle.RunID(), childNode.RunID)
 	}
+	if childNode.StartedAt.IsZero() {
+		t.Fatal("expected non-zero child node started_at")
+	}
+	if childNode.StartedAt.Before(rootNode.StartedAt) {
+		t.Fatalf("expected child started_at %s to be >= root started_at %s", childNode.StartedAt, rootNode.StartedAt)
+	}
 	assertUUIDv7String(t, childNode.ID)
+}
+
+func TestCompletePersistsElapsedRunDurationFromLifecycleStart(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0).UTC()
+	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
+		RunsBaseDir: filepath.Join(t.TempDir(), "sigil-runs"),
+		MaxDepth:    3,
+		Now:         testSequenceClock(base, base.Add(10*time.Millisecond), base.Add(20*time.Millisecond), base.Add(35*time.Millisecond), base.Add(35*time.Millisecond)),
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = lifecycle.Close()
+	})
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+	if !lifecycle.RunStartedAt().Equal(base.Add(10 * time.Millisecond)) {
+		t.Fatalf("expected run started_at %s, got %s", base.Add(10*time.Millisecond), lifecycle.RunStartedAt())
+	}
+
+	if err := lifecycle.Complete(); err != nil {
+		t.Fatalf("expected completion success, got %v", err)
+	}
+
+	events, err := lifecycle.PersistedEvents()
+	if err != nil {
+		t.Fatalf("expected persisted events read success, got %v", err)
+	}
+
+	last := events[len(events)-1]
+	payload, ok := last.Payload.(RunCompletedPayload)
+	if !ok {
+		t.Fatalf("expected run.completed payload type, got %T", last.Payload)
+	}
+	if payload.DurationMS != 25 {
+		t.Fatalf("expected run.completed duration_ms 25, got %d", payload.DurationMS)
+	}
+}
+
+func TestCompleteNodePersistsElapsedNodeDurationFromStartedAt(t *testing.T) {
+	base := time.Unix(1_700_000_100, 0).UTC()
+	lifecycle, err := NewLifecycleWithOptions(LifecycleOptions{
+		RunsBaseDir: filepath.Join(t.TempDir(), "sigil-runs"),
+		MaxDepth:    3,
+		Now:         testSequenceClock(base, base.Add(5*time.Millisecond), base.Add(10*time.Millisecond), base.Add(40*time.Millisecond), base.Add(40*time.Millisecond)),
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = lifecycle.Close()
+	})
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+
+	rootNode, err := lifecycle.RootNode()
+	if err != nil {
+		t.Fatalf("expected root node lookup success, got %v", err)
+	}
+	if !rootNode.StartedAt.Equal(base.Add(10 * time.Millisecond)) {
+		t.Fatalf("expected root started_at %s, got %s", base.Add(10*time.Millisecond), rootNode.StartedAt)
+	}
+
+	if err := lifecycle.CompleteNode(rootNode.ID, nil); err != nil {
+		t.Fatalf("expected node completion success, got %v", err)
+	}
+
+	events, err := lifecycle.PersistedEvents()
+	if err != nil {
+		t.Fatalf("expected persisted events read success, got %v", err)
+	}
+
+	last := events[len(events)-1]
+	payload, ok := last.Payload.(NodeCompletedPayload)
+	if !ok {
+		t.Fatalf("expected node.completed payload type, got %T", last.Payload)
+	}
+	if payload.DurationMS != 30 {
+		t.Fatalf("expected node.completed duration_ms 30, got %d", payload.DurationMS)
+	}
 }
 
 func TestCreateChildNodeRejectsWhenDepthWouldExceedMaxDepth(t *testing.T) {
@@ -498,5 +599,20 @@ func assertUUIDv7String(t *testing.T, raw string) {
 
 	if parsed.Version() != uuid.Version(7) {
 		t.Fatalf("expected UUIDv7, got version %d for %q", parsed.Version(), raw)
+	}
+}
+
+func testSequenceClock(times ...time.Time) func() time.Time {
+	index := 0
+	return func() time.Time {
+		if len(times) == 0 {
+			return time.Unix(0, 0).UTC()
+		}
+		if index >= len(times) {
+			return times[len(times)-1]
+		}
+		current := times[index]
+		index++
+		return current
 	}
 }

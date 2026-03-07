@@ -25,10 +25,17 @@ type EventStore struct {
 	state      eventValidationState
 	syncCount  int
 	fsyncFn    func(*os.File) error
+	nowFn      func() time.Time
+	observers  []EventObserver
 }
 
 // NewEventStore creates or opens an append-only per-run event store.
 func NewEventStore(baseDir string, runID string) (*EventStore, error) {
+	return NewEventStoreWithOptions(baseDir, runID, nil)
+}
+
+// NewEventStoreWithOptions creates or opens an append-only per-run event store with optional observers.
+func NewEventStoreWithOptions(baseDir string, runID string, observers []EventObserver) (*EventStore, error) {
 	if err := validateUUIDv7String(runID); err != nil {
 		return nil, fmt.Errorf("run_id must be UUIDv7; %w", ErrInvalidEvent)
 	}
@@ -59,6 +66,10 @@ func NewEventStore(baseDir string, runID string) (*EventStore, error) {
 		fsyncFn: func(file *os.File) error {
 			return file.Sync()
 		},
+		nowFn: func() time.Time {
+			return time.Now().UTC()
+		},
+		observers: cloneEventObservers(observers),
 	}
 
 	if _, err := store.reloadStateLocked(); err != nil {
@@ -78,21 +89,23 @@ func NewEventStore(baseDir string, runID string) (*EventStore, error) {
 // Append appends a caller-provided event envelope with explicit sequence control.
 func (s *EventStore) Append(event EventEnvelope) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, err := s.appendLocked(event); err != nil {
+	validated, observers, err := s.appendLocked(event)
+	s.mu.Unlock()
+	if err != nil {
 		return err
 	}
+
+	notifyEventObservers(observers, validated)
 	return nil
 }
 
 // AppendNext appends a new event with auto-assigned sequence, IDs, and timestamp.
 func (s *EventStore) AppendNext(eventType EventType, nodeID *string, payload any) (EventEnvelope, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	eventID, err := newUUIDv7String()
 	if err != nil {
+		s.mu.Unlock()
 		return EventEnvelope{}, fmt.Errorf("failed to generate event_id; %w", err)
 	}
 
@@ -106,7 +119,7 @@ func (s *EventStore) AppendNext(eventType EventType, nodeID *string, payload any
 		SchemaVersion: SchemaVersionV1,
 		RunID:         s.runID,
 		Seq:           s.state.latestSeq + 1,
-		Timestamp:     time.Now().UTC(),
+		Timestamp:     s.now(),
 		Type:          eventType,
 		NodeID:        cloneStringPointer(nodeID),
 		CausationID:   causationID,
@@ -114,7 +127,14 @@ func (s *EventStore) AppendNext(eventType EventType, nodeID *string, payload any
 		Payload:       payload,
 	}
 
-	return s.appendLocked(event)
+	validated, observers, err := s.appendLocked(event)
+	s.mu.Unlock()
+	if err != nil {
+		return EventEnvelope{}, err
+	}
+
+	notifyEventObservers(observers, validated)
+	return validated, nil
 }
 
 // EventsFilePath returns the fully resolved events.jsonl path for the run.
@@ -175,28 +195,28 @@ func (s *EventStore) Close() error {
 	return nil
 }
 
-func (s *EventStore) appendLocked(event EventEnvelope) (EventEnvelope, error) {
+func (s *EventStore) appendLocked(event EventEnvelope) (EventEnvelope, []EventObserver, error) {
 	if s.file == nil {
-		return EventEnvelope{}, fmt.Errorf("event store is closed")
+		return EventEnvelope{}, nil, fmt.Errorf("event store is closed")
 	}
 
 	validated, err := validateEventForAppend(event, s.state)
 	if err != nil {
-		return EventEnvelope{}, err
+		return EventEnvelope{}, nil, err
 	}
 
 	serialized, err := json.Marshal(validated)
 	if err != nil {
-		return EventEnvelope{}, fmt.Errorf("failed to serialize event envelope; %w", err)
+		return EventEnvelope{}, nil, fmt.Errorf("failed to serialize event envelope; %w", err)
 	}
 
 	if _, err := s.file.Write(append(serialized, '\n')); err != nil {
-		return EventEnvelope{}, fmt.Errorf("failed to append event to %q; %w", s.eventsPath, err)
+		return EventEnvelope{}, nil, fmt.Errorf("failed to append event to %q; %w", s.eventsPath, err)
 	}
 
 	if err := s.fsyncFn(s.file); err != nil {
 		_, _ = s.reloadStateLocked()
-		return EventEnvelope{}, fmt.Errorf("failed to fsync events file %q; %w", s.eventsPath, err)
+		return EventEnvelope{}, nil, fmt.Errorf("failed to fsync events file %q; %w", s.eventsPath, err)
 	}
 
 	s.syncCount++
@@ -207,7 +227,7 @@ func (s *EventStore) appendLocked(event EventEnvelope) (EventEnvelope, error) {
 		"type", validated.Type,
 		"node_id", valueOrEmptyString(validated.NodeID),
 	)
-	return validated, nil
+	return validated, cloneEventObservers(s.observers), nil
 }
 
 func (s *EventStore) reloadStateLocked() ([]EventEnvelope, error) {
@@ -280,6 +300,14 @@ func resolveBaseDir(baseDir string) (string, error) {
 	return filepath.Clean(filepath.Join(cwd, clean)), nil
 }
 
+func (s *EventStore) now() time.Time {
+	if s == nil || s.nowFn == nil {
+		return time.Now().UTC()
+	}
+
+	return s.nowFn().UTC()
+}
+
 func cloneEventEnvelopes(events []EventEnvelope) []EventEnvelope {
 	cloned := make([]EventEnvelope, 0, len(events))
 	for _, event := range events {
@@ -288,6 +316,25 @@ func cloneEventEnvelopes(events []EventEnvelope) []EventEnvelope {
 		cloned = append(cloned, eventClone)
 	}
 	return cloned
+}
+
+func cloneEventObservers(observers []EventObserver) []EventObserver {
+	if len(observers) == 0 {
+		return nil
+	}
+
+	cloned := make([]EventObserver, len(observers))
+	copy(cloned, observers)
+	return cloned
+}
+
+func notifyEventObservers(observers []EventObserver, event EventEnvelope) {
+	for _, observer := range observers {
+		if observer == nil {
+			continue
+		}
+		observer(event)
+	}
 }
 
 func eventStoreLogger() *slog.Logger {

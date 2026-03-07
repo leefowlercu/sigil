@@ -85,11 +85,12 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	}
 
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
-		RunsBaseDir:   r.runsBaseDir,
-		QueuedSource:  runtime.RunQueuedSourceCLIRunStart,
-		AppConfigPath: cloneOptionalString(input.AppConfigPath),
-		RunConfigPath: cloneOptionalString(input.RunConfigPath),
-		MaxDepth:      input.RunConfig.RLM.MaxDepth,
+		RunsBaseDir:     r.runsBaseDir,
+		QueuedSource:    runtime.RunQueuedSourceCLIRunStart,
+		AppConfigPath:   cloneOptionalString(input.AppConfigPath),
+		RunConfigPath:   cloneOptionalString(input.RunConfigPath),
+		MaxDepth:        input.RunConfig.RLM.MaxDepth,
+		EventObservers:  append([]runtime.EventObserver(nil), r.eventObservers...),
 		ProcessMetadata: &processMetadata,
 	})
 	if err != nil {
