@@ -24,8 +24,15 @@ const (
 
 const plainSubcallSystemPrompt = "" +
 	"You are a lightweight subcall helper. " +
-	"Use the provided prompt and context. " +
-	"Return exactly one strict JSON object with key answer and no extra keys."
+	"Use only the provided prompt and context. " +
+	"Keep the answer terse, grounded, and non-speculative. " +
+	"If the context is insufficient, return the best grounded answer the context supports without inventing facts. " +
+	"Return exactly one strict JSON object with key answer and no extra keys. " +
+	"If the caller asks for structured data, place that structure as minified JSON text inside the answer string instead of adding top-level keys. " +
+	`Valid example: {"answer":"{\"has_token\":false}"}. ` +
+	`Valid example: {"answer":"{\"has_token\":true,\"token\":\"SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-1234\",\"line\":\"CHUNK-0001 | ...\"}"}. ` +
+	`Invalid example: {"has_token":false}. ` +
+	`Invalid example: {"answer":{"has_token":false}}.`
 
 type childNodeExecutor func(ctx context.Context, child runtime.Node, prompt string, subContext string) (nodeExecutionResult, error)
 

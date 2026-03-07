@@ -1045,6 +1045,36 @@ Feature: Sigil baseline CLI and config contracts
     When harness effective system prompt is constructed
     Then effective system prompt equals resolved base prompt
 
+  Scenario: Uses block-structured OpenAI system prompt with hard finalization gate
+    Given resolved base system prompt is "openai"
+    When harness effective system prompt is constructed
+    Then openai system prompt uses block sections and hard finalization gate
+
+  Scenario: Includes OpenAI search discipline and timeout recovery guidance
+    Given resolved base system prompt is "openai"
+    When harness effective system prompt is constructed
+    Then openai system prompt includes search discipline and timeout recovery rules
+
+  Scenario: Explains the plain subcall answer-string contract in the OpenAI prompt
+    Given resolved base system prompt is "openai"
+    When harness effective system prompt is constructed
+    Then openai system prompt explains the plain subcall answer-string contract
+
+  Scenario: Keeps structured subcall prompt examples compile-safe in the OpenAI prompt
+    Given resolved base system prompt is "openai"
+    When harness effective system prompt is constructed
+    Then openai system prompt explains compile-safe structured prompt strings
+
+  Scenario: Uses safe structured parsing guidance in the OpenAI prompt
+    Given resolved base system prompt is "openai"
+    When harness effective system prompt is constructed
+    Then openai system prompt explains safe structured parsing in repl code
+
+  Scenario: Keeps Anthropic prompt simpler while preserving safety-critical evidence rules
+    Given resolved base system prompt is "anthropic"
+    When harness effective system prompt is constructed
+    Then anthropic system prompt preserves safety rules without openai block sections
+
   Scenario: Starts harness execution with one root node at depth zero
     Given a run in "queued" state
     When harness execution starts

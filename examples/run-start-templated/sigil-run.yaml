@@ -28,7 +28,7 @@ llm:
 
 rlm:
   enabled: true
-  max_depth: 4
+  max_depth: 3
 
 guardrails:
   max_steps_per_node: 96

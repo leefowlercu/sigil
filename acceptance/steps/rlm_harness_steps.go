@@ -132,6 +132,12 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^harness effective system prompt is constructed$`, world.harnessEffectiveSystemPromptIsConstructed)
 	ctx.Step(`^effective system prompt equals base prompt plus two newlines plus append text$`, world.effectiveSystemPromptEqualsBasePromptPlusTwoNewlinesPlusAppendText)
 	ctx.Step(`^effective system prompt equals resolved base prompt$`, world.effectiveSystemPromptEqualsResolvedBasePrompt)
+	ctx.Step(`^openai system prompt uses block sections and hard finalization gate$`, world.openaiSystemPromptUsesBlockSectionsAndHardFinalizationGate)
+	ctx.Step(`^openai system prompt includes search discipline and timeout recovery rules$`, world.openaiSystemPromptIncludesSearchDisciplineAndTimeoutRecoveryRules)
+	ctx.Step(`^openai system prompt explains the plain subcall answer-string contract$`, world.openaiSystemPromptExplainsThePlainSubcallAnswerstringContract)
+	ctx.Step(`^openai system prompt explains compile-safe structured prompt strings$`, world.openaiSystemPromptExplainsCompilesafeStructuredPromptStrings)
+	ctx.Step(`^openai system prompt explains safe structured parsing in repl code$`, world.openaiSystemPromptExplainsSafeStructuredParsingInReplCode)
+	ctx.Step(`^anthropic system prompt preserves safety rules without openai block sections$`, world.anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlockSections)
 	ctx.Step(`^system prompt requires byte-for-byte previous_action_feedback\.output_ref reuse with context_ref fallback$`, world.systemPromptRequiresByteforbytePrevious_action_feedbackoutput_refReuseWithContext_refFallback)
 
 	ctx.Step(`^harness execution starts$`, world.harnessExecutionStarts)
@@ -569,13 +575,119 @@ func (w *harnessWorld) systemPromptRequiresByteforbytePrevious_action_feedbackou
 	prompt := w.rlm().effectivePrompt
 	requiredSnippets := []string{
 		"If you cite previous_action_feedback.output_ref, copy it byte-for-byte.",
-		"Do not shorten, rewrite, splice, or synthesize run-artifact UUID segments.",
+		"Do not shorten, rewrite, splice, or synthesize run-artifact or run-output UUID segments.",
 		"If you cannot preserve an exact action output_ref, cite context_ref instead of inventing a run-artifact ref.",
+		`{"ref":"run-artifact://node/019cc5fc-b991-7b33-bb66-c4e2508378f8/step/019cc5fc-b99b-7b33-bb66-c4e2508378f8/action-1.json"}`,
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {
 			return fmt.Errorf("expected effective system prompt to include %q", snippet)
 		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) openaiSystemPromptUsesBlockSectionsAndHardFinalizationGate() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"<tool_selection>",
+		"<retrieval_strategy>",
+		"<citation_rules>",
+		"<finalization_gate>",
+		"<recovery_rules>",
+		"decision=final is allowed only when all of the following are true:",
+		"Do not finalize on a guess, on partial formatting, or on unsupported evidence.",
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) openaiSystemPromptIncludesSearchDisciplineAndTimeoutRecoveryRules() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"Each continue action may perform at most 4 recursive subcalls and at most 8 total subcalls.",
+		"If more expansion is needed, finish the current action, record what narrowed successfully, and use a new step before expanding again.",
+		"Do NOT use rlm_query_batched for coarse search over unknown full-context partitions.",
+		"If an action times out or previous_action_feedback.error_message indicates timeout, reduce chunk size and fan-out on the next step and prefer REPL or llm_query before more recursion.",
+		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only.",
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) openaiSystemPromptExplainsThePlainSubcallAnswerstringContract() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
+		`The harness already owns the outer {"answer":"..."} wrapper; your REPL code only receives the inner answer string.`,
+		`Do NOT ask llm_query or rlm_query to emit a top-level object like {"has_token":true,"token":"...","line":"..."}.`,
+		"If you need structured data from a subcall, instruct it to return minified JSON text inside the answer string, then parse that returned string in REPL with encoding/json.",
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) openaiSystemPromptExplainsCompilesafeStructuredPromptStrings() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"If a prompt string needs literal JSON examples or many embedded quotes, prefer a raw string literal with backquotes.",
+		"Prefer describing required JSON keys in words over embedding heavily escaped JSON examples inside double-quoted Go strings.",
+		`Do NOT over-escape prompt strings with sequences like {\\"has_token\\":true} inside double-quoted Go code.`,
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) openaiSystemPromptExplainsSafeStructuredParsingInReplCode() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"For structured parsing from map[string]any, prefer predeclared variables plus assignment over compact two-value short declarations.",
+		"At REPL top level, do NOT introduce ok/present/type flags with := and then reference them in later statements.",
+		`hasRaw := any(nil)`,
+		`hasRaw, present = parsed["has_token"]`,
+		`hasTokenBool, typeOK = hasRaw.(bool)`,
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlockSections() error {
+	prompt := w.rlm().effectivePrompt
+	requiredSnippets := []string{
+		"Evidence rules:",
+		"Finalization gate:",
+		"decision=final is allowed only when the requested deliverable is obtained, final.answer matches the requested answer format, and at least one valid evidence ref directly supports the answer.",
+		"If you cite previous_action_feedback.output_ref, copy it byte-for-byte.",
+		"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
+		"If you need structured data, ask the subcall to return minified JSON text inside the answer string and parse that string in REPL.",
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(prompt, snippet) {
+			return fmt.Errorf("expected effective system prompt to include %q", snippet)
+		}
+	}
+	if strings.Contains(prompt, "<tool_selection>") {
+		return fmt.Errorf("expected anthropic prompt to omit openai block sections, got %q", prompt)
 	}
 	return nil
 }

@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func assertContainsAll(t *testing.T, haystack string, needles ...string) {
+	t.Helper()
+	for _, needle := range needles {
+		if !strings.Contains(haystack, needle) {
+			t.Fatalf("expected prompt to include %q, got %q", needle, haystack)
+		}
+	}
+}
+
 func TestResolveBaseSelectsMappedProviderPrompt(t *testing.T) {
 	resolver := NewSystemPromptResolver()
 
@@ -86,18 +95,7 @@ func TestResolveBaseRendersSchemaFromRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected prompt render success, got %v", err)
 	}
-	if !strings.Contains(prompt, `"decision"`) {
-		t.Fatalf("expected prompt schema block to include decision field, got %q", prompt)
-	}
-	if !strings.Contains(prompt, `"expected_observation"`) {
-		t.Fatalf("expected prompt schema block to include expected_observation field, got %q", prompt)
-	}
-	if !strings.Contains(prompt, `"evidence"`) {
-		t.Fatalf("expected prompt schema block to include evidence field, got %q", prompt)
-	}
-	if !strings.Contains(prompt, "copy it byte-for-byte") {
-		t.Fatalf("expected prompt to instruct verbatim action output_ref copying, got %q", prompt)
-	}
+	assertContainsAll(t, prompt, `"decision"`, `"expected_observation"`, `"evidence"`, "copy it byte-for-byte")
 }
 
 func TestResolveBaseFailsWhenSchemaRegistryMissing(t *testing.T) {
@@ -107,4 +105,106 @@ func TestResolveBaseFailsWhenSchemaRegistryMissing(t *testing.T) {
 	if _, _, err := resolver.ResolveBase("openai"); err == nil {
 		t.Fatal("expected schema-registry resolution error")
 	}
+}
+
+func TestResolveBaseProviderPromptsIntentionallyDiverge(t *testing.T) {
+	resolver := NewSystemPromptResolver()
+
+	_, openAIPrompt, err := resolver.ResolveBase("openai")
+	if err != nil {
+		t.Fatalf("expected openai prompt resolution success, got %v", err)
+	}
+	_, anthropicPrompt, err := resolver.ResolveBase("anthropic")
+	if err != nil {
+		t.Fatalf("expected anthropic prompt resolution success, got %v", err)
+	}
+	if openAIPrompt == anthropicPrompt {
+		t.Fatal("expected provider prompts to diverge")
+	}
+
+	assertContainsAll(t, openAIPrompt,
+		"<tool_selection>",
+		"<retrieval_strategy>",
+		"<citation_rules>",
+		"<finalization_gate>",
+		"<recovery_rules>",
+		"decision=final is allowed only when all of the following are true:",
+	)
+	if strings.Contains(anthropicPrompt, "<tool_selection>") {
+		t.Fatalf("expected anthropic prompt to remain simpler, got %q", anthropicPrompt)
+	}
+	assertContainsAll(t, anthropicPrompt,
+		"Evidence rules:",
+		"Finalization gate:",
+		"decision=final is allowed only when the requested deliverable is obtained",
+	)
+}
+
+func TestResolveBaseOpenAIPromptIncludesPromptRegressionShields(t *testing.T) {
+	resolver := NewSystemPromptResolver()
+
+	_, prompt, err := resolver.ResolveBase("openai")
+	if err != nil {
+		t.Fatalf("expected openai prompt resolution success, got %v", err)
+	}
+
+	assertContainsAll(t, prompt,
+		"Each continue action may perform at most 4 recursive subcalls and at most 8 total subcalls.",
+		"If more expansion is needed, finish the current action, record what narrowed successfully, and use a new step before expanding again.",
+		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only.",
+		"If an action times out or previous_action_feedback.error_message indicates timeout, reduce chunk size and fan-out on the next step",
+		`{"ref":"run-artifact://node/019cc5fc-b991-7b33-bb66-c4e2508378f8/step/019cc5fc-b99b-7b33-bb66-c4e2508378f8/action-1.json"}`,
+		`{"decision":"continue","continuation":`,
+		`{"decision":"final","final":`,
+	)
+}
+
+func TestResolveBaseProviderPromptsExplainPlainSubcallAnswerStringContract(t *testing.T) {
+	resolver := NewSystemPromptResolver()
+
+	for _, provider := range []string{"openai", "anthropic"} {
+		_, prompt, err := resolver.ResolveBase(provider)
+		if err != nil {
+			t.Fatalf("expected %s prompt resolution success, got %v", provider, err)
+		}
+
+		assertContainsAll(t, prompt,
+			"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
+			`The harness`,
+			`{"has_token":true,"token":"...","line":"..."}`,
+			"minified JSON text inside the answer string",
+		)
+	}
+}
+
+func TestResolveBaseOpenAIPromptIncludesCompileSafeStructuredPromptGuidance(t *testing.T) {
+	resolver := NewSystemPromptResolver()
+
+	_, prompt, err := resolver.ResolveBase("openai")
+	if err != nil {
+		t.Fatalf("expected openai prompt resolution success, got %v", err)
+	}
+
+	assertContainsAll(t, prompt,
+		"If a prompt string needs literal JSON examples or many embedded quotes, prefer a raw string literal with backquotes.",
+		"Prefer describing required JSON keys in words over embedding heavily escaped JSON examples inside double-quoted Go strings.",
+		`Do NOT over-escape prompt strings with sequences like {\\"has_token\\":true} inside double-quoted Go code.`,
+		"For structured parsing from map[string]any, prefer predeclared variables plus assignment over compact two-value short declarations.",
+		"At REPL top level, do NOT introduce ok/present/type flags with := and then reference them in later statements.",
+		`hasRaw := any(nil)`,
+		`hasRaw, present = parsed["has_token"]`,
+		`hasTokenBool, typeOK = hasRaw.(bool)`,
+	)
+}
+
+func TestPlainSubcallSystemPromptRequiresGroundedTerseAnswer(t *testing.T) {
+	assertContainsAll(t, plainSubcallSystemPrompt,
+		"Use only the provided prompt and context.",
+		"Keep the answer terse, grounded, and non-speculative.",
+		"Return exactly one strict JSON object with key answer and no extra keys.",
+		"place that structure as minified JSON text inside the answer string instead of adding top-level keys.",
+		`Valid example: {"answer":"{\"has_token\":false}"}.`,
+		`Invalid example: {"has_token":false}.`,
+		`Invalid example: {"answer":{"has_token":false}}.`,
+	)
 }
