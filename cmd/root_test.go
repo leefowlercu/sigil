@@ -36,14 +36,18 @@ func TestRunCommandNoSubcommandPrintsUsage(t *testing.T) {
 	}
 }
 
-func TestRunStopPrintsUsage(t *testing.T) {
-	stdout, _, err := executeRootCommand(t, t.TempDir(), nil, "run", "stop")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+func TestRunStopRequiresRunID(t *testing.T) {
+	_, stderr, err := executeRootCommand(t, t.TempDir(), nil, "run", "stop")
+	if err == nil {
+		t.Fatal("expected validation error for missing run-id")
 	}
 
-	if !strings.Contains(stdout, "sigil run stop") {
-		t.Fatalf("expected stop usage output, got %q", stdout)
+	if !strings.Contains(err.Error(), "accepts 1 arg(s), received 0") {
+		t.Fatalf("expected missing run-id error, got %v", err)
+	}
+
+	if !strings.Contains(stderr, "accepts 1 arg(s), received 0") {
+		t.Fatalf("expected stderr to include missing run-id error, got %q", stderr)
 	}
 }
 

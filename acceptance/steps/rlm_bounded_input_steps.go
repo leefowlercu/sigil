@@ -858,10 +858,12 @@ func (w *harnessWorld) anInterruptedTerminalEventIsPersistedWithAccounting() err
 	if w.lifecycle == nil {
 		return fmt.Errorf("expected lifecycle")
 	}
+	interruptedBy := sigilruntime.RunInterruptedByLifecycle
 	if err := w.lifecycle.InterruptWith(sigilruntime.RunInterruptedPayload{
-		Status:     "interrupted",
-		Reason:     sigilruntime.RunInterruptedReasonUserRequest,
-		Accounting: acceptancePartialAccountingRollup("openai", "gpt-5.1"),
+		Status:        "interrupted",
+		Reason:        sigilruntime.RunInterruptedReasonUserRequest,
+		InterruptedBy: &interruptedBy,
+		Accounting:    acceptancePartialAccountingRollup("openai", "gpt-5.1"),
 	}); err != nil {
 		return err
 	}

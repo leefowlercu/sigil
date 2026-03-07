@@ -58,6 +58,7 @@ const (
 	RunInterruptedReasonUserRequest    RunInterruptedReason = "user_request"
 	RunInterruptedReasonPolicyStop     RunInterruptedReason = "policy_stop"
 	RunInterruptedReasonSystemShutdown RunInterruptedReason = "system_shutdown"
+	RunInterruptedByLifecycle          string               = "runtime.lifecycle"
 )
 
 // StepDecision identifies node step decisions.
@@ -250,9 +251,10 @@ type RunInterruptedPayload struct {
 
 // LifecycleOptions configures lifecycle defaults and durable event-store behavior.
 type LifecycleOptions struct {
-	RunsBaseDir   string
-	QueuedSource  RunQueuedSource
-	AppConfigPath *string
-	RunConfigPath *string
-	MaxDepth      int
+	RunsBaseDir     string
+	QueuedSource    RunQueuedSource
+	AppConfigPath   *string
+	RunConfigPath   *string
+	MaxDepth        int
+	ProcessMetadata *ProcessMetadata
 }

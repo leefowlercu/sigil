@@ -57,11 +57,61 @@ Feature: Sigil baseline CLI and config contracts
     Then command exits non-zero
     And command error contains `invalid --config value`
 
-  Scenario: Provides sigil run stop as a usage-only placeholder command
+  Scenario: Delegates sigil run stop behavior to PRD-0150 and PRD-0450 run-stop contracts
     Given the sigil executable is available
     When a user runs `sigil run stop`
-    Then stop usage/help is printed
-    And command exits with status code 0
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 0`
+
+  Scenario: Requires exactly one UUIDv7 run-id positional argument for sigil run stop
+    Given the sigil executable is available
+    When a user runs `sigil run stop`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 0`
+    When a user runs `sigil run stop not-a-uuid`
+    Then command exits non-zero
+    And command error contains `run-id must be UUIDv7`
+    When a user runs `sigil run stop 019c7714-3b77-74d1-9866-e1f484aae2ab extra`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 2`
+
+  Scenario: Interrupts an actively running CLI run and prints a terminal JSON stop result
+    Given a local CLI run is actively executing
+    When a user runs `sigil run stop` for the active run
+    Then the active run transitions to "interrupted"
+    And stdout contains one JSON stop result with run_id stop_requested state and events_path
+
+  Scenario: Publishes process metadata and persists stop-request metadata for local CLI run control
+    Given a local CLI run is actively executing
+    When the run lifecycle and stop request metadata are inspected
+    Then process.json exists for the active run
+    And stop-request.json is written before SIGTERM is issued
+
+  Scenario: Returns terminal no-op stop results for completed failed or interrupted runs
+    Given local CLI completed failed and interrupted runs exist
+    When terminal stop commands are executed for those runs
+    Then each terminal stop command exits with status code 0 and returns stop_requested=false
+
+  Scenario: Waits for terminal state and reports completed or failed when stop loses the race
+    Given stop requests lose the race to completed and failed local CLI runs
+    When stop commands are executed for those racing runs
+    Then the JSON stop results contain stop_requested=true and the observed terminal states
+
+  Scenario: Fails run stop for unknown runs corrupt event logs or stale process metadata on non-terminal runs
+    Given sigil run stop targets unknown corrupt stale and missing-process run state
+    When stop commands are executed for those invalid control cases
+    Then each invalid control case exits non-zero
+
+  Scenario: Converts startup-window SIGTERM into interrupted terminalization before run.running
+    Given a local CLI run has persisted run.queued but not run.running
+    When a user runs `sigil run stop` for the active run
+    Then the active run transitions to "interrupted"
+
+  Scenario: Persists user-request interruption metadata and partial accounting without synthetic node failure records
+    Given a local CLI run is actively executing
+    When a user runs `sigil run stop` for the active run
+    Then run.interrupted contains reason user_request interrupted_by cli.run.stop and partial accounting
+    And interrupted stop handling does not append synthetic node.failed or node.step.completed records
 
   Scenario: Uses framework-default error behavior for unknown subcommands
     Given the sigil executable is available
@@ -721,6 +771,11 @@ Feature: Sigil baseline CLI and config contracts
 
   Scenario: Transitions run to interrupted on explicit interruption
     Given a run in "running" state
+    When explicit interruption is requested
+    Then run transitions to "interrupted"
+
+  Scenario: Transitions run from queued to interrupted when explicit interruption arrives before execution begins
+    Given a run in "queued" state
     When explicit interruption is requested
     Then run transitions to "interrupted"
 

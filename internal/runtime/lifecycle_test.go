@@ -156,11 +156,11 @@ func TestTransitionRulesFromQueuedAndRunning(t *testing.T) {
 			expectedErr: ErrInvalidTransition,
 		},
 		{
-			name: "queued to interrupted invalid",
+			name: "queued to interrupted valid",
 			action: func(l *Lifecycle) error {
 				return l.Interrupt()
 			},
-			expectedErr: ErrInvalidTransition,
+			expectedState: RunStateInterrupted,
 		},
 		{
 			name: "queued to running valid",

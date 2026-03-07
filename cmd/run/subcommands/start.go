@@ -1,13 +1,18 @@
 package subcommands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/harness"
+	"github.com/leefowlercu/sigil/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -183,7 +188,20 @@ func runStartCommand(cmd *cobra.Command, _ []string) error {
 	)
 
 	runner := harness.NewRunner()
-	result, err := runner.Run(cmd.Context(), harness.RunInput{
+	runContext, cancel := context.WithCancelCause(cmd.Context())
+	defer cancel(nil)
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGTERM)
+	defer signal.Stop(signalCh)
+	go func() {
+		select {
+		case <-signalCh:
+			cancel(runtime.ErrExternalStopRequested)
+		case <-runContext.Done():
+		}
+	}()
+
+	result, err := runner.Run(runContext, harness.RunInput{
 		AppConfigPath: startConfigPath,
 		RunConfigPath: startRunConfigPath,
 		RunConfig:     runCfg,

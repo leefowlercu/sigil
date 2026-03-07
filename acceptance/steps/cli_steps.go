@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	runtimestd "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,29 @@ import (
 	"github.com/leefowlercu/sigil/internal/logging"
 	sigilruntime "github.com/leefowlercu/sigil/internal/runtime"
 )
+
+type acceptanceStopResult struct {
+	RunID         string `json:"run_id"`
+	StopRequested bool   `json:"stop_requested"`
+	State         string `json:"state"`
+	EventsPath    string `json:"events_path"`
+}
+
+type stopInvocation struct {
+	Name     string
+	RunID    string
+	ExitCode int
+	Stdout   string
+	Stderr   string
+	Err      error
+	Result   *acceptanceStopResult
+}
+
+type acceptanceStopHelperReady struct {
+	RunID      string `json:"run_id"`
+	RunDir     string `json:"run_dir"`
+	EventsPath string `json:"events_path"`
+}
 
 type harnessWorld struct {
 	workingDir               string
@@ -58,6 +83,22 @@ type harnessWorld struct {
 	inferenceRequestBody     map[string]any
 	inferenceMockServer      *openRouterMockServer
 	rlmState                 *rlmAcceptanceState
+	activeRunID              string
+	activeRunDir             string
+	activeRunEventsPath      string
+	activeProcessMetadata    sigilruntime.ProcessMetadata
+	activeProcessSeen        bool
+	activeStopInvocation     stopInvocation
+	terminalRunIDs           []string
+	terminalStopInvocations  []stopInvocation
+	racingStopInvocations    []stopInvocation
+	invalidCaseRunIDs        map[string]string
+	invalidStopInvocations   []stopInvocation
+	helperDir                string
+	helperCmd                *exec.Cmd
+	helperStdout             bytes.Buffer
+	helperStderr             bytes.Buffer
+	invalidProcessCmd        *exec.Cmd
 }
 
 // InitializeScenario wires all acceptance steps for harness.feature.
@@ -68,6 +109,12 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		if world.inferenceMockServer != nil {
 			world.inferenceMockServer.Close()
 			world.inferenceMockServer = nil
+		}
+		if err := world.stopHelperProcess(); err != nil {
+			return ctx, err
+		}
+		if err := world.stopInvalidProcess(); err != nil {
+			return ctx, err
 		}
 
 		if world.lifecycle != nil {
@@ -127,6 +174,20 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		world.inferenceRequestBody = nil
 		world.inferenceMockServer = nil
 		world.rlmState = nil
+		world.activeRunID = ""
+		world.activeRunDir = ""
+		world.activeRunEventsPath = ""
+		world.activeProcessMetadata = sigilruntime.ProcessMetadata{}
+		world.activeProcessSeen = false
+		world.activeStopInvocation = stopInvocation{}
+		world.terminalRunIDs = nil
+		world.terminalStopInvocations = nil
+		world.racingStopInvocations = nil
+		world.invalidCaseRunIDs = nil
+		world.invalidStopInvocations = nil
+		world.helperStdout.Reset()
+		world.helperStderr.Reset()
+		world.invalidProcessCmd = nil
 
 		return ctx, nil
 	})
@@ -135,6 +196,12 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		if world.inferenceMockServer != nil {
 			world.inferenceMockServer.Close()
 			world.inferenceMockServer = nil
+		}
+		if err := world.stopHelperProcess(); err != nil {
+			return ctx, err
+		}
+		if err := world.stopInvalidProcess(); err != nil {
+			return ctx, err
 		}
 
 		if world.lifecycle != nil {
@@ -151,6 +218,10 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		}
 		if world.workingDir != "" {
 			_ = os.RemoveAll(world.workingDir)
+		}
+		if world.helperDir != "" {
+			_ = os.RemoveAll(world.helperDir)
+			world.helperDir = ""
 		}
 
 		return ctx, nil
@@ -281,6 +352,25 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^root usage/help is printed$`, world.rootUsageHelpIsPrinted)
 	ctx.Step(`^run usage/help is printed$`, world.runUsageHelpIsPrinted)
 	ctx.Step(`^stop usage/help is printed$`, world.stopUsageHelpIsPrinted)
+	ctx.Step(`^a local CLI run is actively executing$`, world.aLocalCLIRunIsActivelyExecuting)
+	ctx.Step("^a user runs `sigil run stop` for the active run$", world.aUserRunsSigilRunStopForTheActiveRun)
+	ctx.Step(`^the active run transitions to "([^"]*)"$`, world.theActiveRunTransitionsTo)
+	ctx.Step(`^stdout contains one JSON stop result with run_id stop_requested state and events_path$`, world.stdoutContainsOneJSONStopResultWithRunIDStopRequestedStateAndEventsPath)
+	ctx.Step(`^the run lifecycle and stop request metadata are inspected$`, world.theRunLifecycleAndStopRequestMetadataAreInspected)
+	ctx.Step(`^process\.json exists for the active run$`, world.processJSONExistsForTheActiveRun)
+	ctx.Step(`^stop-request\.json is written before SIGTERM is issued$`, world.stopRequestJSONIsWrittenBeforeSIGTERMIsIssued)
+	ctx.Step(`^local CLI completed failed and interrupted runs exist$`, world.localCLICompletedFailedAndInterruptedRunsExist)
+	ctx.Step(`^terminal stop commands are executed for those runs$`, world.terminalStopCommandsAreExecutedForThoseRuns)
+	ctx.Step(`^each terminal stop command exits with status code 0 and returns stop_requested=false$`, world.eachTerminalStopCommandExitsWithStatusCode0AndReturnsStopRequestedFalse)
+	ctx.Step(`^stop requests lose the race to completed and failed local CLI runs$`, world.stopRequestsLoseTheRaceToCompletedAndFailedLocalCLIRuns)
+	ctx.Step(`^stop commands are executed for those racing runs$`, world.stopCommandsAreExecutedForThoseRacingRuns)
+	ctx.Step(`^the JSON stop results contain stop_requested=true and the observed terminal states$`, world.theJSONStopResultsContainStopRequestedTrueAndTheObservedTerminalStates)
+	ctx.Step(`^sigil run stop targets unknown corrupt stale and missing-process run state$`, world.sigilRunStopTargetsUnknownCorruptStaleAndMissingProcessRunState)
+	ctx.Step(`^stop commands are executed for those invalid control cases$`, world.stopCommandsAreExecutedForThoseInvalidControlCases)
+	ctx.Step(`^each invalid control case exits non-zero$`, world.eachInvalidControlCaseExitsNonZero)
+	ctx.Step(`^a local CLI run has persisted run\.queued but not run\.running$`, world.aLocalCLIRunHasPersistedRunQueuedButNotRunRunning)
+	ctx.Step(`^run\.interrupted contains reason user_request interrupted_by cli\.run\.stop and partial accounting$`, world.runInterruptedContainsReasonUserRequestInterruptedByCLIRunStopAndPartialAccounting)
+	ctx.Step(`^interrupted stop handling does not append synthetic node\.failed or node\.step\.completed records$`, world.interruptedStopHandlingDoesNotAppendSyntheticNodeFailedOrNodeStepCompletedRecords)
 	ctx.Step(`^no default start config files exist$`, world.noDefaultStartConfigFilesExist)
 	ctx.Step(`^no default run config files exist$`, world.noDefaultRunConfigFilesExist)
 
@@ -1944,6 +2034,411 @@ func (w *harnessWorld) stopUsageHelpIsPrinted() error {
 	return nil
 }
 
+func (w *harnessWorld) aLocalCLIRunIsActivelyExecuting() error {
+	return w.startRunControlHelper("active_interrupt")
+}
+
+func (w *harnessWorld) aUserRunsSigilRunStopForTheActiveRun() error {
+	if strings.TrimSpace(w.activeRunID) == "" {
+		return fmt.Errorf("expected active run id before executing stop")
+	}
+
+	invocation, err := w.executeStopCommandForRun(w.activeRunID, "active")
+	if err != nil {
+		return err
+	}
+	w.activeStopInvocation = invocation
+	return nil
+}
+
+func (w *harnessWorld) theActiveRunTransitionsTo(expectedStateRaw string) error {
+	expectedState, err := parseRunState(expectedStateRaw)
+	if err != nil {
+		return err
+	}
+	if w.activeStopInvocation.Result == nil {
+		return fmt.Errorf("expected active stop result before checking transition")
+	}
+	if w.activeStopInvocation.Result.State != string(expectedState) {
+		return fmt.Errorf("expected stop result state %q, got %q", expectedState, w.activeStopInvocation.Result.State)
+	}
+
+	status, err := sigilruntime.ResolveRunStatus(sigilruntime.DefaultRunsBaseDir, w.activeRunID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve active run status; %w", err)
+	}
+	if status.State != expectedState {
+		return fmt.Errorf("expected resolved run state %q, got %q", expectedState, status.State)
+	}
+	w.activeRunEventsPath = status.EventsPath
+	return nil
+}
+
+func (w *harnessWorld) stdoutContainsOneJSONStopResultWithRunIDStopRequestedStateAndEventsPath() error {
+	if w.activeStopInvocation.ExitCode != 0 {
+		return fmt.Errorf("expected successful stop command, got exit code %d", w.activeStopInvocation.ExitCode)
+	}
+	if w.activeStopInvocation.Result == nil {
+		return fmt.Errorf("expected parsed stop result, got stdout %q", w.activeStopInvocation.Stdout)
+	}
+	result := w.activeStopInvocation.Result
+	if result.RunID != w.activeRunID {
+		return fmt.Errorf("expected run_id %q, got %q", w.activeRunID, result.RunID)
+	}
+	if !result.StopRequested {
+		return fmt.Errorf("expected stop_requested=true, got false")
+	}
+	if strings.TrimSpace(result.State) == "" {
+		return fmt.Errorf("expected non-empty state in stop result")
+	}
+	if strings.TrimSpace(result.EventsPath) == "" {
+		return fmt.Errorf("expected non-empty events_path in stop result")
+	}
+	expectedSuffix := filepath.ToSlash(filepath.Join(".sigil", "runs", w.activeRunID, "events.jsonl"))
+	if !strings.HasSuffix(filepath.ToSlash(result.EventsPath), expectedSuffix) {
+		return fmt.Errorf("expected events_path for active run, got %q", result.EventsPath)
+	}
+	return nil
+}
+
+func (w *harnessWorld) theRunLifecycleAndStopRequestMetadataAreInspected() error {
+	if strings.TrimSpace(w.activeRunID) == "" {
+		return fmt.Errorf("expected active run before metadata inspection")
+	}
+
+	metadata, err := sigilruntime.ReadProcessMetadata(sigilruntime.DefaultRunsBaseDir, w.activeRunID)
+	if err != nil {
+		return fmt.Errorf("expected process metadata for active run; %w", err)
+	}
+	w.activeProcessMetadata = metadata
+	w.activeProcessSeen = true
+
+	invocation, err := w.executeStopCommandForRun(w.activeRunID, "metadata-inspection")
+	if err != nil {
+		return err
+	}
+	w.activeStopInvocation = invocation
+	return nil
+}
+
+func (w *harnessWorld) processJSONExistsForTheActiveRun() error {
+	if !w.activeProcessSeen {
+		return fmt.Errorf("expected process metadata to be captured before assertion")
+	}
+
+	processPath, err := sigilruntime.ProcessMetadataPath(sigilruntime.DefaultRunsBaseDir, w.activeRunID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(w.activeProcessMetadata.RunID) != w.activeRunID {
+		return fmt.Errorf("expected process metadata run_id %q, got %q", w.activeRunID, w.activeProcessMetadata.RunID)
+	}
+	if w.activeProcessMetadata.PID < 1 {
+		return fmt.Errorf("expected active process pid, got %d", w.activeProcessMetadata.PID)
+	}
+	if w.activeProcessMetadata.StartedAt.IsZero() {
+		return fmt.Errorf("expected active process started_at, got zero value")
+	}
+	if _, err := os.Stat(filepath.Clean(processPath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("expected process metadata path to be readable; %w", err)
+	}
+	return nil
+}
+
+func (w *harnessWorld) stopRequestJSONIsWrittenBeforeSIGTERMIsIssued() error {
+	request, ok, err := sigilruntime.ReadStopRequestMetadata(sigilruntime.DefaultRunsBaseDir, w.activeRunID)
+	if err != nil {
+		return fmt.Errorf("failed to read stop request metadata; %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("expected stop-request metadata for run %q", w.activeRunID)
+	}
+	if request.RunID != w.activeRunID {
+		return fmt.Errorf("expected stop request run_id %q, got %q", w.activeRunID, request.RunID)
+	}
+	if request.RequestedBy != sigilruntime.StopRequesterCLIRunStop {
+		return fmt.Errorf("expected requested_by %q, got %q", sigilruntime.StopRequesterCLIRunStop, request.RequestedBy)
+	}
+	if request.Signal != sigilruntime.StopSignalSIGTERM {
+		return fmt.Errorf("expected signal %q, got %q", sigilruntime.StopSignalSIGTERM, request.Signal)
+	}
+	if w.helperCmd == nil || w.helperCmd.ProcessState == nil || !w.helperCmd.ProcessState.Success() {
+		return fmt.Errorf("expected helper process to confirm stop-request ordering, got stderr %q", w.helperStderr.String())
+	}
+	return nil
+}
+
+func (w *harnessWorld) localCLICompletedFailedAndInterruptedRunsExist() error {
+	states := []sigilruntime.RunState{
+		sigilruntime.RunStateCompleted,
+		sigilruntime.RunStateFailed,
+		sigilruntime.RunStateInterrupted,
+	}
+	w.terminalRunIDs = make([]string, 0, len(states))
+	for _, state := range states {
+		runID, err := w.createTerminalRun(state)
+		if err != nil {
+			return err
+		}
+		w.terminalRunIDs = append(w.terminalRunIDs, runID)
+	}
+	return nil
+}
+
+func (w *harnessWorld) terminalStopCommandsAreExecutedForThoseRuns() error {
+	w.terminalStopInvocations = w.terminalStopInvocations[:0]
+	for _, runID := range w.terminalRunIDs {
+		invocation, err := w.executeStopCommandForRun(runID, "terminal-"+runID)
+		if err != nil {
+			return err
+		}
+		w.terminalStopInvocations = append(w.terminalStopInvocations, invocation)
+	}
+	return nil
+}
+
+func (w *harnessWorld) eachTerminalStopCommandExitsWithStatusCode0AndReturnsStopRequestedFalse() error {
+	if len(w.terminalStopInvocations) != 3 {
+		return fmt.Errorf("expected three terminal stop invocations, got %d", len(w.terminalStopInvocations))
+	}
+	for _, invocation := range w.terminalStopInvocations {
+		if invocation.ExitCode != 0 {
+			return fmt.Errorf("expected exit code 0 for %s, got %d (stderr=%q)", invocation.Name, invocation.ExitCode, invocation.Stderr)
+		}
+		if invocation.Result == nil {
+			return fmt.Errorf("expected parsed stop result for %s", invocation.Name)
+		}
+		if invocation.Result.StopRequested {
+			return fmt.Errorf("expected stop_requested=false for %s", invocation.Name)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) stopRequestsLoseTheRaceToCompletedAndFailedLocalCLIRuns() error {
+	w.racingStopInvocations = nil
+	return nil
+}
+
+func (w *harnessWorld) stopCommandsAreExecutedForThoseRacingRuns() error {
+	testCases := []struct {
+		name string
+		mode string
+	}{
+		{name: "completed", mode: "complete_on_sigterm"},
+		{name: "failed", mode: "fail_on_sigterm"},
+	}
+	w.racingStopInvocations = make([]stopInvocation, 0, len(testCases))
+	for _, testCase := range testCases {
+		if err := w.startRunControlHelper(testCase.mode); err != nil {
+			return err
+		}
+		invocation, err := w.executeStopCommandForRun(w.activeRunID, testCase.name)
+		if err != nil {
+			return err
+		}
+		w.racingStopInvocations = append(w.racingStopInvocations, invocation)
+	}
+	return nil
+}
+
+func (w *harnessWorld) theJSONStopResultsContainStopRequestedTrueAndTheObservedTerminalStates() error {
+	if len(w.racingStopInvocations) != 2 {
+		return fmt.Errorf("expected two racing stop invocations, got %d", len(w.racingStopInvocations))
+	}
+	expectedStates := map[string]string{
+		"completed": "completed",
+		"failed":    "failed",
+	}
+	for _, invocation := range w.racingStopInvocations {
+		if invocation.ExitCode != 0 {
+			return fmt.Errorf("expected exit code 0 for %s, got %d", invocation.Name, invocation.ExitCode)
+		}
+		if invocation.Result == nil {
+			return fmt.Errorf("expected parsed stop result for %s", invocation.Name)
+		}
+		if !invocation.Result.StopRequested {
+			return fmt.Errorf("expected stop_requested=true for %s", invocation.Name)
+		}
+		if invocation.Result.State != expectedStates[invocation.Name] {
+			return fmt.Errorf("expected observed state %q for %s, got %q", expectedStates[invocation.Name], invocation.Name, invocation.Result.State)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) sigilRunStopTargetsUnknownCorruptStaleAndMissingProcessRunState() error {
+	w.invalidCaseRunIDs = make(map[string]string, 4)
+
+	unknownID, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	w.invalidCaseRunIDs["unknown"] = unknownID.String()
+
+	corruptID, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+	corruptRunDir := filepath.Join(sigilruntime.DefaultRunsBaseDir, corruptID.String())
+	if err := os.MkdirAll(filepath.Clean(corruptRunDir), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(corruptRunDir, "events.jsonl"), []byte("{not-json}\n"), 0o644); err != nil {
+		return err
+	}
+	w.invalidCaseRunIDs["corrupt"] = corruptID.String()
+
+	staleLifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		RunsBaseDir:  sigilruntime.DefaultRunsBaseDir,
+		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     1,
+	})
+	if err != nil {
+		return err
+	}
+	w.invalidCaseRunIDs["stale-process"] = staleLifecycle.RunID()
+	if err := staleLifecycle.StartExecution(); err != nil {
+		_ = staleLifecycle.Close()
+		return err
+	}
+	staleProcess := exec.Command("sh", "-c", "sleep 30")
+	if err := staleProcess.Start(); err != nil {
+		_ = staleLifecycle.Close()
+		return err
+	}
+	w.invalidProcessCmd = staleProcess
+	if err := sigilruntime.WriteProcessMetadata(sigilruntime.DefaultRunsBaseDir, sigilruntime.ProcessMetadata{
+		RunID:      staleLifecycle.RunID(),
+		PID:        staleProcess.Process.Pid,
+		RecordedAt: time.Now().UTC(),
+		StartedAt:  time.Unix(1_700_000_000, 0).UTC(),
+		Source:     sigilruntime.RunSourceCLIRunStart,
+	}); err != nil {
+		_ = staleLifecycle.Close()
+		return err
+	}
+	if err := staleLifecycle.Close(); err != nil {
+		return err
+	}
+
+	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		RunsBaseDir:  sigilruntime.DefaultRunsBaseDir,
+		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     1,
+	})
+	if err != nil {
+		return err
+	}
+	w.invalidCaseRunIDs["missing-process"] = lifecycle.RunID()
+	if err := lifecycle.StartExecution(); err != nil {
+		_ = lifecycle.Close()
+		return err
+	}
+	if err := lifecycle.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *harnessWorld) stopCommandsAreExecutedForThoseInvalidControlCases() error {
+	order := []string{"unknown", "corrupt", "stale-process", "missing-process"}
+	w.invalidStopInvocations = make([]stopInvocation, 0, len(order))
+	for _, name := range order {
+		runID := w.invalidCaseRunIDs[name]
+		invocation, err := w.executeStopCommandForRun(runID, name)
+		if err != nil {
+			return err
+		}
+		w.invalidStopInvocations = append(w.invalidStopInvocations, invocation)
+	}
+	return nil
+}
+
+func (w *harnessWorld) eachInvalidControlCaseExitsNonZero() error {
+	if len(w.invalidStopInvocations) != 4 {
+		return fmt.Errorf("expected four invalid control invocations, got %d", len(w.invalidStopInvocations))
+	}
+	for _, invocation := range w.invalidStopInvocations {
+		if invocation.ExitCode == 0 {
+			return fmt.Errorf("expected non-zero exit for %s", invocation.Name)
+		}
+		if invocation.Err == nil {
+			return fmt.Errorf("expected command error for %s", invocation.Name)
+		}
+	}
+	return nil
+}
+
+func (w *harnessWorld) aLocalCLIRunHasPersistedRunQueuedButNotRunRunning() error {
+	return w.startRunControlHelper("queued_interrupt")
+}
+
+func (w *harnessWorld) runInterruptedContainsReasonUserRequestInterruptedByCLIRunStopAndPartialAccounting() error {
+	eventsPath := w.activeRunEventsPath
+	if w.activeStopInvocation.Result != nil && strings.TrimSpace(w.activeStopInvocation.Result.EventsPath) != "" {
+		eventsPath = w.activeStopInvocation.Result.EventsPath
+	}
+	if strings.TrimSpace(eventsPath) == "" {
+		return fmt.Errorf("expected active events path before interruption payload assertion")
+	}
+	events, err := readEventsFromPath(eventsPath)
+	if err != nil {
+		return err
+	}
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != sigilruntime.EventTypeRunInterrupted {
+			continue
+		}
+		payload, ok := event.Payload.(sigilruntime.RunInterruptedPayload)
+		if !ok {
+			return fmt.Errorf("expected run.interrupted payload type, got %T", event.Payload)
+		}
+		if payload.Reason != sigilruntime.RunInterruptedReasonUserRequest {
+			return fmt.Errorf("expected interruption reason %q, got %q", sigilruntime.RunInterruptedReasonUserRequest, payload.Reason)
+		}
+		if payload.InterruptedBy == nil || *payload.InterruptedBy != sigilruntime.StopRequesterCLIRunStop {
+			return fmt.Errorf("expected interrupted_by=%q, got %+v", sigilruntime.StopRequesterCLIRunStop, payload.InterruptedBy)
+		}
+		if payload.Accounting.TreeTotal.TokenStatus != "partial" && payload.Accounting.TreeTotal.CostStatus != "partial" {
+			return fmt.Errorf("expected partial accounting in run.interrupted payload, got %+v", payload.Accounting.TreeTotal)
+		}
+		if payload.AccountingRef == nil || strings.TrimSpace(*payload.AccountingRef) == "" {
+			return fmt.Errorf("expected accounting_ref in run.interrupted payload")
+		}
+		w.activeRunEventsPath = eventsPath
+		return nil
+	}
+	return fmt.Errorf("expected run.interrupted event in %q", eventsPath)
+}
+
+func (w *harnessWorld) interruptedStopHandlingDoesNotAppendSyntheticNodeFailedOrNodeStepCompletedRecords() error {
+	eventsPath := w.activeRunEventsPath
+	if strings.TrimSpace(eventsPath) == "" {
+		return fmt.Errorf("expected active events path before synthetic-event assertion")
+	}
+	events, err := readEventsFromPath(eventsPath)
+	if err != nil {
+		return err
+	}
+	sawActiveWork := false
+	for _, event := range events {
+		switch event.Type {
+		case sigilruntime.EventTypeNodeStepStarted:
+			sawActiveWork = true
+		case sigilruntime.EventTypeNodeFailed:
+			return fmt.Errorf("unexpected synthetic node.failed event after stop request")
+		case sigilruntime.EventTypeNodeStepCompleted:
+			return fmt.Errorf("unexpected synthetic node.step.completed event after stop request")
+		}
+	}
+	if !sawActiveWork {
+		return fmt.Errorf("expected active work evidence via node.step.started before stop")
+	}
+	return nil
+}
+
 func (w *harnessWorld) noDefaultStartConfigFilesExist() error {
 	_ = os.Remove(filepath.Clean("./sigil.yaml"))
 	_ = os.Remove(filepath.Clean("./sigil-run.yaml"))
@@ -2030,6 +2525,466 @@ func (w *harnessWorld) capturePersistedEvents() error {
 	}
 	w.eventLogPath = logPath
 	return nil
+}
+
+func (w *harnessWorld) executeStopCommandForRun(runID string, name string) (stopInvocation, error) {
+	if err := w.aUserRuns(fmt.Sprintf("sigil run stop %s", runID)); err != nil {
+		return stopInvocation{}, err
+	}
+
+	invocation := stopInvocation{
+		Name:     name,
+		RunID:    runID,
+		ExitCode: w.lastExitCode,
+		Stdout:   w.lastStdout,
+		Stderr:   w.lastStderr,
+		Err:      w.lastErr,
+	}
+	if w.lastExitCode == 0 {
+		result, err := parseAcceptanceStopResult(w.lastStdout)
+		if err != nil {
+			return stopInvocation{}, err
+		}
+		invocation.Result = &result
+	}
+	if w.helperCmd != nil && w.helperCmd.ProcessState == nil {
+		if err := w.waitForHelperExit(3 * time.Second); err != nil {
+			return stopInvocation{}, err
+		}
+	}
+	if invocation.Result != nil {
+		w.activeRunEventsPath = invocation.Result.EventsPath
+	}
+	return invocation, nil
+}
+
+func parseAcceptanceStopResult(stdout string) (acceptanceStopResult, error) {
+	var result acceptanceStopResult
+	trimmed := strings.TrimSpace(stdout)
+	if trimmed == "" {
+		return acceptanceStopResult{}, fmt.Errorf("expected JSON stop result, got empty stdout")
+	}
+	if err := json.Unmarshal([]byte(trimmed), &result); err != nil {
+		return acceptanceStopResult{}, fmt.Errorf("failed to decode JSON stop result %q; %w", stdout, err)
+	}
+	return result, nil
+}
+
+func (w *harnessWorld) startRunControlHelper(mode string) error {
+	if err := w.stopHelperProcess(); err != nil {
+		return err
+	}
+	if err := w.ensureRunControlHelperDir(); err != nil {
+		return err
+	}
+
+	existingRunIDs, err := currentRunIDSet()
+	if err != nil {
+		return err
+	}
+
+	w.helperStdout.Reset()
+	w.helperStderr.Reset()
+	w.activeRunID = ""
+	w.activeRunDir = ""
+	w.activeRunEventsPath = ""
+	w.activeProcessMetadata = sigilruntime.ProcessMetadata{}
+	w.activeProcessSeen = false
+	w.activeStopInvocation = stopInvocation{}
+
+	cmd := exec.Command(filepath.Join(w.helperDir, "run-stop-helper"))
+	cmd.Stdout = &w.helperStdout
+	cmd.Stderr = &w.helperStderr
+	cmd.Env = append(os.Environ(),
+		"SIGIL_ACCEPTANCE_WORKDIR="+w.workingDir,
+		"SIGIL_ACCEPTANCE_HELPER_MODE="+mode,
+	)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start run-control helper; %w", err)
+	}
+	w.helperCmd = cmd
+
+	if err := w.waitForHelperRun(mode, existingRunIDs); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *harnessWorld) ensureRunControlHelperDir() error {
+	if strings.TrimSpace(w.helperDir) != "" {
+		return nil
+	}
+
+	moduleRoot, err := sigilModuleRootDir()
+	if err != nil {
+		return err
+	}
+	helperDir, err := os.MkdirTemp(moduleRoot, ".acceptance-run-stop-helper-")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(helperDir, "main.go"), []byte(runControlHelperSource()), 0o644); err != nil {
+		return err
+	}
+	buildCmd := exec.Command("go", "build", "-o", "run-stop-helper", ".")
+	buildCmd.Dir = helperDir
+	buildOutput, err := buildCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to build run-stop helper; %w; output=%s", err, string(buildOutput))
+	}
+	w.helperDir = helperDir
+	return nil
+}
+
+func sigilModuleRootDir() (string, error) {
+	_, file, _, ok := runtimestd.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("failed to resolve cli_steps.go path")
+	}
+	return filepath.Dir(filepath.Dir(filepath.Dir(file))), nil
+}
+
+func runControlHelperSource() string {
+	return `package main
+
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/leefowlercu/sigil/internal/accounting"
+	"github.com/leefowlercu/sigil/internal/runtime"
+)
+
+func main() {
+	workDir := os.Getenv("SIGIL_ACCEPTANCE_WORKDIR")
+	if workDir == "" {
+		fatalf("SIGIL_ACCEPTANCE_WORKDIR is required")
+	}
+	if err := os.Chdir(workDir); err != nil {
+		fatalf("failed to change working directory: %v", err)
+	}
+	mode := os.Getenv("SIGIL_ACCEPTANCE_HELPER_MODE")
+	if mode == "" {
+		fatalf("SIGIL_ACCEPTANCE_HELPER_MODE is required")
+	}
+
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		RunsBaseDir:  runtime.DefaultRunsBaseDir,
+		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     1,
+	})
+	if err != nil {
+		fatalf("failed to create lifecycle: %v", err)
+	}
+	defer func() {
+		if closeErr := lifecycle.Close(); closeErr != nil {
+			fatalf("failed to close lifecycle: %v", closeErr)
+		}
+	}()
+
+	processMetadata, err := runtime.CurrentProcessMetadata(runtime.RunSourceCLIRunStart)
+	if err != nil {
+		fatalf("failed to capture process metadata: %v", err)
+	}
+	processMetadata.RunID = lifecycle.RunID()
+	if err := runtime.WriteProcessMetadata(runtime.DefaultRunsBaseDir, processMetadata); err != nil {
+		fatalf("failed to write process metadata: %v", err)
+	}
+
+	var interruptedNodeID *string
+	switch mode {
+	case "active_interrupt", "complete_on_sigterm", "fail_on_sigterm":
+		if err := lifecycle.StartExecution(); err != nil {
+			fatalf("failed to start execution: %v", err)
+		}
+		rootNode, err := lifecycle.RootNode()
+		if err != nil {
+			fatalf("failed to resolve root node: %v", err)
+		}
+		if mode == "active_interrupt" {
+			if _, err := lifecycle.AppendNodeStepStarted(rootNode.ID); err != nil {
+				fatalf("failed to append node.step.started: %v", err)
+			}
+			interruptedNodeID = &rootNode.ID
+		}
+	case "queued_interrupt":
+	default:
+		fatalf("unsupported helper mode %q", mode)
+	}
+
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGTERM)
+	defer signal.Stop(signalCh)
+
+	select {
+	case <-signalCh:
+	case <-time.After(10 * time.Second):
+		fatalf("timed out waiting for SIGTERM")
+	}
+
+	request, ok, err := runtime.ReadStopRequestMetadata(runtime.DefaultRunsBaseDir, lifecycle.RunID())
+	if err != nil {
+		fatalf("failed to read stop-request metadata: %v", err)
+	}
+	if !ok {
+		fatalf("stop-request metadata was not present before SIGTERM handling")
+	}
+	if request.RequestedBy != runtime.StopRequesterCLIRunStop {
+		fatalf("unexpected requested_by %q", request.RequestedBy)
+	}
+	if request.Signal != runtime.StopSignalSIGTERM {
+		fatalf("unexpected signal %q", request.Signal)
+	}
+
+	switch mode {
+	case "active_interrupt", "queued_interrupt":
+		accountingRef := "run-output://run/accounting/interrupted.json"
+		requestedBy := runtime.StopRequesterCLIRunStop
+		if err := lifecycle.InterruptWith(runtime.RunInterruptedPayload{
+			Status:            "interrupted",
+			Reason:            runtime.RunInterruptedReasonUserRequest,
+			InterruptedBy:     &requestedBy,
+			InterruptedNodeID: interruptedNodeID,
+			Accounting:        partialRollup(),
+			AccountingRef:     &accountingRef,
+		}); err != nil {
+			fatalf("failed to interrupt run: %v", err)
+		}
+	case "complete_on_sigterm":
+		if err := lifecycle.CompleteWithAccounting(nil, unavailableRollup(), nil); err != nil {
+			fatalf("failed to complete run after SIGTERM: %v", err)
+		}
+	case "fail_on_sigterm":
+		if err := lifecycle.FailWith(runtime.RunFailedPayload{
+			Status:       "failed",
+			ErrorCode:    "helper.race",
+			ErrorMessage: "completed failure path before interruption persisted",
+			Retryable:    false,
+			Accounting:   unavailableRollup(),
+		}); err != nil {
+			fatalf("failed to fail run after SIGTERM: %v", err)
+		}
+	}
+}
+
+func partialRollup() accounting.Rollup {
+	inputTokens := int64(1_000_000)
+	modelTotal := accounting.BuildLeafSummary(accounting.LeafInput{
+		Provider:       "openai",
+		Model:          "gpt-5.1",
+		PricingVersion: "acceptance",
+		InputTokens:    &inputTokens,
+		FallbackPricing: &accounting.FallbackPricing{
+			InputMicrousdPerMillionTokens:  100,
+			OutputMicrousdPerMillionTokens: 200,
+		},
+	})
+	return accounting.BuildRollup("openai", "gpt-5.1", "acceptance", modelTotal, accounting.ZeroSummary("openai", "gpt-5.1", "acceptance"))
+}
+
+func unavailableRollup() accounting.Rollup {
+	return accounting.BuildRollup(
+		"openai",
+		"gpt-5.1",
+		"acceptance",
+		accounting.UnavailableSummary("openai", "gpt-5.1", "acceptance"),
+		accounting.ZeroSummary("openai", "gpt-5.1", "acceptance"),
+	)
+}
+
+func fatalf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	os.Exit(1)
+}
+`
+}
+
+func (w *harnessWorld) waitForHelperRun(mode string, existingRunIDs map[string]struct{}) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		runID, runDir, eventsPath, events, found, err := findNewRun(existingRunIDs)
+		if err != nil {
+			return err
+		}
+		if found && helperRunReady(mode, events, filepath.Join(runDir, sigilruntime.ProcessMetadataFileName)) {
+			w.activeRunID = runID
+			w.activeRunDir = runDir
+			w.activeRunEventsPath = eventsPath
+			return nil
+		}
+		if w.helperCmd != nil && w.helperCmd.ProcessState != nil && !w.helperCmd.ProcessState.Success() {
+			return fmt.Errorf("helper exited before run became ready; stderr=%q", w.helperStderr.String())
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for helper run in mode %q; stderr=%q", mode, w.helperStderr.String())
+}
+
+func findNewRun(existingRunIDs map[string]struct{}) (string, string, string, []sigilruntime.EventEnvelope, bool, error) {
+	matches, err := filepath.Glob(filepath.Join(sigilruntime.DefaultRunsBaseDir, "*", "events.jsonl"))
+	if err != nil {
+		return "", "", "", nil, false, err
+	}
+	for _, eventsPath := range matches {
+		runDir := filepath.Dir(eventsPath)
+		runID := filepath.Base(runDir)
+		if _, seen := existingRunIDs[runID]; seen {
+			continue
+		}
+		events, err := readEventsFromPath(eventsPath)
+		if err != nil {
+			continue
+		}
+		if len(events) == 0 {
+			continue
+		}
+		return runID, runDir, eventsPath, events, true, nil
+	}
+	return "", "", "", nil, false, nil
+}
+
+func helperRunReady(mode string, events []sigilruntime.EventEnvelope, processPath string) bool {
+	if len(events) == 0 {
+		return false
+	}
+	if _, err := os.Stat(filepath.Clean(processPath)); err != nil {
+		return false
+	}
+
+	hasRunning := false
+	hasStepStarted := false
+	for _, event := range events {
+		switch event.Type {
+		case sigilruntime.EventTypeRunRunning:
+			hasRunning = true
+		case sigilruntime.EventTypeNodeStepStarted:
+			hasStepStarted = true
+		}
+	}
+
+	switch mode {
+	case "active_interrupt":
+		return hasRunning && hasStepStarted
+	case "complete_on_sigterm", "fail_on_sigterm":
+		return hasRunning
+	case "queued_interrupt":
+		return !hasRunning
+	default:
+		return false
+	}
+}
+
+func currentRunIDSet() (map[string]struct{}, error) {
+	matches, err := filepath.Glob(filepath.Join(sigilruntime.DefaultRunsBaseDir, "*"))
+	if err != nil {
+		return nil, err
+	}
+	runIDs := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		runIDs[filepath.Base(match)] = struct{}{}
+	}
+	return runIDs, nil
+}
+
+func (w *harnessWorld) waitForHelperExit(timeout time.Duration) error {
+	if w.helperCmd == nil || w.helperCmd.ProcessState != nil {
+		return nil
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- w.helperCmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("helper process failed; %w; stderr=%q", err, w.helperStderr.String())
+		}
+		return nil
+	case <-time.After(timeout):
+		if w.helperCmd.Process != nil {
+			_ = w.helperCmd.Process.Kill()
+		}
+		<-done
+		return fmt.Errorf("helper process did not exit within %s; stderr=%q", timeout, w.helperStderr.String())
+	}
+}
+
+func (w *harnessWorld) stopHelperProcess() error {
+	if w.helperCmd == nil {
+		return nil
+	}
+	if w.helperCmd.ProcessState == nil && w.helperCmd.Process != nil {
+		_ = w.helperCmd.Process.Kill()
+		if err := w.helperCmd.Wait(); err != nil && !isKilledExecError(err) {
+			return fmt.Errorf("failed to stop helper process; %w; stderr=%q", err, w.helperStderr.String())
+		}
+	}
+	w.helperCmd = nil
+	return nil
+}
+
+func (w *harnessWorld) stopInvalidProcess() error {
+	if w.invalidProcessCmd == nil {
+		return nil
+	}
+	if w.invalidProcessCmd.ProcessState == nil && w.invalidProcessCmd.Process != nil {
+		_ = w.invalidProcessCmd.Process.Kill()
+		if err := w.invalidProcessCmd.Wait(); err != nil && !isKilledExecError(err) {
+			return fmt.Errorf("failed to stop invalid-case process; %w", err)
+		}
+	}
+	w.invalidProcessCmd = nil
+	return nil
+}
+
+func isKilledExecError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "signal: killed")
+}
+
+func (w *harnessWorld) createTerminalRun(targetState sigilruntime.RunState) (string, error) {
+	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		RunsBaseDir:  sigilruntime.DefaultRunsBaseDir,
+		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     1,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = lifecycle.Close()
+	}()
+
+	switch targetState {
+	case sigilruntime.RunStateCompleted:
+		if err := lifecycle.StartExecution(); err != nil {
+			return "", err
+		}
+		if err := lifecycle.Complete(); err != nil {
+			return "", err
+		}
+	case sigilruntime.RunStateFailed:
+		if err := lifecycle.StartExecution(); err != nil {
+			return "", err
+		}
+		if err := lifecycle.Fail(); err != nil {
+			return "", err
+		}
+	case sigilruntime.RunStateInterrupted:
+		if err := lifecycle.StartExecution(); err != nil {
+			return "", err
+		}
+		if err := lifecycle.Interrupt(); err != nil {
+			return "", err
+		}
+	default:
+		return "", fmt.Errorf("unsupported terminal run state %q", targetState)
+	}
+	return lifecycle.RunID(), nil
 }
 
 func validateCanonicalEventTypeFixtures() error {
@@ -2260,9 +3215,10 @@ func validateCanonicalEventTypeFixtures() error {
 			"causation_id":   mustUUIDv7StringOrPanic(),
 			"correlation_id": runID,
 			"payload": map[string]any{
-				"status":     "interrupted",
-				"reason":     string(sigilruntime.RunInterruptedReasonUserRequest),
-				"accounting": acceptanceAccountingRollup("openai", "gpt-5.1"),
+				"status":         "interrupted",
+				"reason":         string(sigilruntime.RunInterruptedReasonUserRequest),
+				"interrupted_by": sigilruntime.RunInterruptedByLifecycle,
+				"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
 			},
 		},
 	}

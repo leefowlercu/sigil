@@ -14,6 +14,7 @@ const (
 	ErrorCodeOutputValidation ErrorCode = "harness_output_validation"
 	ErrorCodeInfrastructure   ErrorCode = "harness_runtime_infrastructure"
 	ErrorCodeLimitExceeded    ErrorCode = "harness_limit_exceeded"
+	ErrorCodeInterrupted      ErrorCode = "harness_interrupted"
 )
 
 // LimitMetadata contains deterministic limit breach metadata.
@@ -25,12 +26,18 @@ type LimitMetadata struct {
 	StepID          string
 }
 
+// InterruptMetadata contains graceful-interruption context.
+type InterruptMetadata struct {
+	NodeID string
+}
+
 // Error is a typed harness error for machine-readable failure handling.
 type Error struct {
-	Code    ErrorCode
-	Message string
-	Cause   error
-	Limit   *LimitMetadata
+	Code      ErrorCode
+	Message   string
+	Cause     error
+	Limit     *LimitMetadata
+	Interrupt *InterruptMetadata
 }
 
 func (e *Error) Error() string {
@@ -65,6 +72,15 @@ func NewLimitError(message string, limit LimitMetadata) *Error {
 	}
 }
 
+// NewInterruptError creates a typed graceful-interruption harness error.
+func NewInterruptError(message string, interrupt InterruptMetadata) *Error {
+	return &Error{
+		Code:      ErrorCodeInterrupted,
+		Message:   message,
+		Interrupt: &interrupt,
+	}
+}
+
 // CodeOf extracts harness error code from wrapped chains.
 func CodeOf(err error) (ErrorCode, bool) {
 	var typed *Error
@@ -82,4 +98,13 @@ func LimitOf(err error) (LimitMetadata, bool) {
 		return LimitMetadata{}, false
 	}
 	return *typed.Limit, true
+}
+
+// InterruptOf extracts interruption metadata from wrapped chains when present.
+func InterruptOf(err error) (InterruptMetadata, bool) {
+	var typed *Error
+	if !errors.As(err, &typed) || typed.Interrupt == nil {
+		return InterruptMetadata{}, false
+	}
+	return *typed.Interrupt, true
 }

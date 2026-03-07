@@ -65,7 +65,20 @@ func NewLifecycleWithOptions(opts LifecycleOptions) (*Lifecycle, error) {
 		RunConfigPath: cloneStringPointer(lifecycle.options.RunConfigPath),
 	}
 
+	processMetadataWritten := false
+	if normalizedOpts.ProcessMetadata != nil {
+		metadata := *normalizedOpts.ProcessMetadata
+		metadata.RunID = runID
+		if err := WriteProcessMetadata(normalizedOpts.RunsBaseDir, metadata); err != nil {
+			_ = lifecycle.eventStore.Close()
+			return nil, fmt.Errorf("failed to persist process metadata; %w", err)
+		}
+		processMetadataWritten = true
+	}
 	if _, err := lifecycle.eventStore.AppendNext(EventTypeRunQueued, nil, queuedPayload); err != nil {
+		if processMetadataWritten {
+			_ = RemoveProcessMetadata(normalizedOpts.RunsBaseDir, runID)
+		}
 		_ = lifecycle.eventStore.Close()
 		return nil, fmt.Errorf("failed to persist initial run.queued event; %w", err)
 	}
@@ -318,10 +331,12 @@ func (l *Lifecycle) FailWith(payload RunFailedPayload) error {
 
 // Interrupt transitions running -> interrupted.
 func (l *Lifecycle) Interrupt() error {
+	interruptedBy := RunInterruptedByLifecycle
 	return l.InterruptWith(RunInterruptedPayload{
-		Status:     "interrupted",
-		Reason:     RunInterruptedReasonUserRequest,
-		Accounting: unavailableRollupForLifecycle(),
+		Status:        "interrupted",
+		Reason:        RunInterruptedReasonUserRequest,
+		InterruptedBy: &interruptedBy,
+		Accounting:    unavailableRollupForLifecycle(),
 	})
 }
 
@@ -687,7 +702,7 @@ func (l *Lifecycle) validateTransition(next RunState) error {
 func isAllowedTransition(current RunState, next RunState) bool {
 	switch current {
 	case RunStateQueued:
-		return next == RunStateRunning
+		return next == RunStateRunning || next == RunStateInterrupted
 	case RunStateRunning:
 		return next == RunStateCompleted || next == RunStateFailed || next == RunStateInterrupted
 	default:

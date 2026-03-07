@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -77,12 +78,19 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		"template_var_count", len(input.TemplateVars),
 	)
 
+	processMetadata, err := runtime.CurrentProcessMetadata(runtime.RunSourceCLIRunStart)
+	if err != nil {
+		logger.Error("failed to capture current process metadata", "error", err)
+		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to capture current process metadata", err)
+	}
+
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
 		RunsBaseDir:   r.runsBaseDir,
 		QueuedSource:  runtime.RunQueuedSourceCLIRunStart,
 		AppConfigPath: cloneOptionalString(input.AppConfigPath),
 		RunConfigPath: cloneOptionalString(input.RunConfigPath),
 		MaxDepth:      input.RunConfig.RLM.MaxDepth,
+		ProcessMetadata: &processMetadata,
 	})
 	if err != nil {
 		logger.Error("failed to initialize run lifecycle", "error", err)
@@ -99,10 +107,23 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		"run_id", lifecycle.RunID(),
 		"events_path", eventsPath,
 	)
+	defer func() {
+		if err := runtime.RemoveProcessMetadata(r.runsBaseDir, lifecycle.RunID()); err != nil {
+			logger.Error("failed to remove process metadata", "run_id", lifecycle.RunID(), "error", err)
+		}
+	}()
+	if interruptErr := interruptionError(guardrailRunContext, ""); interruptErr != nil {
+		logger.Warn("run interrupted before execution start", "run_id", lifecycle.RunID())
+		return RunResult{}, failRunningRunWithAccounting(lifecycle, nil, nil, input.RunConfig, nil, interruptErr)
+	}
 
 	if err := lifecycle.StartExecution(); err != nil {
 		logger.Error("failed to start run lifecycle", "run_id", lifecycle.RunID(), "error", err)
 		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to start run lifecycle", err)
+	}
+	if interruptErr := interruptionError(guardrailRunContext, ""); interruptErr != nil {
+		logger.Warn("run interrupted immediately after execution start", "run_id", lifecycle.RunID())
+		return RunResult{}, failRunningRunWithAccounting(lifecycle, nil, nil, input.RunConfig, nil, interruptErr)
 	}
 
 	sessions, err := NewREPLSessionManager(r.replFactory)
@@ -237,6 +258,12 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 		if runErr == nil {
 			return
 		}
+		if code, ok := CodeOf(runErr); ok && code == ErrorCodeInterrupted {
+			if closeErr := execCtx.sessions.CloseNode(node.ID); closeErr != nil {
+				logger.Error("failed to close node repl session", "error", closeErr)
+			}
+			return
+		}
 
 		if execCtx.lifecycle.State() == runtime.RunStateRunning {
 			if _, terminalized := execCtx.lifecycle.NodeTerminalEvent(node.ID); !terminalized {
@@ -267,6 +294,9 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 		"prompt_bytes", len(prompt),
 		"initial_context_bytes", len(baseContext),
 	)
+	if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+		return nodeExecutionResult{}, interruptErr
+	}
 
 	contextRef, err := execCtx.turnOutputs.PersistContext(execCtx.lifecycle.RunID(), node.ID, baseContext)
 	if err != nil {
@@ -276,6 +306,9 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 	contextMetadata := buildContextMetadata(baseContext, contextRef)
 	var previousFeedback *PreviousActionFeedback
 	for {
+		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+			return nodeExecutionResult{}, interruptErr
+		}
 		failedStepID = nil
 		if err := execCtx.guardrails.CheckBeforeStep(node.ID, time.Now().UTC()); err != nil {
 			logger.Error("deterministic runtime guardrail blocked new step start", "error", err)
@@ -328,6 +361,9 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to append node.turn.user", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.turn.user", err)
 		}
+		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+			return nodeExecutionResult{}, interruptErr
+		}
 
 		inferenceResult, err := execCtx.inference.Infer(ctx, inference.Request{
 			Messages: messages,
@@ -347,6 +383,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			Accounting: buildInferenceAccountingConfig(execCtx.runConfig),
 		})
 		if err != nil {
+			if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+				logger.Warn("inference interrupted by external stop request",
+					"step_id", stepStarted.StepID,
+					"node_id", node.ID,
+				)
+				return nodeExecutionResult{}, interruptErr
+			}
 			if limitErr := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); limitErr != nil {
 				logger.Error("deterministic runtime guardrail interrupted active inference step",
 					"step_id", stepStarted.StepID,
@@ -370,6 +413,9 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 		if err := execCtx.lifecycle.AppendNodeTurn(node.ID, runtime.TurnRoleModel, stepStarted.StepID, modelTurnRef); err != nil {
 			logger.Error("failed to append node.turn.model", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.turn.model", err)
+		}
+		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+			return nodeExecutionResult{}, interruptErr
 		}
 
 		decisionPayload, err := parseDecisionPayload(inferenceResult.ValidatedPayload)
@@ -424,6 +470,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				Collector:  subcalls,
 			})
 			if actionErr != nil {
+				if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+					logger.Warn("continue action interrupted by external stop request",
+						"step_id", stepStarted.StepID,
+						"node_id", node.ID,
+					)
+					return nodeExecutionResult{}, interruptErr
+				}
 				logger.Error("failed to execute continue action",
 					"step_id", stepStarted.StepID,
 					"error", actionErr,
@@ -441,6 +494,9 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 					return nodeExecutionResult{}, actionErr
 				}
 				return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to execute continue action", actionErr)
+			}
+			if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+				return nodeExecutionResult{}, interruptErr
 			}
 			if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
 				logger.Error("deterministic runtime guardrail interrupted active continue step", "step_id", stepStarted.StepID, "error", err)
@@ -497,6 +553,9 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			continue
 		}
 
+		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
+			return nodeExecutionResult{}, interruptErr
+		}
 		if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
 			logger.Error("deterministic runtime guardrail interrupted final-decision step before completion", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, err
@@ -639,6 +698,9 @@ func failRunningRunWithAccounting(lifecycle *runtime.Lifecycle, turnOutputs *Tur
 	if lifecycle == nil || runErr == nil {
 		return runErr
 	}
+	if interruptMetadata, ok := InterruptOf(runErr); ok {
+		return interruptRunWithAccounting(lifecycle, turnOutputs, ledger, runConfig, interruptMetadata, runErr)
+	}
 	if lifecycle.State() != runtime.RunStateRunning {
 		return runErr
 	}
@@ -710,6 +772,100 @@ func failRunningRunWithAccounting(lifecycle *runtime.Lifecycle, turnOutputs *Tur
 	)
 
 	return runErr
+}
+
+func interruptRunWithAccounting(lifecycle *runtime.Lifecycle, turnOutputs *TurnOutputStore, ledger *accounting.Ledger, runConfig config.RunConfig, interrupt InterruptMetadata, runErr error) error {
+	if lifecycle == nil || runErr == nil {
+		return runErr
+	}
+	if lifecycle.State() != runtime.RunStateQueued && lifecycle.State() != runtime.RunStateRunning {
+		return runErr
+	}
+
+	runAccounting := unavailableAccountingRollupForRun(runConfig)
+	var runAccountingRef *string
+	if ledger != nil {
+		runAccounting = ledger.RunRollup()
+	}
+	if turnOutputs != nil {
+		ref, err := turnOutputs.PersistRunAccounting(lifecycle.RunID(), runAccounting)
+		if err != nil {
+			harnessRunnerLogger().Error("failed to persist run.interrupted accounting output",
+				"run_id", lifecycle.RunID(),
+				"error", err,
+			)
+			runErr = fmt.Errorf("%w; additionally failed to persist run accounting output: %v", runErr, err)
+		} else {
+			runAccountingRef = &ref
+		}
+	}
+
+	interruptedByValue := resolveInterruptedBy(lifecycle, turnOutputs)
+	payload := runtime.RunInterruptedPayload{
+		Status:        "interrupted",
+		Reason:        runtime.RunInterruptedReasonUserRequest,
+		InterruptedBy: interruptedByValue,
+		Accounting:    runAccounting,
+		AccountingRef: runAccountingRef,
+	}
+	if strings.TrimSpace(interrupt.NodeID) != "" {
+		payload.InterruptedNodeID = cloneOptionalString(interrupt.NodeID)
+	}
+	if err := lifecycle.InterruptWith(payload); err != nil {
+		harnessRunnerLogger().Error("failed to persist run.interrupted event",
+			"run_id", lifecycle.RunID(),
+			"error", err,
+		)
+		return fmt.Errorf("%w; additionally failed to persist run.interrupted event: %v", runErr, err)
+	}
+
+	harnessRunnerLogger().Warn("run marked interrupted",
+		"run_id", lifecycle.RunID(),
+		"interrupted_by", valueOrEmpty(payload.InterruptedBy),
+		"interrupted_node_id", valueOrEmpty(payload.InterruptedNodeID),
+	)
+
+	return runErr
+}
+
+func interruptionError(ctx context.Context, nodeID string) error {
+	if !runtime.IsExternalStopContext(ctx) {
+		return nil
+	}
+	return NewInterruptError("run interrupted by external stop request", InterruptMetadata{NodeID: nodeID})
+}
+
+func resolveInterruptedBy(lifecycle *runtime.Lifecycle, turnOutputs *TurnOutputStore) *string {
+	runsBaseDir, err := runsBaseDirForLifecycle(lifecycle, turnOutputs)
+	if err != nil {
+		fallback := "signal.sigterm"
+		return &fallback
+	}
+	request, ok, err := runtime.ReadStopRequestMetadata(runsBaseDir, lifecycle.RunID())
+	if err != nil {
+		fallback := "signal.sigterm"
+		return &fallback
+	}
+	if ok {
+		requestedBy := request.RequestedBy
+		return &requestedBy
+	}
+	fallback := "signal.sigterm"
+	return &fallback
+}
+
+func runsBaseDirForLifecycle(lifecycle *runtime.Lifecycle, turnOutputs *TurnOutputStore) (string, error) {
+	if turnOutputs != nil && strings.TrimSpace(turnOutputs.runsBaseDir) != "" {
+		return turnOutputs.runsBaseDir, nil
+	}
+	if lifecycle == nil {
+		return "", fmt.Errorf("lifecycle is required")
+	}
+	eventsPath, err := lifecycle.EventsFilePath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(filepath.Dir(eventsPath)), nil
 }
 
 func newDefaultInferenceClient(_ config.RunConfig) (InferenceClient, error) {

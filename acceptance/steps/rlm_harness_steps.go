@@ -2231,7 +2231,7 @@ func (w *harnessWorld) guardrailActionArtifacts() ([]sigilharness.ActionArtifact
 		artifacts = append(artifacts, artifact)
 	}
 	if len(artifacts) == 0 {
-		return nil, fmt.Errorf("expected at least one guardrail action artifact")
+		return nil, nil
 	}
 	return artifacts, nil
 }

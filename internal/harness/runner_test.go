@@ -74,6 +74,16 @@ type totalStepsGuardrailInference struct {
 	call int
 }
 
+type interruptingInference struct {
+	mu                 sync.Mutex
+	baseDir            string
+	cancel             context.CancelCauseFunc
+	result             inference.Result
+	requests           []inference.Request
+	calls              int
+	sawProcessMetadata bool
+}
+
 func (s *subcallAwareInference) Infer(_ context.Context, request inference.Request) (inference.Result, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -194,6 +204,40 @@ func (s *totalStepsGuardrailInference) Infer(_ context.Context, request inferenc
 	default:
 		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; fmt.Print("child step")`), request), nil
 	}
+}
+
+func (s *interruptingInference) Infer(_ context.Context, request inference.Request) (inference.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.calls++
+	s.requests = append(s.requests, request)
+
+	runDirs, err := filepath.Glob(filepath.Join(s.baseDir, "*"))
+	if err != nil {
+		return inference.Result{}, err
+	}
+	if len(runDirs) != 1 {
+		return inference.Result{}, errors.New("expected exactly one run directory during interruption test")
+	}
+
+	runID := filepath.Base(runDirs[0])
+	if _, err := runtime.ReadProcessMetadata(s.baseDir, runID); err != nil {
+		return inference.Result{}, err
+	}
+	s.sawProcessMetadata = true
+
+	if err := runtime.WriteStopRequestMetadata(s.baseDir, runtime.StopRequestMetadata{
+		RunID:       runID,
+		RequestedAt: time.Now().UTC(),
+		RequestedBy: runtime.StopRequesterCLIRunStop,
+		Signal:      runtime.StopSignalSIGTERM,
+	}); err != nil {
+		return inference.Result{}, err
+	}
+
+	s.cancel(runtime.ErrExternalStopRequested)
+	return hydrateFinalEvidenceRef(s.result, request), nil
 }
 
 func hydrateFinalEvidenceRef(result inference.Result, request inference.Request) inference.Result {
@@ -882,6 +926,186 @@ func TestRunnerRunInferenceFailureAppendsRunFailed(t *testing.T) {
 	}
 	if payload.Accounting.TreeTotal.KnownTotalCostMicrousd != nil {
 		t.Fatalf("expected known_total_cost_microusd to remain unknown, got %+v", payload.Accounting.TreeTotal.KnownTotalCostMicrousd)
+	}
+}
+
+func TestRunnerRunInterruptsQueuedRunBeforeExecutionStart(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inferenceClient := &queuedInference{}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(runtime.ErrExternalStopRequested)
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(ctx, RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+		TemplateVars:  map[string]string{},
+	})
+	if err == nil {
+		t.Fatal("expected interruption error")
+	}
+
+	code, ok := CodeOf(err)
+	if !ok || code != ErrorCodeInterrupted {
+		t.Fatalf("expected interrupted error code, got %v", err)
+	}
+	if inferenceClient.calls != 0 {
+		t.Fatalf("expected queued interruption to avoid inference calls, got %d", inferenceClient.calls)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeRunRunning) != 0 {
+		t.Fatalf("expected no run.running event, got %d", countEventType(events, runtime.EventTypeRunRunning))
+	}
+	if countEventType(events, runtime.EventTypeNodeStarted) != 0 {
+		t.Fatalf("expected no node.started event, got %d", countEventType(events, runtime.EventTypeNodeStarted))
+	}
+	if countEventType(events, runtime.EventTypeRunInterrupted) != 1 {
+		t.Fatalf("expected one run.interrupted event, got %d", countEventType(events, runtime.EventTypeRunInterrupted))
+	}
+
+	payload := mustReadRunInterruptedPayload(t, baseDir)
+	if payload.Reason != runtime.RunInterruptedReasonUserRequest {
+		t.Fatalf("expected user_request reason, got %q", payload.Reason)
+	}
+	if payload.InterruptedBy == nil || *payload.InterruptedBy != "signal.sigterm" {
+		t.Fatalf("expected interrupted_by signal.sigterm fallback, got %+v", payload.InterruptedBy)
+	}
+	if payload.InterruptedNodeID != nil {
+		t.Fatalf("expected interrupted_node_id to be omitted before execution start, got %q", *payload.InterruptedNodeID)
+	}
+	if payload.AccountingRef != nil {
+		t.Fatalf("expected accounting_ref to remain omitted without turn outputs, got %q", *payload.AccountingRef)
+	}
+
+	runID := events[0].RunID
+	processPath, pathErr := runtime.ProcessMetadataPath(baseDir, runID)
+	if pathErr != nil {
+		t.Fatalf("expected process metadata path resolution success, got %v", pathErr)
+	}
+	if _, statErr := os.Stat(processPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected process metadata cleanup after interruption, got %v", statErr)
+	}
+}
+
+func TestRunnerRunInterruptsActiveWorkWithoutSyntheticNodeFailure(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(12)
+	outputTokens := int64(5)
+	totalTokens := int64(17)
+	totalCost := int64(1750)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	inferenceClient := &interruptingInference{
+		baseDir: baseDir,
+		cancel:  cancel,
+		result: inference.Result{
+			SchemaID: "sigil.rlm.response.v1",
+			ValidatedPayload: map[string]any{
+				"decision": "final",
+				"final": map[string]any{
+					"answer":   "done",
+					"evidence": []any{map[string]any{"ref": "__context_ref__"}},
+				},
+			},
+			Gateway:           "openrouter",
+			Provider:          "openai",
+			Model:             "gpt-5.1",
+			GatewayResponseID: "resp_interrupt",
+			FinishStatus:      "completed",
+			RawMetadata:       map[string]any{},
+			Accounting: accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:                 "openai",
+				Model:                    "gpt-5.1",
+				PricingVersion:           "v1",
+				InputTokens:              &inputTokens,
+				OutputTokens:             &outputTokens,
+				TotalTokens:              &totalTokens,
+				GatewayTotalCostMicrousd: &totalCost,
+			}),
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(ctx, RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+		TemplateVars:  map[string]string{},
+	})
+	if err == nil {
+		t.Fatal("expected interruption error")
+	}
+
+	code, ok := CodeOf(err)
+	if !ok || code != ErrorCodeInterrupted {
+		t.Fatalf("expected interrupted error code, got %v", err)
+	}
+	if !inferenceClient.sawProcessMetadata {
+		t.Fatal("expected active run to publish process metadata before interruption")
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeRunInterrupted) != 1 {
+		t.Fatalf("expected one run.interrupted event, got %d", countEventType(events, runtime.EventTypeRunInterrupted))
+	}
+	if countEventType(events, runtime.EventTypeRunFailed) != 0 {
+		t.Fatalf("expected no run.failed event, got %d", countEventType(events, runtime.EventTypeRunFailed))
+	}
+	if countEventType(events, runtime.EventTypeNodeFailed) != 0 {
+		t.Fatalf("expected no synthetic node.failed event, got %d", countEventType(events, runtime.EventTypeNodeFailed))
+	}
+	if countEventType(events, runtime.EventTypeNodeStepCompleted) != 0 {
+		t.Fatalf("expected no synthetic node.step.completed event, got %d", countEventType(events, runtime.EventTypeNodeStepCompleted))
+	}
+
+	payload := mustReadRunInterruptedPayload(t, baseDir)
+	if payload.Reason != runtime.RunInterruptedReasonUserRequest {
+		t.Fatalf("expected user_request reason, got %q", payload.Reason)
+	}
+	if payload.InterruptedBy == nil || *payload.InterruptedBy != runtime.StopRequesterCLIRunStop {
+		t.Fatalf("expected interrupted_by %q, got %+v", runtime.StopRequesterCLIRunStop, payload.InterruptedBy)
+	}
+	if payload.InterruptedNodeID == nil || strings.TrimSpace(*payload.InterruptedNodeID) == "" {
+		t.Fatalf("expected interrupted_node_id to be set for active interruption, got %+v", payload.InterruptedNodeID)
+	}
+	if payload.Accounting.TreeTotal.TotalTokens == nil || *payload.Accounting.TreeTotal.TotalTokens != totalTokens {
+		t.Fatalf("expected partial accounting total_tokens=%d, got %+v", totalTokens, payload.Accounting.TreeTotal.TotalTokens)
+	}
+	if payload.AccountingRef == nil || *payload.AccountingRef != "run-output://run/accounting.json" {
+		t.Fatalf("expected run accounting_ref, got %+v", payload.AccountingRef)
+	}
+
+	runID := events[0].RunID
+	stopRequest, ok, readErr := runtime.ReadStopRequestMetadata(baseDir, runID)
+	if readErr != nil {
+		t.Fatalf("expected stop request read success, got %v", readErr)
+	}
+	if !ok {
+		t.Fatal("expected stop request metadata to persist")
+	}
+	if stopRequest.RequestedBy != runtime.StopRequesterCLIRunStop {
+		t.Fatalf("expected requested_by %q, got %q", runtime.StopRequesterCLIRunStop, stopRequest.RequestedBy)
+	}
+
+	processPath, pathErr := runtime.ProcessMetadataPath(baseDir, runID)
+	if pathErr != nil {
+		t.Fatalf("expected process metadata path resolution success, got %v", pathErr)
+	}
+	if _, statErr := os.Stat(processPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected process metadata cleanup after active interruption, got %v", statErr)
 	}
 }
 
@@ -1587,6 +1811,26 @@ func mustReadRunFailedPayload(t *testing.T, runsBaseDir string) runtime.RunFaile
 
 	t.Fatalf("expected run.failed payload in events")
 	return runtime.RunFailedPayload{}
+}
+
+func mustReadRunInterruptedPayload(t *testing.T, runsBaseDir string) runtime.RunInterruptedPayload {
+	t.Helper()
+
+	events := mustReadPersistedEvents(t, runsBaseDir)
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != runtime.EventTypeRunInterrupted {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.RunInterruptedPayload)
+		if !ok {
+			t.Fatalf("expected run.interrupted payload type, got %T", event.Payload)
+		}
+		return payload
+	}
+
+	t.Fatalf("expected run.interrupted payload in events")
+	return runtime.RunInterruptedPayload{}
 }
 
 func mustReadPersistedEvents(t *testing.T, runsBaseDir string) []runtime.EventEnvelope {

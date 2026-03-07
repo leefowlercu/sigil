@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -399,9 +400,10 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			name:      "run.interrupted",
 			eventType: EventTypeRunInterrupted,
 			payload: RunInterruptedPayload{
-				Status:     "interrupted",
-				Reason:     RunInterruptedReasonUserRequest,
-				Accounting: accountingRollup,
+				Status:        "interrupted",
+				Reason:        RunInterruptedReasonUserRequest,
+				InterruptedBy: stringPointer("cli.run.stop"),
+				Accounting:    accountingRollup,
 			},
 		},
 	}
@@ -788,14 +790,6 @@ func TestParseEventEnvelopeStrictAcceptsLegacyV1PayloadsWithoutAccountingFieldsF
 				"retryable":     false,
 			},
 		},
-		{
-			name:      "run.interrupted",
-			eventType: EventTypeRunInterrupted,
-			payload: map[string]any{
-				"status": "interrupted",
-				"reason": string(RunInterruptedReasonUserRequest),
-			},
-		},
 	}
 
 	for _, testCase := range testCases {
@@ -827,6 +821,37 @@ func TestParseEventEnvelopeStrictAcceptsLegacyV1PayloadsWithoutAccountingFieldsF
 
 			assertLegacyPayloadAccountingDefaults(t, event.Payload)
 		})
+	}
+}
+
+func TestParseEventEnvelopeStrictRejectsUserRequestInterruptedWithoutInterruptedBy(t *testing.T) {
+	runID := mustUUIDv7String(t)
+	raw := map[string]any{
+		"event_id":       mustUUIDv7String(t),
+		"schema_version": SchemaVersionV1,
+		"run_id":         runID,
+		"seq":            2,
+		"ts":             time.Now().UTC().Format(time.RFC3339Nano),
+		"type":           EventTypeRunInterrupted,
+		"causation_id":   mustUUIDv7String(t),
+		"correlation_id": runID,
+		"payload": map[string]any{
+			"status": "interrupted",
+			"reason": string(RunInterruptedReasonUserRequest),
+		},
+	}
+
+	serialized, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("expected serialization success, got %v", err)
+	}
+
+	_, err = ParseEventEnvelopeStrict(serialized)
+	if err == nil {
+		t.Fatal("expected user_request interruption without interrupted_by to fail")
+	}
+	if !strings.Contains(err.Error(), "interrupted_by") {
+		t.Fatalf("expected interrupted_by validation error, got %v", err)
 	}
 }
 
@@ -1153,4 +1178,8 @@ func assertLegacyPayloadAccountingDefaults(t *testing.T, payload any) {
 	default:
 		t.Fatalf("unexpected payload type %T", payload)
 	}
+}
+
+func stringPointer(value string) *string {
+	return &value
 }

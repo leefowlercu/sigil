@@ -809,7 +809,11 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		if _, ok := runInterruptedReasons[payload.Reason]; !ok {
 			return nil, fmt.Errorf("run.interrupted reason %q is not supported; %w", payload.Reason, ErrInvalidEvent)
 		}
-		if payload.InterruptedBy != nil && strings.TrimSpace(*payload.InterruptedBy) == "" {
+		if payload.Reason == RunInterruptedReasonUserRequest {
+			if payload.InterruptedBy == nil || strings.TrimSpace(*payload.InterruptedBy) == "" {
+				return nil, fmt.Errorf("run.interrupted interrupted_by is required when reason=user_request; %w", ErrInvalidEvent)
+			}
+		} else if payload.InterruptedBy != nil && strings.TrimSpace(*payload.InterruptedBy) == "" {
 			return nil, fmt.Errorf("run.interrupted interrupted_by must be non-empty when present; %w", ErrInvalidEvent)
 		}
 		if payload.InterruptedNodeID != nil {
