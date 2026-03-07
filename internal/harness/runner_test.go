@@ -1623,6 +1623,454 @@ func TestRunnerRunFailsWhenConsecutiveFailedContinueActionsGuardrailBreached(t *
 	}
 }
 
+func TestRunnerRunFailsWhenMaxTotalTokensGuardrailBreachedByModelTurn(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(6)
+	outputTokens := int64(5)
+	totalTokens := int64(11)
+	maxTotalTokens := int64(10)
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:       "openai",
+				Model:          "gpt-5.1",
+				PricingVersion: "v1",
+				InputTokens:    &inputTokens,
+				OutputTokens:   &outputTokens,
+				TotalTokens:    &totalTokens,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalTokens = &maxTotalTokens
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected max_total_tokens guardrail run failure")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalTokens {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalTokens, limit.LimitKey)
+	}
+	if limit.ConfiguredValue != "10" {
+		t.Fatalf("expected configured_value 10, got %q", limit.ConfiguredValue)
+	}
+	if limit.ObservedValue != "11" {
+		t.Fatalf("expected observed_value 13, got %q", limit.ObservedValue)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeTurnModel) != 1 {
+		t.Fatalf("expected one node.turn.model event before budget failure, got %d", countEventType(events, runtime.EventTypeNodeTurnModel))
+	}
+	if countEventType(events, runtime.EventTypeNodeStepCompleted) != 0 {
+		t.Fatalf("expected no node.step.completed event after model-turn budget failure, got %d", countEventType(events, runtime.EventTypeNodeStepCompleted))
+	}
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.LimitKey == nil || *payload.LimitKey != limitKeyMaxTotalTokens {
+		t.Fatalf("expected run.failed limit_key %q, got %+v", limitKeyMaxTotalTokens, payload.LimitKey)
+	}
+}
+
+func TestRunnerRunFailsWhenMaxTotalCostUSDGuardrailBreachedByModelTurn(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(6)
+	outputTokens := int64(5)
+	totalTokens := int64(11)
+	totalCost := int64(1_250_000)
+	maxTotalCostUSD := "1.000000"
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:                 "openai",
+				Model:                    "gpt-5.1",
+				PricingVersion:           "v1",
+				InputTokens:              &inputTokens,
+				OutputTokens:             &outputTokens,
+				TotalTokens:              &totalTokens,
+				GatewayTotalCostMicrousd: &totalCost,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalCostUSD = &maxTotalCostUSD
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected max_total_cost_usd guardrail run failure")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalCostUSD {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalCostUSD, limit.LimitKey)
+	}
+	if limit.ConfiguredValue != "1" {
+		t.Fatalf("expected configured_value %q, got %q", "1", limit.ConfiguredValue)
+	}
+	if limit.ObservedValue != "1.25" {
+		t.Fatalf("expected observed_value %q, got %q", "1.35", limit.ObservedValue)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeTurnModel) != 1 {
+		t.Fatalf("expected one node.turn.model event before cost budget failure, got %d", countEventType(events, runtime.EventTypeNodeTurnModel))
+	}
+}
+
+func TestRunnerRunFailsWhenRecursiveSubcallTokenBudgetGuardrailBreached(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	rootInputTokens := int64(1)
+	rootOutputTokens := int64(1)
+	rootTotalTokens := int64(2)
+	inputTokens := int64(6)
+	outputTokens := int64(5)
+	totalTokens := int64(11)
+	maxTotalTokens := int64(10)
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResultWithAccounting(`import "fmt"; _, _ = rlm_query("child prompt", "child context"); fmt.Print("after-budget")`, accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:       "openai",
+				Model:          "gpt-5.1",
+				PricingVersion: "v1",
+				InputTokens:    &rootInputTokens,
+				OutputTokens:   &rootOutputTokens,
+				TotalTokens:    &rootTotalTokens,
+			}))},
+			{result: finalResultWithAccounting("child final", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:       "openai",
+				Model:          "gpt-5.1",
+				PricingVersion: "v1",
+				InputTokens:    &inputTokens,
+				OutputTokens:   &outputTokens,
+				TotalTokens:    &totalTokens,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalTokens = &maxTotalTokens
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected recursive subcall token-budget guardrail run failure")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalTokens {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalTokens, limit.LimitKey)
+	}
+	if limit.ObservedValue != "13" {
+		t.Fatalf("expected observed_value 13, got %q", limit.ObservedValue)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeSubcallExecuted) != 1 {
+		t.Fatalf("expected one node.subcall.executed event before token-budget failure, got %d", countEventType(events, runtime.EventTypeNodeSubcallExecuted))
+	}
+	if countEventType(events, runtime.EventTypeNodeStepCompleted) != 2 {
+		t.Fatalf("expected child and root node.step.completed events before fatal subcall budget failure, got %d", countEventType(events, runtime.EventTypeNodeStepCompleted))
+	}
+	for _, artifact := range mustReadActionArtifacts(t, baseDir) {
+		if strings.Contains(artifact.Stdout, "after-budget") {
+			t.Fatalf("expected recursive subcall budget failure to abort post-breach action output, got stdout %q", artifact.Stdout)
+		}
+		if len(artifact.Subcalls) != 1 {
+			t.Fatalf("expected one subcall trace in action artifact, got %d", len(artifact.Subcalls))
+		}
+	}
+}
+
+func TestRunnerRunFailsWhenRecursiveSubcallCostBudgetGuardrailBreached(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	rootInputTokens := int64(1)
+	rootOutputTokens := int64(1)
+	rootTotalTokens := int64(2)
+	rootTotalCost := int64(100_000)
+	inputTokens := int64(6)
+	outputTokens := int64(5)
+	totalTokens := int64(11)
+	totalCost := int64(1_250_000)
+	maxTotalCostUSD := "1"
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResultWithAccounting(`import "fmt"; _, _ = rlm_query("child prompt", "child context"); fmt.Print("after-budget")`, accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:                 "openai",
+				Model:                    "gpt-5.1",
+				PricingVersion:           "v1",
+				InputTokens:              &rootInputTokens,
+				OutputTokens:             &rootOutputTokens,
+				TotalTokens:              &rootTotalTokens,
+				GatewayTotalCostMicrousd: &rootTotalCost,
+			}))},
+			{result: finalResultWithAccounting("child final", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:                 "openai",
+				Model:                    "gpt-5.1",
+				PricingVersion:           "v1",
+				InputTokens:              &inputTokens,
+				OutputTokens:             &outputTokens,
+				TotalTokens:              &totalTokens,
+				GatewayTotalCostMicrousd: &totalCost,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalCostUSD = &maxTotalCostUSD
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected recursive subcall cost-budget guardrail run failure")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalCostUSD {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalCostUSD, limit.LimitKey)
+	}
+	if limit.ObservedValue != "1.35" {
+		t.Fatalf("expected observed_value %q, got %q", "1.35", limit.ObservedValue)
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	if countEventType(events, runtime.EventTypeNodeSubcallExecuted) != 1 {
+		t.Fatalf("expected one node.subcall.executed event before cost-budget failure, got %d", countEventType(events, runtime.EventTypeNodeSubcallExecuted))
+	}
+}
+
+func TestRunnerRunFailsClosedWhenTokenBudgetSeesPartialAccounting(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(5)
+	totalTokens := int64(5)
+	maxTotalTokens := int64(10)
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:       "openai",
+				Model:          "gpt-5.1",
+				PricingVersion: "v1",
+				InputTokens:    &inputTokens,
+				TotalTokens:    &totalTokens,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalTokens = &maxTotalTokens
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected partial token accounting to fail closed under active token budget")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalTokens {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalTokens, limit.LimitKey)
+	}
+	if limit.ObservedValue != "5" {
+		t.Fatalf("expected observed_value 5, got %q", limit.ObservedValue)
+	}
+	var typed *Error
+	if !errors.As(err, &typed) {
+		t.Fatalf("expected typed harness error, got %T", err)
+	}
+	if !strings.Contains(typed.Message, "accounting_status=partial") {
+		t.Fatalf("expected partial-accounting status in error message, got %q", typed.Message)
+	}
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.Accounting.TreeTotal.TokenStatus != accounting.StatusPartial {
+		t.Fatalf("expected partial token status in run.failed accounting, got %q", payload.Accounting.TreeTotal.TokenStatus)
+	}
+}
+
+func TestRunnerRunFailsClosedWhenCostBudgetSeesPartialAccounting(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(5)
+	outputTokens := int64(4)
+	totalTokens := int64(9)
+	inputCost := int64(125_000)
+	maxTotalCostUSD := "1"
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:                 "openai",
+				Model:                    "gpt-5.1",
+				PricingVersion:           "v1",
+				InputTokens:              &inputTokens,
+				OutputTokens:             &outputTokens,
+				TotalTokens:              &totalTokens,
+				GatewayInputCostMicrousd: &inputCost,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalCostUSD = &maxTotalCostUSD
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected partial cost accounting to fail closed under active cost budget")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalCostUSD {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalCostUSD, limit.LimitKey)
+	}
+	if limit.ObservedValue != "0.125" {
+		t.Fatalf("expected observed_value %q, got %q", "0.125", limit.ObservedValue)
+	}
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.Accounting.TreeTotal.CostStatus != accounting.StatusPartial {
+		t.Fatalf("expected partial cost status in run.failed accounting, got %q", payload.Accounting.TreeTotal.CostStatus)
+	}
+}
+
+func TestRunnerRunFailsClosedWhenCostBudgetSeesUnavailableAccounting(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	inputTokens := int64(5)
+	outputTokens := int64(4)
+	totalTokens := int64(9)
+	maxTotalCostUSD := "1"
+
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: finalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:       "openai",
+				Model:          "gpt-5.1",
+				PricingVersion: "v1",
+				InputTokens:    &inputTokens,
+				OutputTokens:   &outputTokens,
+				TotalTokens:    &totalTokens,
+			}))},
+		},
+	}
+
+	runConfig := testRunConfig("root prompt", "", "root context", "")
+	runConfig.Guardrails.MaxTotalCostUSD = &maxTotalCostUSD
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	_, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+	})
+	if err == nil {
+		t.Fatal("expected unavailable cost accounting to fail closed under active cost budget")
+	}
+
+	limit, ok := LimitOf(err)
+	if !ok {
+		t.Fatalf("expected limit metadata on error")
+	}
+	if limit.LimitKey != limitKeyMaxTotalCostUSD {
+		t.Fatalf("expected limit key %q, got %q", limitKeyMaxTotalCostUSD, limit.LimitKey)
+	}
+	if limit.ObservedValue != "unavailable" {
+		t.Fatalf("expected observed_value %q, got %q", "unavailable", limit.ObservedValue)
+	}
+	payload := mustReadRunFailedPayload(t, baseDir)
+	if payload.Accounting.TreeTotal.CostStatus != accounting.StatusUnavailable {
+		t.Fatalf("expected unavailable cost status in run.failed accounting, got %q", payload.Accounting.TreeTotal.CostStatus)
+	}
+}
+
 func TestRunnerRunFailsWhenChildGuardrailBreachAlsoTriggersParentExecError(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
@@ -1903,6 +2351,12 @@ func continueResult(replCode string) inference.Result {
 	}
 }
 
+func continueResultWithAccounting(replCode string, summary accounting.Summary) inference.Result {
+	result := continueResult(replCode)
+	result.Accounting = summary
+	return result
+}
+
 func finalResult(answer string) inference.Result {
 	return inference.Result{
 		SchemaID: "sigil.rlm.response.v1",
@@ -1920,6 +2374,12 @@ func finalResult(answer string) inference.Result {
 		FinishStatus:      "completed",
 		RawMetadata:       map[string]any{},
 	}
+}
+
+func finalResultWithAccounting(answer string, summary accounting.Summary) inference.Result {
+	result := finalResult(answer)
+	result.Accounting = summary
+	return result
 }
 
 func finalResultWithEvidence(answer string, ref string) inference.Result {

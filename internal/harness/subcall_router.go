@@ -55,6 +55,7 @@ type SubcallRouter struct {
 	nonRecursive bool
 	turnOutputs  *TurnOutputStore
 	ledger       *accounting.Ledger
+	guardrails   *deterministicGuardrails
 	executeChild childNodeExecutor
 	logger       *slog.Logger
 	batchWorkers int
@@ -75,6 +76,7 @@ type SubcallRouterInput struct {
 	NonRecursive bool
 	TurnOutputs  *TurnOutputStore
 	Ledger       *accounting.Ledger
+	Guardrails   *deterministicGuardrails
 	ExecuteChild childNodeExecutor
 }
 
@@ -114,6 +116,7 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 		nonRecursive:   input.NonRecursive,
 		turnOutputs:    input.TurnOutputs,
 		ledger:         input.Ledger,
+		guardrails:     input.Guardrails,
 		executeChild:   input.ExecuteChild,
 		logger:         subcallRouterLogger().With("run_id", input.Lifecycle.RunID(), "node_id", input.Node.ID, "step_id", input.StepID),
 		batchWorkers:   defaultLLMQueryBatchWorkers,
@@ -126,13 +129,17 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 
 func (r *SubcallRouter) LLMQuery(ctx context.Context, request repl.QueryRequest) (string, error) {
 	record := r.executeLLMQuery(ctx, request)
-	r.persistRecord(runtime.SubcallTypeLLMQuery, request, record)
+	if err := r.persistRecord(runtime.SubcallTypeLLMQuery, request, record); err != nil {
+		return record.answer, repl.MarkFatalExecution(err)
+	}
 	return record.answer, record.err
 }
 
 func (r *SubcallRouter) RLMQuery(ctx context.Context, request repl.QueryRequest) (string, error) {
 	record, fatalErr := r.executeRLMQuery(ctx, request)
-	r.persistRecord(runtime.SubcallTypeRLMQuery, request, record)
+	if err := r.persistRecord(runtime.SubcallTypeRLMQuery, request, record); err != nil {
+		return record.answer, repl.MarkFatalExecution(err)
+	}
 	if fatalErr != nil {
 		if record.err != nil {
 			return record.answer, repl.MarkFatalExecution(record.err)
@@ -210,7 +217,7 @@ func (r *SubcallRouter) RLMQueryBatched(ctx context.Context, requests []repl.Bat
 			Prompt:  request.Prompt,
 			Context: request.Context,
 		}, record); err != nil {
-			return nil, err
+			return nil, repl.MarkFatalExecution(err)
 		}
 		if fatalErr != nil {
 			if record.err != nil {
@@ -429,6 +436,13 @@ func (r *SubcallRouter) persistRecord(subcallType runtime.SubcallType, request r
 	r.mu.Lock()
 	r.traces = append(r.traces, trace)
 	r.mu.Unlock()
+
+	if r.guardrails != nil {
+		if err := r.guardrails.CheckRunAccounting(r.node.ID, r.stepID, r.ledger.RunRollup().TreeTotal); err != nil {
+			r.setFatal(err)
+			return err
+		}
+	}
 	return nil
 }
 

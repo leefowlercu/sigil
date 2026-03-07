@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/spf13/viper"
 )
 
@@ -161,6 +162,9 @@ func initRunFromPath(runConfigPath string, allowMissing bool) (err error) {
 	}
 	if err := decodeAccountingFallbackPricing(v, &cfg); err != nil {
 		return fmt.Errorf("failed to decode accounting fallback pricing; %w", err)
+	}
+	if err := decodeGuardrailBudgetFields(v, &cfg); err != nil {
+		return fmt.Errorf("failed to decode guardrail budget fields; %w", err)
 	}
 	if err := applyAccountingFallbackPricingEnvOverrides(&cfg); err != nil {
 		return fmt.Errorf("failed to apply accounting environment overrides; %w", err)
@@ -426,6 +430,42 @@ func validateRunConfig(cfg RunConfig) error {
 	if cfg.Guardrails.MaxConsecutiveStepFailures < 1 {
 		return errors.New("guardrails.max_consecutive_step_failures must be >= 1")
 	}
+	if cfg.Guardrails.MaxTotalTokens != nil && *cfg.Guardrails.MaxTotalTokens < 1 {
+		return errors.New("guardrails.max_total_tokens must be >= 1")
+	}
+	if cfg.Guardrails.MaxTotalCostUSD != nil {
+		if _, _, err := accounting.NormalizeUSDDecimal(*cfg.Guardrails.MaxTotalCostUSD); err != nil {
+			return fmt.Errorf("guardrails.max_total_cost_usd %w", err)
+		}
+	}
+
+	return nil
+}
+
+func decodeGuardrailBudgetFields(v *viper.Viper, cfg *RunConfig) error {
+	if v == nil || cfg == nil {
+		return nil
+	}
+
+	maxTotalTokens, ok, err := decodeOptionalPositiveInt64Value(v.Get("guardrails.max_total_tokens"), "guardrails.max_total_tokens")
+	if err != nil {
+		return err
+	}
+	if ok {
+		cfg.Guardrails.MaxTotalTokens = &maxTotalTokens
+	} else {
+		cfg.Guardrails.MaxTotalTokens = nil
+	}
+
+	maxTotalCostUSD, ok, err := decodeOptionalUSDBudgetValue(v.Get("guardrails.max_total_cost_usd"), "guardrails.max_total_cost_usd")
+	if err != nil {
+		return err
+	}
+	if ok {
+		cfg.Guardrails.MaxTotalCostUSD = &maxTotalCostUSD
+	} else {
+		cfg.Guardrails.MaxTotalCostUSD = nil
+	}
 
 	return nil
 }
@@ -561,6 +601,65 @@ func parsePositiveMicrousdEnv(name string, raw string) (int64, error) {
 
 func normalizeEnvToken(raw string) string {
 	return strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(strings.TrimSpace(raw)))
+}
+
+func decodeOptionalPositiveInt64Value(raw any, field string) (int64, bool, error) {
+	if raw == nil {
+		return 0, false, nil
+	}
+
+	switch typed := raw.(type) {
+	case int:
+		if typed < 1 {
+			return 0, false, fmt.Errorf("%s must be > 0", field)
+		}
+		return int64(typed), true, nil
+	case int32:
+		if typed < 1 {
+			return 0, false, fmt.Errorf("%s must be > 0", field)
+		}
+		return int64(typed), true, nil
+	case int64:
+		if typed < 1 {
+			return 0, false, fmt.Errorf("%s must be > 0", field)
+		}
+		return typed, true, nil
+	case float64:
+		if math.Trunc(typed) != typed {
+			return 0, false, fmt.Errorf("%s must be an integer, got %v", field, typed)
+		}
+		if typed < 1 {
+			return 0, false, fmt.Errorf("%s must be > 0", field)
+		}
+		return int64(typed), true, nil
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return 0, false, fmt.Errorf("%s must be a base-10 integer; %w", field, err)
+		}
+		if parsed < 1 {
+			return 0, false, fmt.Errorf("%s must be > 0", field)
+		}
+		return parsed, true, nil
+	default:
+		return 0, false, fmt.Errorf("%s must be an integer, got %T", field, raw)
+	}
+}
+
+func decodeOptionalUSDBudgetValue(raw any, field string) (string, bool, error) {
+	if raw == nil {
+		return "", false, nil
+	}
+
+	typed, ok := raw.(string)
+	if !ok {
+		return "", false, fmt.Errorf("%s must be a string, got %T", field, raw)
+	}
+	canonical, _, err := accounting.NormalizeUSDDecimal(typed)
+	if err != nil {
+		return "", false, fmt.Errorf("%s %w", field, err)
+	}
+	return canonical, true, nil
 }
 
 func decodeFallbackPricingModel(raw map[string]any) (RunAccountingFallbackModelConfig, error) {

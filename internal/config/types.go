@@ -51,10 +51,12 @@ type RunRLMConfig struct {
 
 // RunGuardrailsConfig defines deterministic harness runtime guardrails.
 type RunGuardrailsConfig struct {
-	MaxStepsPerNode            int `yaml:"max_steps_per_node" mapstructure:"max_steps_per_node"`
-	MaxTotalStepsPerRun        int `yaml:"max_total_steps_per_run" mapstructure:"max_total_steps_per_run"`
-	MaxRunDurationMS           int `yaml:"max_run_duration_ms" mapstructure:"max_run_duration_ms"`
-	MaxConsecutiveStepFailures int `yaml:"max_consecutive_step_failures" mapstructure:"max_consecutive_step_failures"`
+	MaxStepsPerNode            int     `yaml:"max_steps_per_node" mapstructure:"max_steps_per_node"`
+	MaxTotalStepsPerRun        int     `yaml:"max_total_steps_per_run" mapstructure:"max_total_steps_per_run"`
+	MaxRunDurationMS           int     `yaml:"max_run_duration_ms" mapstructure:"max_run_duration_ms"`
+	MaxConsecutiveStepFailures int     `yaml:"max_consecutive_step_failures" mapstructure:"max_consecutive_step_failures"`
+	MaxTotalTokens             *int64  `yaml:"max_total_tokens" mapstructure:"max_total_tokens"`
+	MaxTotalCostUSD            *string `yaml:"max_total_cost_usd" mapstructure:"max_total_cost_usd"`
 }
 
 // RunAccountingConfig defines accounting policy and fallback pricing.

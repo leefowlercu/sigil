@@ -239,6 +239,12 @@ func TestNewDefaultRunConfig(t *testing.T) {
 	if defaults.Guardrails.MaxConsecutiveStepFailures != DefaultRunGuardrailsMaxConsecutiveStepFailures {
 		t.Fatalf("expected guardrails.max_consecutive_step_failures %d, got %d", DefaultRunGuardrailsMaxConsecutiveStepFailures, defaults.Guardrails.MaxConsecutiveStepFailures)
 	}
+	if defaults.Guardrails.MaxTotalTokens != nil {
+		t.Fatalf("expected guardrails.max_total_tokens to be unset by default, got %v", defaults.Guardrails.MaxTotalTokens)
+	}
+	if defaults.Guardrails.MaxTotalCostUSD != nil {
+		t.Fatalf("expected guardrails.max_total_cost_usd to be unset by default, got %v", defaults.Guardrails.MaxTotalCostUSD)
+	}
 
 	if defaults.Accounting.PricingVersion != DefaultRunAccountingPricingVersion {
 		t.Fatalf("expected accounting.pricing_version %q, got %q", DefaultRunAccountingPricingVersion, defaults.Accounting.PricingVersion)
@@ -475,6 +481,12 @@ func TestInitRunFromPathAppliesGatewayOpenRouterAndRLMDefaults(t *testing.T) {
 	if cfg.Guardrails.MaxConsecutiveStepFailures != DefaultRunGuardrailsMaxConsecutiveStepFailures {
 		t.Fatalf("expected guardrails.max_consecutive_step_failures %d, got %d", DefaultRunGuardrailsMaxConsecutiveStepFailures, cfg.Guardrails.MaxConsecutiveStepFailures)
 	}
+	if cfg.Guardrails.MaxTotalTokens != nil {
+		t.Fatalf("expected guardrails.max_total_tokens to remain unset by default, got %v", cfg.Guardrails.MaxTotalTokens)
+	}
+	if cfg.Guardrails.MaxTotalCostUSD != nil {
+		t.Fatalf("expected guardrails.max_total_cost_usd to remain unset by default, got %v", cfg.Guardrails.MaxTotalCostUSD)
+	}
 }
 
 func TestInitRunFromPathRejectsUnsupportedGateway(t *testing.T) {
@@ -690,6 +702,8 @@ func TestInitRunFromPathAppliesGuardrailEnvironmentOverrides(t *testing.T) {
 		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN",
 		"SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS",
 		"SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_TOKENS",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_COST_USD",
 	)
 	workDir := t.TempDir()
 	chdir(t, workDir)
@@ -698,13 +712,15 @@ func TestInitRunFromPathAppliesGuardrailEnvironmentOverrides(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n",
+		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n  max_total_tokens: 99\n  max_total_cost_usd: \"0.25\"\n",
 	)
 
 	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE", "64")
 	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN", "256")
 	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS", "1200000")
 	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES", "6")
+	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_TOTAL_TOKENS", "512")
+	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_TOTAL_COST_USD", "001.230000")
 
 	if err := InitRunFromPath(configPath); err != nil {
 		t.Fatalf("expected run config init success, got %v", err)
@@ -722,6 +738,12 @@ func TestInitRunFromPathAppliesGuardrailEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.Guardrails.MaxConsecutiveStepFailures != 6 {
 		t.Fatalf("expected guardrails.max_consecutive_step_failures 6, got %d", cfg.Guardrails.MaxConsecutiveStepFailures)
+	}
+	if cfg.Guardrails.MaxTotalTokens == nil || *cfg.Guardrails.MaxTotalTokens != 512 {
+		t.Fatalf("expected guardrails.max_total_tokens 512, got %+v", cfg.Guardrails.MaxTotalTokens)
+	}
+	if cfg.Guardrails.MaxTotalCostUSD == nil || *cfg.Guardrails.MaxTotalCostUSD != "1.23" {
+		t.Fatalf("expected guardrails.max_total_cost_usd canonicalized to %q, got %+v", "1.23", cfg.Guardrails.MaxTotalCostUSD)
 	}
 }
 
@@ -750,6 +772,18 @@ func TestInitRunFromPathRejectsInvalidGuardrailValues(t *testing.T) {
 			name:    "max consecutive failures non-positive",
 			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 0\n",
 		},
+		{
+			name:    "max total tokens non-positive",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_tokens: 0\n",
+		},
+		{
+			name:    "max total cost usd malformed",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_cost_usd: \"1.2345678\"\n",
+		},
+		{
+			name:    "max total cost usd numeric instead of string",
+			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_cost_usd: 1.25\n",
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -761,6 +795,31 @@ func TestInitRunFromPathRejectsInvalidGuardrailValues(t *testing.T) {
 				t.Fatal("expected guardrail validation failure")
 			}
 		})
+	}
+}
+
+func TestInitRunFromPathCanonicalizesGuardrailCostBudgetFromFile(t *testing.T) {
+	clearActiveRunConfig()
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	configPath := filepath.Join(workDir, "sigil-run.yaml")
+	writeRunTestFile(
+		t,
+		configPath,
+		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n  max_total_tokens: 321\n  max_total_cost_usd: \"00012.340000\"\n",
+	)
+
+	if err := InitRunFromPath(configPath); err != nil {
+		t.Fatalf("expected run config init success, got %v", err)
+	}
+
+	cfg := MustGetRun()
+	if cfg.Guardrails.MaxTotalTokens == nil || *cfg.Guardrails.MaxTotalTokens != 321 {
+		t.Fatalf("expected guardrails.max_total_tokens 321, got %+v", cfg.Guardrails.MaxTotalTokens)
+	}
+	if cfg.Guardrails.MaxTotalCostUSD == nil || *cfg.Guardrails.MaxTotalCostUSD != "12.34" {
+		t.Fatalf("expected guardrails.max_total_cost_usd canonicalized to %q, got %+v", "12.34", cfg.Guardrails.MaxTotalCostUSD)
 	}
 }
 

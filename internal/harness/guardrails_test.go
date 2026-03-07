@@ -11,14 +11,17 @@ import (
 
 func TestDeterministicGuardrailsCheckRunDurationTripsAtExactDeadline(t *testing.T) {
 	start := time.Unix(1700000000, 0).UTC()
-	guardrails := newDeterministicGuardrails(config.RunGuardrailsConfig{
+	guardrails, err := newDeterministicGuardrails(config.RunGuardrailsConfig{
 		MaxStepsPerNode:            1,
 		MaxTotalStepsPerRun:        1,
 		MaxRunDurationMS:           15,
 		MaxConsecutiveStepFailures: 1,
 	}, start)
+	if err != nil {
+		t.Fatalf("expected guardrail construction success, got %v", err)
+	}
 
-	err := guardrails.CheckRunDuration("node-id", "step-id", start.Add(15*time.Millisecond))
+	err = guardrails.CheckRunDuration("node-id", "step-id", start.Add(15*time.Millisecond))
 	if err == nil {
 		t.Fatal("expected max_run_duration_ms breach at exact deadline")
 	}
@@ -39,18 +42,21 @@ func TestDeterministicGuardrailsCheckRunDurationTripsAtExactDeadline(t *testing.
 }
 
 func TestDeterministicGuardrailsCheckBeforeStepClarifiesAttemptedStepStart(t *testing.T) {
-	guardrails := newDeterministicGuardrails(config.RunGuardrailsConfig{
+	guardrails, err := newDeterministicGuardrails(config.RunGuardrailsConfig{
 		MaxStepsPerNode:            3,
 		MaxTotalStepsPerRun:        10,
 		MaxRunDurationMS:           1000,
 		MaxConsecutiveStepFailures: 1,
 	}, time.Unix(1700000000, 0).UTC())
+	if err != nil {
+		t.Fatalf("expected guardrail construction success, got %v", err)
+	}
 
 	for i := 0; i < 3; i++ {
 		guardrails.RecordStepStarted("node-id")
 	}
 
-	err := guardrails.CheckBeforeStep("node-id", time.Unix(1700000000, 0).UTC())
+	err = guardrails.CheckBeforeStep("node-id", time.Unix(1700000000, 0).UTC())
 	if err == nil {
 		t.Fatal("expected max_steps_per_node breach after three started steps")
 	}
@@ -75,5 +81,19 @@ func TestDeterministicGuardrailsCheckBeforeStepClarifiesAttemptedStepStart(t *te
 	}
 	if !strings.Contains(typed.Message, "while blocking a new step start") {
 		t.Fatalf("expected step-start context in message, got %q", typed.Message)
+	}
+}
+
+func TestDeterministicGuardrailsRejectsMalformedCostBudget(t *testing.T) {
+	value := "1.2345678"
+	_, err := newDeterministicGuardrails(config.RunGuardrailsConfig{
+		MaxStepsPerNode:            1,
+		MaxTotalStepsPerRun:        1,
+		MaxRunDurationMS:           1000,
+		MaxConsecutiveStepFailures: 1,
+		MaxTotalCostUSD:            &value,
+	}, time.Unix(1700000000, 0).UTC())
+	if err == nil {
+		t.Fatal("expected malformed guardrail cost budget to fail construction")
 	}
 }

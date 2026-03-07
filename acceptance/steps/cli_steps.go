@@ -335,6 +335,10 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^effective run guardrails.max_total_steps_per_run is (\d+)$`, world.effectiveRunGuardrailsMaxTotalStepsPerRunIs)
 	ctx.Step(`^effective run guardrails.max_run_duration_ms is (\d+)$`, world.effectiveRunGuardrailsMaxRunDurationMSIs)
 	ctx.Step(`^effective run guardrails.max_consecutive_step_failures is (\d+)$`, world.effectiveRunGuardrailsMaxConsecutiveStepFailuresIs)
+	ctx.Step(`^effective run guardrails.max_total_tokens is (\d+)$`, world.effectiveRunGuardrailsMaxTotalTokensIs)
+	ctx.Step(`^effective run guardrails.max_total_tokens is unset$`, world.effectiveRunGuardrailsMaxTotalTokensIsUnset)
+	ctx.Step(`^effective run guardrails.max_total_cost_usd is "([^"]*)"$`, world.effectiveRunGuardrailsMaxTotalCostUSDIs)
+	ctx.Step(`^effective run guardrails.max_total_cost_usd is unset$`, world.effectiveRunGuardrailsMaxTotalCostUSDIsUnset)
 	ctx.Step(`^effective run accounting.pricing_version is "([^"]*)"$`, world.effectiveRunAccountingPricingVersionIs)
 	ctx.Step(`^effective run accounting fallback pricing for provider "([^"]*)" model "([^"]*)" uses input rate (\d+) output rate (\d+) reasoning rate (\d+)$`, world.effectiveRunAccountingFallbackPricingForProviderModelUsesRates)
 	ctx.Step(`^effective run llm.reasoning.enabled is (true|false)$`, world.effectiveRunLLMReasoningEnabledIs)
@@ -403,6 +407,8 @@ func (w *harnessWorld) sigilConfigEnvironmentVariablesAreCleared() error {
 		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN",
 		"SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS",
 		"SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_TOKENS",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_COST_USD",
 		"SIGIL_RUN_ACCOUNTING_PRICING_VERSION",
 		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_INPUT_MICROUSD_PER_MILLION_TOKENS",
 		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_1_OUTPUT_MICROUSD_PER_MILLION_TOKENS",
@@ -1798,6 +1804,50 @@ func (w *harnessWorld) effectiveRunGuardrailsMaxConsecutiveStepFailuresIs(expect
 	}
 	if cfg.Guardrails.MaxConsecutiveStepFailures != expected {
 		return fmt.Errorf("expected guardrails.max_consecutive_step_failures %d, got %d", expected, cfg.Guardrails.MaxConsecutiveStepFailures)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxTotalTokensIs(expected int) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxTotalTokens == nil || *cfg.Guardrails.MaxTotalTokens != int64(expected) {
+		return fmt.Errorf("expected guardrails.max_total_tokens %d, got %+v", expected, cfg.Guardrails.MaxTotalTokens)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxTotalTokensIsUnset() error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxTotalTokens != nil {
+		return fmt.Errorf("expected guardrails.max_total_tokens to be unset, got %d", *cfg.Guardrails.MaxTotalTokens)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxTotalCostUSDIs(expected string) error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxTotalCostUSD == nil || *cfg.Guardrails.MaxTotalCostUSD != expected {
+		return fmt.Errorf("expected guardrails.max_total_cost_usd %q, got %+v", expected, cfg.Guardrails.MaxTotalCostUSD)
+	}
+	return nil
+}
+
+func (w *harnessWorld) effectiveRunGuardrailsMaxTotalCostUSDIsUnset() error {
+	cfg, err := w.activeRunConfig()
+	if err != nil {
+		return err
+	}
+	if cfg.Guardrails.MaxTotalCostUSD != nil {
+		return fmt.Errorf("expected guardrails.max_total_cost_usd to be unset, got %q", *cfg.Guardrails.MaxTotalCostUSD)
 	}
 	return nil
 }

@@ -60,7 +60,11 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		return RunResult{}, WrapError(ErrorCodeInfrastructure, "inference factory is required", nil)
 	}
 	runStart := time.Now().UTC()
-	guardrails := newDeterministicGuardrails(input.RunConfig.Guardrails, runStart)
+	guardrails, err := newDeterministicGuardrails(input.RunConfig.Guardrails, runStart)
+	if err != nil {
+		logger.Error("failed to initialize deterministic guardrails", "error", err)
+		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to initialize deterministic guardrails", err)
+	}
 	guardrailRunContext := runContext
 	if deadline := guardrails.Deadline(); !deadline.IsZero() {
 		var cancel context.CancelFunc
@@ -415,6 +419,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to append node.turn.model", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.turn.model", err)
 		}
+		if err := execCtx.guardrails.CheckRunAccounting(node.ID, stepStarted.StepID, execCtx.ledger.RunRollup().TreeTotal); err != nil {
+			logger.Error("deterministic runtime guardrail breached after model-turn accounting update",
+				"step_id", stepStarted.StepID,
+				"error", err,
+			)
+			return nodeExecutionResult{}, err
+		}
 		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
 			return nodeExecutionResult{}, interruptErr
 		}
@@ -445,6 +456,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				NonRecursive: execCtx.nonRecursive,
 				TurnOutputs:  execCtx.turnOutputs,
 				Ledger:       execCtx.ledger,
+				Guardrails:   execCtx.guardrails,
 				ExecuteChild: func(queryCtx context.Context, child runtime.Node, subPrompt string, subContext string) (nodeExecutionResult, error) {
 					logger.Info("executing recursive child node subcall",
 						"step_id", stepStarted.StepID,

@@ -6,6 +6,21 @@ This example runs `sigil run start` with template variables provided via
 The bundled `context.txt` is intentionally large (~350KB) and contains one true
 needle token among many noisy chunks and decoys.
 
+The bundled `sigil-run.yaml` is configured for `openai/gpt-5.3-codex`.
+Its fallback pricing matches the OpenRouter price card for
+`openai/gpt-5.3-codex`, which also matches the OpenAI model page as of
+March 7, 2026: `$1.75` input and `$14.00` output per 1M tokens.
+
+The bundled `sigil-run.yaml` also sets generous cumulative accounting budgets:
+
+- `guardrails.max_total_tokens: 1000000`
+- `guardrails.max_total_cost_usd: "5"`
+
+Those limits apply to cumulative run `tree_total` accounting. They are meant to
+bound the example if recursion runs away without being tight enough to block a
+normal successful search over the bundled context. If you expand the context or
+push recursion harder, raise those values first.
+
 ## Prerequisites
 
 - `OPENROUTER_API_KEY` must be set in the shell that runs the example.
@@ -18,6 +33,10 @@ By default, `sigil run start` now writes human-readable text to stdout:
 - a preflight summary showing resolved config and execution settings
 - live append-only progress lines as the harness runs
 - a terminal run summary with the final answer, `events_path`, and accounting
+
+If either cumulative accounting budget is breached, the run fails with
+`harness_limit_exceeded` and includes the configured and observed totals in
+`run.failed`.
 
 ```bash
 cd /Users/lee/Dev/project/project-sigil/sigil

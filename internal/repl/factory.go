@@ -150,6 +150,10 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				}
 				answer, err := options.LLMQuery(execCtx, QueryRequest{Prompt: prompt, Context: subContext})
 				if err != nil {
+					if IsFatalExecution(err) {
+						session.cancelCurrentExec()
+						panic(UnwrapFatalExecution(err))
+					}
 					if _, ok := CodeOf(err); ok {
 						return "", err
 					}
@@ -187,6 +191,10 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				}
 				results, err := options.LLMQueryBatched(execCtx, requests)
 				if err != nil {
+					if IsFatalExecution(err) {
+						session.cancelCurrentExec()
+						panic(UnwrapFatalExecution(err))
+					}
 					if _, ok := CodeOf(err); ok {
 						return nil, err
 					}

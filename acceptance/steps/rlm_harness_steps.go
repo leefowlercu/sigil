@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
+	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
 	sigilharness "github.com/leefowlercu/sigil/internal/harness"
 	sigilinference "github.com/leefowlercu/sigil/internal/inference"
@@ -257,9 +257,7 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^run\.failed includes failed_node_id and optional failed_step_id for guardrail breaches$`, world.runfailedIncludesFailed_node_idAndOptionalFailed_step_idForGuardrailBreaches)
 	ctx.Step(`^deterministic runtime guardrail parity is preserved for recursive and non-recursive profiles$`, world.deterministicRuntimeGuardrailParityIsPreservedForRecursiveAndNonrecursiveProfiles)
 	ctx.Step(`^max_run_duration_ms interrupts the active step before completion$`, world.max_run_duration_msInterruptsTheActiveStepBeforeCompletion)
-	ctx.Step(`^deterministic runtime governance guardrails are defined in this phase$`, world.deterministicRuntimeGovernanceGuardrailsAreDefinedInThisPhase)
-	ctx.Step(`^guardrail scope is inspected$`, world.guardrailScopeIsInspected)
-	ctx.Step(`^token and cost guardrails are deferred$`, world.tokenAndCostGuardrailsAreDeferred)
+	ctx.Step(`^deterministic runtime guardrail failure requires complete accounting for limit key \"([^\"]*)\" with status \"([^\"]*)\" and observed value \"([^\"]*)\"$`, world.deterministicRuntimeGuardrailFailureRequiresCompleteAccountingForLimitKeyWithStatusAndObservedValue)
 
 	registerRLMBoundedInputSteps(ctx, world)
 }
@@ -1721,6 +1719,54 @@ type guardrailFixtureInference struct {
 func (g *guardrailFixtureInference) Infer(_ context.Context, request sigilinference.Request) (sigilinference.Result, error) {
 	g.calls++
 	switch g.fixture {
+	case "max_total_tokens":
+		inputTokens := int64(6)
+		outputTokens := int64(5)
+		totalTokens := int64(11)
+		return hydrateBoundedFinalEvidenceRef(guardrailFinalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+			Provider:       "openai",
+			Model:          "gpt-5.1",
+			PricingVersion: "v1",
+			InputTokens:    &inputTokens,
+			OutputTokens:   &outputTokens,
+			TotalTokens:    &totalTokens,
+		})), request), nil
+	case "max_total_cost_usd":
+		inputTokens := int64(6)
+		outputTokens := int64(5)
+		totalTokens := int64(11)
+		totalCost := int64(1_250_000)
+		return hydrateBoundedFinalEvidenceRef(guardrailFinalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+			Provider:                 "openai",
+			Model:                    "gpt-5.1",
+			PricingVersion:           "v1",
+			InputTokens:              &inputTokens,
+			OutputTokens:             &outputTokens,
+			TotalTokens:              &totalTokens,
+			GatewayTotalCostMicrousd: &totalCost,
+		})), request), nil
+	case "max_total_tokens_incomplete":
+		inputTokens := int64(5)
+		totalTokens := int64(5)
+		return hydrateBoundedFinalEvidenceRef(guardrailFinalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+			Provider:       "openai",
+			Model:          "gpt-5.1",
+			PricingVersion: "v1",
+			InputTokens:    &inputTokens,
+			TotalTokens:    &totalTokens,
+		})), request), nil
+	case "max_total_cost_usd_incomplete":
+		inputTokens := int64(5)
+		outputTokens := int64(4)
+		totalTokens := int64(9)
+		return hydrateBoundedFinalEvidenceRef(guardrailFinalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+			Provider:       "openai",
+			Model:          "gpt-5.1",
+			PricingVersion: "v1",
+			InputTokens:    &inputTokens,
+			OutputTokens:   &outputTokens,
+			TotalTokens:    &totalTokens,
+		})), request), nil
 	case "max_total_steps_per_run":
 		switch g.calls {
 		case 1:
@@ -1778,6 +1824,12 @@ func guardrailContinueResult(code string) sigilinference.Result {
 	}
 }
 
+func guardrailContinueResultWithAccounting(code string, summary accounting.Summary) sigilinference.Result {
+	result := guardrailContinueResult(code)
+	result.Accounting = summary
+	return result
+}
+
 func guardrailFinalResult(answer string) sigilinference.Result {
 	return sigilinference.Result{
 		SchemaID: "sigil.rlm.response.v1",
@@ -1795,6 +1847,12 @@ func guardrailFinalResult(answer string) sigilinference.Result {
 		FinishStatus:      "completed",
 		RawMetadata:       map[string]any{},
 	}
+}
+
+func guardrailFinalResultWithAccounting(answer string, summary accounting.Summary) sigilinference.Result {
+	result := guardrailFinalResult(answer)
+	result.Accounting = summary
+	return result
 }
 
 func (w *harnessWorld) runfailedPayloadIncludesDeterministicGuardrailMetadata() error {
@@ -2055,6 +2113,14 @@ func guardrailRunConfig(fixture string, nonRecursive bool) config.RunConfig {
 	case "max_steps_per_node":
 		cfg.Guardrails.MaxStepsPerNode = 1
 		cfg.Guardrails.MaxTotalStepsPerRun = 50
+	case "max_total_tokens":
+		cfg.Guardrails.MaxTotalTokens = int64Pointer(10)
+	case "max_total_cost_usd":
+		cfg.Guardrails.MaxTotalCostUSD = stringPointer("1")
+	case "max_total_tokens_incomplete":
+		cfg.Guardrails.MaxTotalTokens = int64Pointer(10)
+	case "max_total_cost_usd_incomplete":
+		cfg.Guardrails.MaxTotalCostUSD = stringPointer("1")
 	case "recursive_profile_parity":
 		cfg.Guardrails.MaxStepsPerNode = 1
 		cfg.Guardrails.MaxTotalStepsPerRun = 50
@@ -2236,22 +2302,29 @@ func (w *harnessWorld) guardrailActionArtifacts() ([]sigilharness.ActionArtifact
 	return artifacts, nil
 }
 
-func (w *harnessWorld) deterministicRuntimeGovernanceGuardrailsAreDefinedInThisPhase() error {
-	return nil
-}
-
-func (w *harnessWorld) guardrailScopeIsInspected() error {
-	typeOfGuardrails := reflect.TypeOf(config.RunGuardrailsConfig{})
-	for index := 0; index < typeOfGuardrails.NumField(); index++ {
-		fieldName := strings.ToLower(typeOfGuardrails.Field(index).Name)
-		if strings.Contains(fieldName, "token") || strings.Contains(fieldName, "cost") {
-			return fmt.Errorf("unexpected token/cost guardrail field %q", typeOfGuardrails.Field(index).Name)
-		}
+func (w *harnessWorld) deterministicRuntimeGuardrailFailureRequiresCompleteAccountingForLimitKeyWithStatusAndObservedValue(limitKey string, status string, observed string) error {
+	payload := w.rlm().guardrailRunFailedPayload
+	if payload.LimitKey == nil || *payload.LimitKey != limitKey {
+		return fmt.Errorf("expected limit_key %q, got %+v", limitKey, payload.LimitKey)
 	}
-	return nil
-}
-
-func (w *harnessWorld) tokenAndCostGuardrailsAreDeferred() error {
+	if payload.ObservedValue == nil || *payload.ObservedValue != observed {
+		return fmt.Errorf("expected observed_value %q, got %+v", observed, payload.ObservedValue)
+	}
+	if !strings.Contains(payload.ErrorMessage, "accounting_status="+status) {
+		return fmt.Errorf("expected accounting_status=%s in error message %q", status, payload.ErrorMessage)
+	}
+	switch limitKey {
+	case "max_total_tokens":
+		if payload.Accounting.TreeTotal.TokenStatus != accounting.Status(status) {
+			return fmt.Errorf("expected token_status %q in run.failed accounting, got %q", status, payload.Accounting.TreeTotal.TokenStatus)
+		}
+	case "max_total_cost_usd":
+		if payload.Accounting.TreeTotal.CostStatus != accounting.Status(status) {
+			return fmt.Errorf("expected cost_status %q in run.failed accounting, got %q", status, payload.Accounting.TreeTotal.CostStatus)
+		}
+	default:
+		return fmt.Errorf("unsupported limit key %q for incomplete accounting assertion", limitKey)
+	}
 	return nil
 }
 
@@ -2296,6 +2369,14 @@ func guardrailRunConfigYAML(fixture string, nonRecursive bool) string {
 		cfg.Guardrails.MaxRunDurationMS,
 		cfg.Guardrails.MaxConsecutiveStepFailures,
 	)
+}
+
+func int64Pointer(value int64) *int64 {
+	return &value
+}
+
+func stringPointer(value string) *string {
+	return &value
 }
 
 func countEventsByType(events []sigilruntime.EventEnvelope, eventType sigilruntime.EventType) int {

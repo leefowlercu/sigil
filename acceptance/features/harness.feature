@@ -1780,7 +1780,7 @@ Feature: Sigil baseline CLI and config contracts
     When continuation payload is validated
     Then exactly one executable action is accepted for that step
 
-  Scenario: Defines deterministic guardrails section in run config schema
+  Scenario: Defines deterministic guardrails section in run config schema including optional accounting budgets
     Given run configuration exists at "./sigil-run.yaml" with:
       """
       prompt: prompt
@@ -1793,6 +1793,8 @@ Feature: Sigil baseline CLI and config contracts
         max_total_steps_per_run: 20
         max_run_duration_ms: 30000
         max_consecutive_step_failures: 2
+        max_total_tokens: 99
+        max_total_cost_usd: "0.25"
       """
     When run configuration validation runs
     Then run configuration initialization succeeds
@@ -1812,8 +1814,10 @@ Feature: Sigil baseline CLI and config contracts
     And effective run guardrails.max_total_steps_per_run is 256
     And effective run guardrails.max_run_duration_ms is 1200000
     And effective run guardrails.max_consecutive_step_failures is 6
+    And effective run guardrails.max_total_tokens is unset
+    And effective run guardrails.max_total_cost_usd is unset
 
-  Scenario: Applies SIGIL_RUN environment overrides for guardrails fields
+  Scenario: Applies SIGIL_RUN environment overrides for deterministic guardrail fields
     Given run configuration exists at "./sigil-run.yaml" with:
       """
       prompt: prompt
@@ -1826,18 +1830,24 @@ Feature: Sigil baseline CLI and config contracts
         max_total_steps_per_run: 20
         max_run_duration_ms: 30000
         max_consecutive_step_failures: 2
+        max_total_tokens: 99
+        max_total_cost_usd: "0.25"
       """
     And environment override "SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE" is "64"
     And environment override "SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN" is "256"
     And environment override "SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS" is "1200000"
     And environment override "SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES" is "6"
+    And environment override "SIGIL_RUN_GUARDRAILS_MAX_TOTAL_TOKENS" is "512"
+    And environment override "SIGIL_RUN_GUARDRAILS_MAX_TOTAL_COST_USD" is "001.230000"
     When run configuration is merged
     Then effective run guardrails.max_steps_per_node is 64
     And effective run guardrails.max_total_steps_per_run is 256
     And effective run guardrails.max_run_duration_ms is 1200000
     And effective run guardrails.max_consecutive_step_failures is 6
+    And effective run guardrails.max_total_tokens is 512
+    And effective run guardrails.max_total_cost_usd is "1.23"
 
-  Scenario: Rejects run configuration when deterministic guardrail values are non-positive
+  Scenario: Rejects run configuration when deterministic guardrail values are invalid
     Given run configuration exists at "./sigil-run.yaml" with:
       """
       prompt: prompt
@@ -1850,6 +1860,8 @@ Feature: Sigil baseline CLI and config contracts
         max_total_steps_per_run: 5
         max_run_duration_ms: 30000
         max_consecutive_step_failures: 2
+        max_total_tokens: 0
+        max_total_cost_usd: "1.2345678"
       """
     When run configuration validation runs
     Then run configuration initialization fails
@@ -1879,7 +1891,7 @@ Feature: Sigil baseline CLI and config contracts
     When a user runs guardrail-breach harness entrypoint
     Then command exits non-zero
 
-  Scenario: Defines run guardrails config section for deterministic step time and failure thresholds
+  Scenario: Defines run guardrails config section for deterministic step time failure and accounting budget thresholds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
       prompt: prompt
@@ -1892,6 +1904,8 @@ Feature: Sigil baseline CLI and config contracts
         max_total_steps_per_run: 2
         max_run_duration_ms: 1000
         max_consecutive_step_failures: 1
+        max_total_tokens: 99
+        max_total_cost_usd: "0.25"
       """
     When run configuration validation runs
     Then run configuration initialization succeeds
@@ -1911,8 +1925,10 @@ Feature: Sigil baseline CLI and config contracts
     And effective run guardrails.max_total_steps_per_run is 256
     And effective run guardrails.max_run_duration_ms is 1200000
     And effective run guardrails.max_consecutive_step_failures is 6
+    And effective run guardrails.max_total_tokens is unset
+    And effective run guardrails.max_total_cost_usd is unset
 
-  Scenario: Rejects non-positive deterministic guardrail configuration values
+  Scenario: Rejects invalid deterministic guardrail configuration values
     Given run configuration exists at "./sigil-run.yaml" with:
       """
       prompt: prompt
@@ -1925,6 +1941,8 @@ Feature: Sigil baseline CLI and config contracts
         max_total_steps_per_run: 1
         max_run_duration_ms: 1000
         max_consecutive_step_failures: 1
+        max_total_tokens: 0
+        max_total_cost_usd: "1.2345678"
       """
     When run configuration validation runs
     Then run configuration initialization fails
@@ -1970,10 +1988,25 @@ Feature: Sigil baseline CLI and config contracts
     When deterministic runtime guardrail harness run executes
     Then deterministic runtime guardrail parity is preserved for recursive and non-recursive profiles
 
-  Scenario: Defers token and cost guardrails pending accounting-ledger subsystem
-    Given deterministic runtime governance guardrails are defined in this phase
-    When guardrail scope is inspected
-    Then token and cost guardrails are deferred
+  Scenario: Enforces max_total_tokens on cumulative run accounting tree totals
+    Given deterministic runtime guardrail fixture "max_total_tokens" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_total_tokens"
+
+  Scenario: Enforces max_total_cost_usd on cumulative run accounting tree totals
+    Given deterministic runtime guardrail fixture "max_total_cost_usd" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail breach uses limit key "max_total_cost_usd"
+
+  Scenario: Fails closed when max_total_tokens sees incomplete tree-total accounting
+    Given deterministic runtime guardrail fixture "max_total_tokens_incomplete" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail failure requires complete accounting for limit key "max_total_tokens" with status "partial" and observed value "5"
+
+  Scenario: Fails closed when max_total_cost_usd sees incomplete tree-total accounting
+    Given deterministic runtime guardrail fixture "max_total_cost_usd_incomplete" is prepared
+    When deterministic runtime guardrail harness run executes
+    Then deterministic runtime guardrail failure requires complete accounting for limit key "max_total_cost_usd" with status "unavailable" and observed value "unavailable"
 
   Scenario: Defines accounting section in run config schema
     Given run configuration exists at "./sigil-run.yaml" with:
