@@ -33,7 +33,9 @@ endef
 	test-acceptance test-acceptance-nocolor \
 	test test-nocolor \
 	verify verify-nocolor \
-	clean clean-nocolor
+	clean clean-nocolor \
+	clean-run clean-run-nocolor \
+	clean-all clean-all-nocolor
 
 default: help
 
@@ -47,7 +49,9 @@ help:
 	@printf "%b\n" "  $(YELLOW)test-acceptance$(RESET)     Run Godog acceptance tests"
 	@printf "%b\n" "  $(YELLOW)test$(RESET)                Run all tests uncached"
 	@printf "%b\n" "  $(YELLOW)verify$(RESET)              Run fmt, tidy, and full test suite"
-	@printf "%b\n" "  $(YELLOW)clean$(RESET)               Clean test cache"
+	@printf "%b\n" "  $(YELLOW)clean$(RESET)               Clean test cache and remove the local ./sigil binary"
+	@printf "%b\n" "  $(YELLOW)clean-run$(RESET)           Delete the local ./.sigil runtime-artifact directory"
+	@printf "%b\n" "  $(YELLOW)clean-all$(RESET)           Run clean and clean-run"
 	@printf "\n"
 	@printf "%b\n" "$(CYAN)No-color variants$(RESET): append $(YELLOW)-nocolor$(RESET) to any target above."
 
@@ -113,9 +117,27 @@ verify-nocolor:
 	@$(MAKE) --no-print-directory COLOR=0 verify
 
 clean:
-	$(call step,Cleaning Go test cache)
+	$(call step,Cleaning Go test cache and removing local binary)
 	@go clean -testcache
+	@rm -f ./sigil
 	$(call done,Cleanup complete)
 
 clean-nocolor:
 	@$(MAKE) --no-print-directory COLOR=0 clean
+
+clean-run:
+	$(call step,Deleting local runtime artifacts)
+	@rm -rf ./.sigil
+	$(call done,Removed local ./.sigil runtime artifacts)
+
+clean-run-nocolor:
+	@$(MAKE) --no-print-directory COLOR=0 clean-run
+
+clean-all:
+	$(call step,Running full cleanup)
+	@$(MAKE) --no-print-directory COLOR=$(COLOR) clean
+	@$(MAKE) --no-print-directory COLOR=$(COLOR) clean-run
+	$(call done,Full cleanup complete)
+
+clean-all-nocolor:
+	@$(MAKE) --no-print-directory COLOR=0 clean-all
