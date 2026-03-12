@@ -16,12 +16,12 @@ func TestDeriveLogFilePathResolvesFromWorkingDirectory(t *testing.T) {
 	workDir := t.TempDir()
 	chdirForLoggingTest(t, workDir)
 
-	derivedPath, err := DeriveLogFilePath("./sigil/logs")
+	derivedPath, err := DeriveLogFilePath("./.sigil/logs")
 	if err != nil {
 		t.Fatalf("expected path derivation success, got %v", err)
 	}
 
-	expectedPath, err := config.ExpandPath("./sigil/logs/sigil.log")
+	expectedPath, err := config.ExpandPath("./.sigil/logs/sigil.log")
 	if err != nil {
 		t.Fatalf("expected expected-path expansion success, got %v", err)
 	}

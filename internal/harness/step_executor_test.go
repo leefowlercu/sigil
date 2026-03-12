@@ -74,13 +74,13 @@ func TestStepExecutorExecuteContinueActionRecordsCompletedAction(t *testing.T) {
 		t.Fatalf("expected step append success, got %v", err)
 	}
 
-	manager, err := NewREPLSessionManager(&stepExecFakeSessionFactory{session: &stepExecFakeSession{result: repl.ExecResult{Stdout: "ok", DurationMS: 1}}})
-	if err != nil {
-		t.Fatalf("expected manager creation success, got %v", err)
-	}
 	artifacts, err := NewActionArtifactStore(runsDir)
 	if err != nil {
 		t.Fatalf("expected artifact store creation success, got %v", err)
+	}
+	manager, err := NewREPLSessionManager(&stepExecFakeSessionFactory{session: &stepExecFakeSession{result: repl.ExecResult{Stdout: "ok", DurationMS: 1}}}, artifacts)
+	if err != nil {
+		t.Fatalf("expected manager creation success, got %v", err)
 	}
 	executor, err := NewStepExecutor(lifecycle, manager, artifacts)
 	if err != nil {
@@ -133,13 +133,13 @@ func TestStepExecutorExecuteContinueActionRecordsFailedActionWithoutFatalError(t
 	}
 
 	execErr := repl.NewError(repl.ErrorCodeExecutionCompile, "compile failed")
-	manager, err := NewREPLSessionManager(&stepExecFakeSessionFactory{session: &stepExecFakeSession{result: repl.ExecResult{Stderr: "compile failed", DurationMS: 1}, err: execErr}})
-	if err != nil {
-		t.Fatalf("expected manager creation success, got %v", err)
-	}
 	artifacts, err := NewActionArtifactStore(runsDir)
 	if err != nil {
 		t.Fatalf("expected artifact store creation success, got %v", err)
+	}
+	manager, err := NewREPLSessionManager(&stepExecFakeSessionFactory{session: &stepExecFakeSession{result: repl.ExecResult{Stderr: "compile failed", DurationMS: 1}, err: execErr}}, artifacts)
+	if err != nil {
+		t.Fatalf("expected manager creation success, got %v", err)
 	}
 	executor, err := NewStepExecutor(lifecycle, manager, artifacts)
 	if err != nil {
@@ -197,13 +197,13 @@ func TestStepExecutorExecuteContinueActionReturnsFatalErrorOnSessionInitFailure(
 	}
 
 	expectedErr := errors.New("session init failed")
-	manager, err := NewREPLSessionManager(&stepExecFakeSessionFactory{err: expectedErr})
-	if err != nil {
-		t.Fatalf("expected manager creation success, got %v", err)
-	}
 	artifacts, err := NewActionArtifactStore(runsDir)
 	if err != nil {
 		t.Fatalf("expected artifact store creation success, got %v", err)
+	}
+	manager, err := NewREPLSessionManager(&stepExecFakeSessionFactory{err: expectedErr}, artifacts)
+	if err != nil {
+		t.Fatalf("expected manager creation success, got %v", err)
 	}
 	executor, err := NewStepExecutor(lifecycle, manager, artifacts)
 	if err != nil {

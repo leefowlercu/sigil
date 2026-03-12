@@ -43,9 +43,12 @@ type rlmAcceptanceState struct {
 	continuationCode    string
 	outputValidationErr error
 
-	actionPayload sigilruntime.NodeActionExecutedPayload
-	actionErr     error
-	artifactPath  string
+	actionPayload      sigilruntime.NodeActionExecutedPayload
+	actionErr          error
+	artifactPath       string
+	actionOutputRef    string
+	actionOutputResult sigilrepl.ActionOutput
+	actionOutputErr    error
 
 	queryResult  string
 	queryErr     error
@@ -122,6 +125,10 @@ func (s acceptanceSubcalls) LLMQueryBatched(ctx context.Context, requests []sigi
 
 func (s acceptanceSubcalls) RLMQueryBatched(ctx context.Context, requests []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
 	return s.LLMQueryBatched(ctx, requests)
+}
+
+func noopActionOutputRead(_ string) (sigilrepl.ActionOutput, error) {
+	return sigilrepl.ActionOutput{}, nil
 }
 
 func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
@@ -238,6 +245,9 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^an action execution completes or fails$`, world.anActionExecutionCompletesOrFails)
 	ctx.Step(`^action artifact persistence executes$`, world.actionArtifactPersistenceExecutes)
 	ctx.Step(`^artifact is persisted and node\.action\.executed\.output_ref is set to canonical artifact reference$`, world.artifactIsPersistedAndNodeactionexecutedoutput_refIsSetToCanonicalArtifactReference)
+	ctx.Step(`^a canonical current-run action artifact with exact stdout and stderr is persisted$`, world.aCanonicalCurrentrunActionArtifactWithExactStdoutAndStderrIsPersisted)
+	ctx.Step(`^read_action_output is invoked in REPL with that output_ref$`, world.read_action_outputIsInvokedInREPLWithThatOutput_ref)
+	ctx.Step(`^exact action output fields are returned to REPL context$`, world.exactActionOutputFieldsAreReturnedToREPLContext)
 
 	ctx.Step(`^fatal REPL infrastructure failure occurs$`, world.fatalREPLInfrastructureFailureOccurs)
 	ctx.Step(`^harness handles failure propagation$`, world.harnessHandlesFailurePropagation)
@@ -297,11 +307,11 @@ func (w *harnessWorld) ensureRuntime(maxDepth int, factory sigilrepl.SessionFact
 	if factory == nil {
 		factory = sigilrepl.NewFactory()
 	}
-	manager, err := sigilharness.NewREPLSessionManager(factory)
+	artifactStore, err := sigilharness.NewActionArtifactStore(w.runsBaseDir())
 	if err != nil {
 		return err
 	}
-	artifactStore, err := sigilharness.NewActionArtifactStore(w.runsBaseDir())
+	manager, err := sigilharness.NewREPLSessionManager(factory, artifactStore)
 	if err != nil {
 		return err
 	}
@@ -323,6 +333,9 @@ func (w *harnessWorld) ensureRuntime(maxDepth int, factory sigilrepl.SessionFact
 	state.activeStepID = ""
 	state.actionPayload = sigilruntime.NodeActionExecutedPayload{}
 	state.actionErr = nil
+	state.actionOutputRef = ""
+	state.actionOutputResult = sigilrepl.ActionOutput{}
+	state.actionOutputErr = nil
 	state.queryResult = ""
 	state.queryErr = nil
 	state.nonRecursive = false
@@ -613,10 +626,16 @@ func (w *harnessWorld) openaiSystemPromptIncludesSearchDisciplineAndTimeoutRecov
 		"Do NOT use rlm_query_batched for coarse search over unknown full-context partitions.",
 		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
 		"If execution_state.recursive_subcalls_allowed=false, stay local for this step even if recursive APIs are available.",
+		"read_action_output(output_ref string) (ActionOutput, error)",
 		"If an action times out or previous_action_feedback.error_message indicates timeout, reduce chunk size and fan-out on the next step and prefer REPL or llm_query before more recursion.",
 		"If a complete local scan of the current context finds no matching evidence, finalize absence now rather than repartitioning the same context again.",
 		"include span_start or span_end only when you know exact integer offsets",
-		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only.",
+		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only. Call read_action_output(output_ref) before rescanning large context, or continue with a smaller and more targeted action.",
+		"If execution_state.same_context_as_previous_step=true and previous_action_feedback.output_ref is present, ask first whether the prior action output might already contain the deliverable.",
+		"Signals that the prior action likely already has the deliverable include: preview text shows the answer prefix, labeled extraction markers such as FINAL_START or FINAL_END, reported exact lengths, or found=true style indicators next to long text.",
+		"When those signals are present, do NOT re-scan the full raw context first. Call read_action_output(previous_action_feedback.output_ref), inspect the exact stdout or stderr locally, and continue from that recovered value.",
+		"If read_action_output(output_ref) returns the exact long string you need, assign it to a persistent REPL variable and verify its length before using a later step to finalize.",
+		"After read_action_output recovers the exact prior output, only return to a full-context scan if that recovered output still lacks the needed data.",
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {
@@ -677,6 +696,7 @@ func (w *harnessWorld) openaiSystemPromptExplainsSafeStructuredParsingInReplCode
 func (w *harnessWorld) anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlockSections() error {
 	prompt := w.rlm().effectivePrompt
 	requiredSnippets := []string{
+		"read_action_output(output_ref string) (ActionOutput, error)",
 		"Evidence rules:",
 		"Finalization gate:",
 		"decision=final is allowed only when the requested deliverable is obtained, final.answer matches the requested answer format, and at least one valid evidence ref directly supports the answer.",
@@ -684,6 +704,10 @@ func (w *harnessWorld) anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlo
 		"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
 		"If you need structured data, ask the subcall to return minified JSON text inside the answer string and parse that string in REPL.",
 		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
+		"If previous_action_feedback refers to the same context and its preview suggests the prior action already found or printed the target, prefer exact output recovery over another raw-context scan.",
+		"On preview truncation, treat previews as partial and call read_action_output(output_ref) before rescanning large context.",
+		"If execution_state.same_context_as_previous_step=true and previous_action_feedback.output_ref is present, first ask whether the prior action output might already contain the deliverable.",
+		"When those signals are present, do not rescan the full raw context first. Call read_action_output(previous_action_feedback.output_ref), inspect the recovered stdout or stderr locally, and continue from that exact output.",
 		"Include span_start or span_end only when you know exact integer offsets; otherwise omit span fields entirely.",
 	}
 	for _, snippet := range requiredSnippets {
@@ -1415,6 +1439,7 @@ func (w *harnessWorld) recursiveSubcallTimeoutBudgetsAreObserved() error {
 			}
 			return results, nil
 		},
+		ReadActionOutput: noopActionOutputRead,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create repl session; %w", err)
@@ -1495,6 +1520,7 @@ func (w *harnessWorld) recursiveSubcallExecutionIsInProgress() error {
 			}
 			return results, nil
 		},
+		ReadActionOutput: noopActionOutputRead,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create repl session; %w", err)
@@ -1652,6 +1678,95 @@ func (w *harnessWorld) artifactIsPersistedAndNodeactionexecutedoutput_refIsSetTo
 	)
 	if _, err := os.Stat(filepath.Clean(artifactPath)); err != nil {
 		return fmt.Errorf("expected persisted action artifact %q; %w", artifactPath, err)
+	}
+	return nil
+}
+
+func (w *harnessWorld) aCanonicalCurrentrunActionArtifactWithExactStdoutAndStderrIsPersisted() error {
+	state := w.rlm()
+	if state.artifactStore == nil {
+		return fmt.Errorf("expected action artifact store to be initialized")
+	}
+	stepID, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate action artifact step id; %w", err)
+	}
+	errorCode := "repl_execution_compile"
+	errorMessage := "compile failed exactly"
+	outputRef, err := state.artifactStore.Persist(sigilharness.ActionArtifact{
+		RunID:        w.lifecycle.RunID(),
+		NodeID:       state.activeNode.ID,
+		StepID:       stepID.String(),
+		ActionIndex:  1,
+		ActionType:   "repl_code",
+		Language:     "go",
+		Status:       "failed",
+		Stdout:       "exact stdout",
+		Stderr:       "exact stderr",
+		ErrorCode:    &errorCode,
+		ErrorMessage: &errorMessage,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to persist canonical action artifact; %w", err)
+	}
+	state.actionOutputRef = outputRef
+	state.actionOutputResult = sigilrepl.ActionOutput{}
+	state.actionOutputErr = nil
+	return nil
+}
+
+func (w *harnessWorld) read_action_outputIsInvokedInREPLWithThatOutput_ref() error {
+	state := w.rlm()
+	if strings.TrimSpace(state.actionOutputRef) == "" {
+		return fmt.Errorf("expected action output_ref fixture to be initialized")
+	}
+	session, err := state.sessionManager.SessionForNode(context.Background(), sigilharness.NodeSessionInput{
+		RunID:   w.lifecycle.RunID(),
+		NodeID:  state.activeNode.ID,
+		Depth:   state.activeNode.Depth,
+		Context: "root-context",
+		Bindings: acceptanceSubcalls{query: func(_ context.Context, request sigilrepl.QueryRequest) (string, error) {
+			return request.Prompt + "|" + request.Context, nil
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	result, err := session.Exec(context.Background(), `
+import (
+	"encoding/json"
+	"fmt"
+)
+output, err := read_action_output("`+state.actionOutputRef+`")
+if err != nil { panic(err) }
+encoded, err := json.Marshal(output)
+if err != nil { panic(err) }
+fmt.Print(string(encoded))
+`)
+	state.actionOutputErr = err
+	if err != nil {
+		return err
+	}
+	state.actionOutputResult = sigilrepl.ActionOutput{}
+	if err := json.Unmarshal([]byte(result.Stdout), &state.actionOutputResult); err != nil {
+		return fmt.Errorf("failed to decode read_action_output result; %w", err)
+	}
+	return nil
+}
+
+func (w *harnessWorld) exactActionOutputFieldsAreReturnedToREPLContext() error {
+	if w.rlm().actionOutputErr != nil {
+		return fmt.Errorf("expected read_action_output success, got %v", w.rlm().actionOutputErr)
+	}
+	expected := sigilrepl.ActionOutput{
+		Status:       "failed",
+		Stdout:       "exact stdout",
+		Stderr:       "exact stderr",
+		ErrorCode:    "repl_execution_compile",
+		ErrorMessage: "compile failed exactly",
+	}
+	if w.rlm().actionOutputResult != expected {
+		return fmt.Errorf("expected exact action output %+v, got %+v", expected, w.rlm().actionOutputResult)
 	}
 	return nil
 }

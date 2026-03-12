@@ -813,7 +813,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Uses default log file path when default log_dir is in effect
     Given the sigil application starts without an explicit application config path
     When application logging is initialized
-    Then the effective log target path is "./sigil/logs/sigil.log"
+    Then the effective log target path is "./.sigil/logs/sigil.log"
 
   Scenario: Fails initialization when derived log file path cannot be opened as a file sink
     Given application config exists at "./sigil.yaml" with:
@@ -1369,6 +1369,12 @@ Feature: Sigil baseline CLI and config contracts
     When action artifact persistence executes
     Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
 
+  Scenario: Returns exact action output fields from canonical current-run output_ref via read_action_output
+    Given a node-local REPL session is initialized
+    And a canonical current-run action artifact with exact stdout and stderr is persisted
+    When read_action_output is invoked in REPL with that output_ref
+    Then exact action output fields are returned to REPL context
+
   Scenario: Fails run on fatal REPL infrastructure errors with typed error metadata
     Given fatal REPL infrastructure failure occurs
     When harness handles failure propagation
@@ -1378,6 +1384,12 @@ Feature: Sigil baseline CLI and config contracts
     Given a node-local REPL session is initialized
     When REPL bindings are inspected
     Then rlm_query(prompt, context) is available and returns answer plus error
+
+  Scenario: Exposes read_action_output helper in node-local REPL session
+    Given a node-local REPL session is initialized
+    And a canonical current-run action artifact with exact stdout and stderr is persisted
+    When read_action_output is invoked in REPL with that output_ref
+    Then exact action output fields are returned to REPL context
 
   Scenario: Emits node.subcall.executed for each subcall item executed inside continue action
     Given canonical v1 run-event validation rules
@@ -1439,6 +1451,12 @@ Feature: Sigil baseline CLI and config contracts
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
     Then action artifact remains source of truth for full stdout and stderr while model input uses bounded previews
+
+  Scenario: Preserves bounded previous_action_feedback previews while exact action output remains recoverable through read_action_output
+    Given a harness runner has previous continue action feedback
+    When model-step inference input is constructed for next step
+    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+    And exact action stdout remains recoverable through read_action_output using that output_ref
 
   Scenario: Constructs OpenRouter Responses API requests with message-array input preserving role order
     Given a valid inference request for execution

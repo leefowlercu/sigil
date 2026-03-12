@@ -4,18 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/leefowlercu/sigil/internal/repl"
 )
 
 type fakeSessionFactory struct {
 	newCalls int
+	options  []repl.SessionOptions
 	sessions []*fakeSession
 }
 
-func (f *fakeSessionFactory) NewSession(_ context.Context, _ repl.SessionOptions) (repl.Session, error) {
+func (f *fakeSessionFactory) NewSession(_ context.Context, options repl.SessionOptions) (repl.Session, error) {
 	f.newCalls++
+	f.options = append(f.options, options)
 	session := &fakeSession{}
 	f.sessions = append(f.sessions, session)
 	return session, nil
@@ -59,7 +63,16 @@ func (managerNoopSubcalls) RLMQueryBatched(_ context.Context, _ []repl.BatchedQu
 }
 
 func TestNewREPLSessionManagerRequiresFactory(t *testing.T) {
-	_, err := NewREPLSessionManager(nil)
+	artifacts := mustNewManagerArtifactStore(t)
+	_, err := NewREPLSessionManager(nil, artifacts)
+	if !errors.Is(err, ErrInvalidManagerInput) {
+		t.Fatalf("expected ErrInvalidManagerInput, got %v", err)
+	}
+}
+
+func TestNewREPLSessionManagerRequiresArtifactStore(t *testing.T) {
+	factory := &fakeSessionFactory{}
+	_, err := NewREPLSessionManager(factory, nil)
 	if !errors.Is(err, ErrInvalidManagerInput) {
 		t.Fatalf("expected ErrInvalidManagerInput, got %v", err)
 	}
@@ -67,7 +80,7 @@ func TestNewREPLSessionManagerRequiresFactory(t *testing.T) {
 
 func TestSessionForNodeCreatesAndReusesSessionPerNodeID(t *testing.T) {
 	factory := &fakeSessionFactory{}
-	manager, err := NewREPLSessionManager(factory)
+	manager, err := NewREPLSessionManager(factory, mustNewManagerArtifactStore(t))
 	if err != nil {
 		t.Fatalf("expected manager construction success, got %v", err)
 	}
@@ -102,7 +115,7 @@ func TestSessionForNodeCreatesAndReusesSessionPerNodeID(t *testing.T) {
 
 func TestCloseNodeClosesAndRemovesSession(t *testing.T) {
 	factory := &fakeSessionFactory{}
-	manager, err := NewREPLSessionManager(factory)
+	manager, err := NewREPLSessionManager(factory, mustNewManagerArtifactStore(t))
 	if err != nil {
 		t.Fatalf("expected manager construction success, got %v", err)
 	}
@@ -131,7 +144,7 @@ func TestCloseNodeClosesAndRemovesSession(t *testing.T) {
 
 func TestCloseAllClosesManagedSessionsAndReturnsJoinedErrors(t *testing.T) {
 	factory := &fakeSessionFactory{}
-	manager, err := NewREPLSessionManager(factory)
+	manager, err := NewREPLSessionManager(factory, mustNewManagerArtifactStore(t))
 	if err != nil {
 		t.Fatalf("expected manager construction success, got %v", err)
 	}
@@ -158,4 +171,88 @@ func TestCloseAllClosesManagedSessionsAndReturnsJoinedErrors(t *testing.T) {
 	if manager.SessionCount() != 0 {
 		t.Fatalf("expected zero sessions after close all, got %d", manager.SessionCount())
 	}
+}
+
+func TestSessionForNodeProvidesReadActionOutputForCurrentRun(t *testing.T) {
+	runsDir := filepath.Join(t.TempDir(), "sigil-runs")
+	artifacts, err := NewActionArtifactStore(runsDir)
+	if err != nil {
+		t.Fatalf("expected artifact store construction success, got %v", err)
+	}
+	factory := &fakeSessionFactory{}
+	manager, err := NewREPLSessionManager(factory, artifacts)
+	if err != nil {
+		t.Fatalf("expected manager construction success, got %v", err)
+	}
+
+	runID := mustManagerUUIDv7String(t)
+	nodeID := mustManagerUUIDv7String(t)
+	stepID := mustManagerUUIDv7String(t)
+	errorCode := "repl_execution_compile"
+	errorMessage := "compile failed"
+	outputRef, err := artifacts.Persist(ActionArtifact{
+		RunID:        runID,
+		NodeID:       nodeID,
+		StepID:       stepID,
+		ActionIndex:  1,
+		ActionType:   "repl_code",
+		Language:     "go",
+		Status:       "failed",
+		Stdout:       "exact stdout",
+		Stderr:       "exact stderr",
+		ErrorCode:    &errorCode,
+		ErrorMessage: &errorMessage,
+	})
+	if err != nil {
+		t.Fatalf("expected artifact persist success, got %v", err)
+	}
+
+	_, err = manager.SessionForNode(context.Background(), NodeSessionInput{
+		RunID:    runID,
+		NodeID:   nodeID,
+		Depth:    0,
+		Context:  "context",
+		Bindings: managerNoopSubcalls{},
+	})
+	if err != nil {
+		t.Fatalf("expected session creation success, got %v", err)
+	}
+	if len(factory.options) != 1 {
+		t.Fatalf("expected one captured session option set, got %d", len(factory.options))
+	}
+	if factory.options[0].ReadActionOutput == nil {
+		t.Fatal("expected ReadActionOutput binding to be wired")
+	}
+
+	output, err := factory.options[0].ReadActionOutput(outputRef)
+	if err != nil {
+		t.Fatalf("expected read action output success, got %v", err)
+	}
+	if output.Status != "failed" || output.Stdout != "exact stdout" || output.Stderr != "exact stderr" {
+		t.Fatalf("unexpected action output %+v", output)
+	}
+	if output.ErrorCode != errorCode || output.ErrorMessage != errorMessage {
+		t.Fatalf("unexpected action output error metadata %+v", output)
+	}
+	if _, err := factory.options[0].ReadActionOutput(" " + outputRef + " "); err == nil {
+		t.Fatal("expected non-canonical whitespace-padded output_ref to fail")
+	}
+}
+
+func mustNewManagerArtifactStore(t *testing.T) *ActionArtifactStore {
+	t.Helper()
+	store, err := NewActionArtifactStore(filepath.Join(t.TempDir(), "sigil-runs"))
+	if err != nil {
+		t.Fatalf("expected artifact store construction success, got %v", err)
+	}
+	return store
+}
+
+func mustManagerUUIDv7String(t *testing.T) string {
+	t.Helper()
+	value, err := uuid.NewV7()
+	if err != nil {
+		t.Fatalf("expected UUIDv7 generation success, got %v", err)
+	}
+	return value.String()
 }

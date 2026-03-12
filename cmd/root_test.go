@@ -12,6 +12,7 @@ import (
 
 	"github.com/leefowlercu/sigil/internal/config"
 	"github.com/leefowlercu/sigil/internal/logging"
+	"github.com/leefowlercu/sigil/internal/runtime"
 )
 
 func TestRootCommandNoSubcommandPrintsUsage(t *testing.T) {
@@ -48,6 +49,60 @@ func TestRunStopRequiresRunID(t *testing.T) {
 
 	if !strings.Contains(stderr, "accepts 1 arg(s), received 0") {
 		t.Fatalf("expected stderr to include missing run-id error, got %q", stderr)
+	}
+}
+
+func TestRunStopUsesDefaultConfigBehaviorWhenBuiltBinaryNameExists(t *testing.T) {
+	workDir := t.TempDir()
+	writeFileBytes(t, filepath.Join(workDir, "sigil"), []byte{0xff, 0xfe, 0xfd}, 0o755)
+
+	previousDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(previousDir)
+	})
+
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		RunsBaseDir: runtime.DefaultRunsBaseDir,
+		MaxDepth:    3,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	t.Cleanup(func() {
+		_ = lifecycle.Close()
+	})
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected lifecycle start success, got %v", err)
+	}
+	if err := lifecycle.Complete(); err != nil {
+		t.Fatalf("expected lifecycle complete success, got %v", err)
+	}
+
+	stdout, stderr, err := executeRootCommand(t, workDir, nil, "run", "stop", lifecycle.RunID())
+	if err != nil {
+		t.Fatalf("expected run stop success without parsing built binary as config, got err=%v stderr=%q", err, stderr)
+	}
+	if !strings.Contains(stdout, lifecycle.RunID()) {
+		t.Fatalf("expected stop output to include run id, got %q", stdout)
+	}
+
+	activeLogPath, err := logging.ActiveLogFilePath()
+	if err != nil {
+		t.Fatalf("expected active log path after run stop bootstrap, got %v", err)
+	}
+
+	expectedLogPath, err := config.ExpandPath("./.sigil/logs/sigil.log")
+	if err != nil {
+		t.Fatalf("expected log path expansion success, got %v", err)
+	}
+	if activeLogPath != expectedLogPath {
+		t.Fatalf("expected active log path %q, got %q", expectedLogPath, activeLogPath)
 	}
 }
 
@@ -126,7 +181,7 @@ func TestRootBootstrapInitializesLoggingAtDefaultPath(t *testing.T) {
 		t.Fatalf("expected active log path, got %v", err)
 	}
 
-	expectedPath, err := config.ExpandPath("./sigil/logs/sigil.log")
+	expectedPath, err := config.ExpandPath("./.sigil/logs/sigil.log")
 	if err != nil {
 		t.Fatalf("expected expected-path expansion success, got %v", err)
 	}
@@ -535,6 +590,14 @@ func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
+}
+
+func writeFileBytes(t *testing.T, path string, content []byte, perm os.FileMode) {
+	t.Helper()
+
+	if err := os.WriteFile(path, content, perm); err != nil {
 		t.Fatalf("failed to write %s: %v", path, err)
 	}
 }

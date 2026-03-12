@@ -31,17 +31,30 @@ type BatchedQueryResult struct {
 // BatchedQueryFunc executes batched subcalls and returns per-item results.
 type BatchedQueryFunc func(ctx context.Context, requests []BatchedQueryRequest) ([]BatchedQueryResult, error)
 
+// ActionOutput exposes the narrow exact-output fields retrievable from an action artifact.
+type ActionOutput struct {
+	Status       string
+	Stdout       string
+	Stderr       string
+	ErrorCode    string
+	ErrorMessage string
+}
+
+// ActionOutputReadFunc resolves one exact action artifact output by canonical output_ref.
+type ActionOutputReadFunc func(outputRef string) (ActionOutput, error)
+
 // SessionOptions defines required construction inputs for a node-local REPL session.
 type SessionOptions struct {
-	RunID           string
-	NodeID          string
-	Depth           int
-	Context         string
-	RunContext      context.Context
-	LLMQuery        QueryFunc
-	RLMQuery        QueryFunc
-	LLMQueryBatched BatchedQueryFunc
-	RLMQueryBatched BatchedQueryFunc
+	RunID            string
+	NodeID           string
+	Depth            int
+	Context          string
+	RunContext       context.Context
+	LLMQuery         QueryFunc
+	RLMQuery         QueryFunc
+	LLMQueryBatched  BatchedQueryFunc
+	RLMQueryBatched  BatchedQueryFunc
+	ReadActionOutput ActionOutputReadFunc
 }
 
 // ExecResult captures normalized output from one code execution action.
@@ -84,6 +97,9 @@ func ValidateSessionOptions(options SessionOptions) error {
 	}
 	if options.RLMQueryBatched == nil {
 		return fmt.Errorf("rlm_query_batched function is required; %w", ErrInvalidSessionOptions)
+	}
+	if options.ReadActionOutput == nil {
+		return fmt.Errorf("read_action_output function is required; %w", ErrInvalidSessionOptions)
 	}
 
 	return nil

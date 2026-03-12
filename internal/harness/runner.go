@@ -131,7 +131,13 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		return RunResult{}, failRunningRunWithAccounting(lifecycle, nil, nil, input.RunConfig, nil, interruptErr)
 	}
 
-	sessions, err := NewREPLSessionManager(r.replFactory)
+	actionArtifacts, err := NewActionArtifactStore(r.runsBaseDir)
+	if err != nil {
+		logger.Error("failed to initialize action artifact store", "run_id", lifecycle.RunID(), "error", err)
+		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize action artifact store", err))
+	}
+
+	sessions, err := NewREPLSessionManager(r.replFactory, actionArtifacts)
 	if err != nil {
 		logger.Error("failed to initialize repl session manager", "run_id", lifecycle.RunID(), "error", err)
 		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize repl session manager", err))
@@ -141,12 +147,6 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 			logger.Error("failed to close all repl sessions", "run_id", lifecycle.RunID(), "error", closeErr)
 		}
 	}()
-
-	actionArtifacts, err := NewActionArtifactStore(r.runsBaseDir)
-	if err != nil {
-		logger.Error("failed to initialize action artifact store", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, failRunningRun(lifecycle, nil, input.RunConfig, WrapError(ErrorCodeInfrastructure, "failed to initialize action artifact store", err))
-	}
 
 	turnOutputs, err := NewTurnOutputStore(r.runsBaseDir)
 	if err != nil {

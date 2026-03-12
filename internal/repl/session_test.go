@@ -17,6 +17,9 @@ func TestValidateSessionOptions(t *testing.T) {
 	batched := func(_ context.Context, _ []BatchedQueryRequest) ([]BatchedQueryResult, error) {
 		return nil, nil
 	}
+	readActionOutput := func(_ string) (ActionOutput, error) {
+		return ActionOutput{}, nil
+	}
 
 	testCases := []struct {
 		name    string
@@ -26,93 +29,113 @@ func TestValidateSessionOptions(t *testing.T) {
 		{
 			name: "valid options",
 			options: SessionOptions{
-				RunID:           "run-1",
-				NodeID:          "node-1",
-				Depth:           0,
-				Context:         "ctx",
-				LLMQuery:        query,
-				RLMQuery:        query,
-				LLMQueryBatched: batched,
-				RLMQueryBatched: batched,
+				RunID:            "run-1",
+				NodeID:           "node-1",
+				Depth:            0,
+				Context:          "ctx",
+				LLMQuery:         query,
+				RLMQuery:         query,
+				LLMQueryBatched:  batched,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing run id",
 			options: SessionOptions{
-				NodeID:          "node-1",
-				LLMQuery:        query,
-				RLMQuery:        query,
-				LLMQueryBatched: batched,
-				RLMQueryBatched: batched,
+				NodeID:           "node-1",
+				LLMQuery:         query,
+				RLMQuery:         query,
+				LLMQueryBatched:  batched,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing node id",
 			options: SessionOptions{
-				RunID:           "run-1",
-				LLMQuery:        query,
-				RLMQuery:        query,
-				LLMQueryBatched: batched,
-				RLMQueryBatched: batched,
+				RunID:            "run-1",
+				LLMQuery:         query,
+				RLMQuery:         query,
+				LLMQueryBatched:  batched,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: true,
 		},
 		{
 			name: "negative depth",
 			options: SessionOptions{
-				RunID:           "run-1",
-				NodeID:          "node-1",
-				Depth:           -1,
-				LLMQuery:        query,
-				RLMQuery:        query,
-				LLMQueryBatched: batched,
-				RLMQueryBatched: batched,
+				RunID:            "run-1",
+				NodeID:           "node-1",
+				Depth:            -1,
+				LLMQuery:         query,
+				RLMQuery:         query,
+				LLMQueryBatched:  batched,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing llm query",
 			options: SessionOptions{
-				RunID:           "run-1",
-				NodeID:          "node-1",
-				RLMQuery:        query,
-				LLMQueryBatched: batched,
-				RLMQueryBatched: batched,
+				RunID:            "run-1",
+				NodeID:           "node-1",
+				RLMQuery:         query,
+				LLMQueryBatched:  batched,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing rlm query",
 			options: SessionOptions{
-				RunID:           "run-1",
-				NodeID:          "node-1",
-				LLMQuery:        query,
-				LLMQueryBatched: batched,
-				RLMQueryBatched: batched,
+				RunID:            "run-1",
+				NodeID:           "node-1",
+				LLMQuery:         query,
+				LLMQueryBatched:  batched,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing llm_query_batched",
 			options: SessionOptions{
-				RunID:           "run-1",
-				NodeID:          "node-1",
-				LLMQuery:        query,
-				RLMQuery:        query,
-				RLMQueryBatched: batched,
+				RunID:            "run-1",
+				NodeID:           "node-1",
+				LLMQuery:         query,
+				RLMQuery:         query,
+				RLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing rlm_query_batched",
 			options: SessionOptions{
+				RunID:            "run-1",
+				NodeID:           "node-1",
+				LLMQuery:         query,
+				RLMQuery:         query,
+				LLMQueryBatched:  batched,
+				ReadActionOutput: readActionOutput,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing read_action_output",
+			options: SessionOptions{
 				RunID:           "run-1",
 				NodeID:          "node-1",
 				LLMQuery:        query,
 				RLMQuery:        query,
 				LLMQueryBatched: batched,
+				RLMQueryBatched: batched,
 			},
 			wantErr: true,
 		},
@@ -314,6 +337,88 @@ fmt.Print(llm[0]["answer"] + "," + llm[1]["answer"] + ";" + rlm[0]["answer"] + "
 	expected := "llm:p1|c1,llm:p2|c2;rlm:p1|c1,rlm:p2|c2"
 	if result.Stdout != expected {
 		t.Fatalf("expected batched output %q, got %q", expected, result.Stdout)
+	}
+}
+
+func TestYaegiSessionExposesReadActionOutputBinding(t *testing.T) {
+	session := mustNewSessionWithActionOutputReader(t, func(outputRef string) (ActionOutput, error) {
+		if outputRef != "run-artifact://node/one/step/two/action-1.json" {
+			t.Fatalf("expected output_ref to be forwarded, got %q", outputRef)
+		}
+		return ActionOutput{
+			Status:       "completed",
+			Stdout:       "exact stdout",
+			Stderr:       "exact stderr",
+			ErrorCode:    "err_code",
+			ErrorMessage: "err message",
+		}, nil
+	})
+
+	result, err := session.Exec(context.Background(), `
+import "fmt"
+output, err := read_action_output("run-artifact://node/one/step/two/action-1.json")
+if err != nil { panic(err) }
+fmt.Print(output.Status + "|" + output.Stdout + "|" + output.Stderr + "|" + output.ErrorCode + "|" + output.ErrorMessage)
+`)
+	if err != nil {
+		t.Fatalf("expected read_action_output exec success, got %v", err)
+	}
+	expected := "completed|exact stdout|exact stderr|err_code|err message"
+	if result.Stdout != expected {
+		t.Fatalf("expected output %q, got %q", expected, result.Stdout)
+	}
+}
+
+func TestYaegiSessionReadActionOutputReturnsTypedErrorForInvalidOrMissingRefs(t *testing.T) {
+	session := mustNewSessionWithActionOutputReader(t, func(outputRef string) (ActionOutput, error) {
+		switch outputRef {
+		case "bad-ref":
+			return ActionOutput{}, errors.New("output_ref \"bad-ref\" does not match canonical action artifact reference format")
+		case " run-artifact://node/missing/step/missing/action-1.json ":
+			return ActionOutput{}, errors.New("output_ref \" run-artifact://node/missing/step/missing/action-1.json \" must be canonical without leading or trailing whitespace")
+		case "run-artifact://node/missing/step/missing/action-1.json":
+			return ActionOutput{}, errors.New("failed to read action artifact \"/tmp/missing.json\": open /tmp/missing.json: no such file or directory")
+		default:
+			return ActionOutput{}, nil
+		}
+	})
+
+	for _, outputRef := range []string{
+		"bad-ref",
+		" run-artifact://node/missing/step/missing/action-1.json ",
+		"run-artifact://node/missing/step/missing/action-1.json",
+	} {
+		result, err := session.Exec(context.Background(), `import "fmt"; _, err := read_action_output("`+outputRef+`"); if err == nil { panic("expected read_action_output error") }; fmt.Print(err.Error())`)
+		if err != nil {
+			t.Fatalf("expected handled read_action_output error for %q, got %v", outputRef, err)
+		}
+		if !strings.Contains(result.Stdout, string(ErrorCodeActionOutputRead)) {
+			t.Fatalf("expected error output to include action-output-read code for %q, got %q", outputRef, result.Stdout)
+		}
+		if !strings.Contains(result.Stdout, outputRef) {
+			t.Fatalf("expected error output to include output_ref %q, got %q", outputRef, result.Stdout)
+		}
+	}
+}
+
+func TestYaegiSessionReadActionOutputPersistsAcrossExecs(t *testing.T) {
+	session := mustNewSessionWithActionOutputReader(t, func(_ string) (ActionOutput, error) {
+		return ActionOutput{
+			Status: "completed",
+			Stdout: "persisted stdout",
+		}, nil
+	})
+
+	if _, err := session.Exec(context.Background(), `saved, err := read_action_output("run-artifact://node/one/step/two/action-1.json"); if err != nil { panic(err) }`); err != nil {
+		t.Fatalf("expected first exec success, got %v", err)
+	}
+
+	result, err := session.Exec(context.Background(), `import "fmt"; fmt.Print(saved.Status + "|" + saved.Stdout)`)
+	if err != nil {
+		t.Fatalf("expected second exec success, got %v", err)
+	}
+	if result.Stdout != "completed|persisted stdout" {
+		t.Fatalf("expected persisted action output, got %q", result.Stdout)
 	}
 }
 
@@ -539,6 +644,9 @@ func mustNewSessionWithContext(t *testing.T, contextValue string) Session {
 		RLMQueryBatched: func(_ context.Context, _ []BatchedQueryRequest) ([]BatchedQueryResult, error) {
 			return nil, nil
 		},
+		ReadActionOutput: func(_ string) (ActionOutput, error) {
+			return ActionOutput{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected session creation success, got %v", err)
@@ -608,6 +716,9 @@ func mustNewSessionWithFactoryAndQueriesAndRunContext(
 			}
 			return results, nil
 		},
+		ReadActionOutput: func(_ string) (ActionOutput, error) {
+			return ActionOutput{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected session creation success, got %v", err)
@@ -633,6 +744,9 @@ func mustNewSessionWithBatchedQueries(
 		RLMQuery:        func(_ context.Context, _ QueryRequest) (string, error) { return "", nil },
 		LLMQueryBatched: llmBatch,
 		RLMQueryBatched: rlmBatch,
+		ReadActionOutput: func(_ string) (ActionOutput, error) {
+			return ActionOutput{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected session creation success, got %v", err)
@@ -648,4 +762,33 @@ func mustUUIDv7String(t *testing.T) string {
 		t.Fatalf("expected UUIDv7 generation success, got %v", err)
 	}
 	return identifier.String()
+}
+
+func mustNewSessionWithActionOutputReader(t *testing.T, reader ActionOutputReadFunc) Session {
+	t.Helper()
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	session, err := NewFactory().NewSession(context.Background(), SessionOptions{
+		RunID:   runID,
+		NodeID:  nodeID,
+		Depth:   0,
+		Context: "context",
+		LLMQuery: func(_ context.Context, _ QueryRequest) (string, error) {
+			return "", nil
+		},
+		RLMQuery: func(_ context.Context, _ QueryRequest) (string, error) {
+			return "", nil
+		},
+		LLMQueryBatched: func(_ context.Context, _ []BatchedQueryRequest) ([]BatchedQueryResult, error) {
+			return nil, nil
+		},
+		RLMQueryBatched: func(_ context.Context, _ []BatchedQueryRequest) ([]BatchedQueryResult, error) {
+			return nil, nil
+		},
+		ReadActionOutput: reader,
+	})
+	if err != nil {
+		t.Fatalf("expected session creation success, got %v", err)
+	}
+	return session
 }

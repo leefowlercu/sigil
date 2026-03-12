@@ -1,0 +1,50 @@
+prompt_template: |
+  {{.question}}
+
+context_template: |
+  {{.external_context}}
+
+system_prompt_append: |
+  This is an exact transcript-retrieval task over numbered role-tagged messages.
+
+  Treat only `[message NNNN role=user]` blocks as candidate user requests and only
+  `[message NNNN role=assistant]` blocks as candidate answers. For MRCR-style
+  tasks, identify the user request that matches the requested writing task,
+  count only exact user-request occurrences for that task, then return the
+  assistant message immediately following the requested occurrence.
+
+  Your final answer must exactly satisfy the benchmark request, including any
+  required random prefix and the exact extracted assistant text, with no extra
+  wrapper text.
+
+llm:
+  provider: openai
+  model: gpt-5.3-codex
+  gateway: openrouter
+  reasoning:
+    enabled: false
+    effort: medium
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    request_timeout_ms: 180000
+    api_key_env: OPENROUTER_API_KEY
+
+rlm:
+  enabled: true
+  max_depth: 4
+
+guardrails:
+  max_steps_per_node: 128
+  max_total_steps_per_run: 512
+  max_run_duration_ms: 1800000
+  max_consecutive_step_failures: 10
+  max_total_tokens: 3000000
+  max_total_cost_usd: "20"
+
+accounting:
+  pricing_version: openrouter-2026-03-07
+  fallback_pricing:
+    openai:
+      gpt-5.3-codex:
+        input_microusd_per_million_tokens: 1750000
+        output_microusd_per_million_tokens: 14000000

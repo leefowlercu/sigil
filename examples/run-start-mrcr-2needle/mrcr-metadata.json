@@ -1,0 +1,14 @@
+{
+  "dataset_name": "openai/mrcr",
+  "dataset_url": "https://huggingface.co/datasets/openai/mrcr",
+  "source_parquet": "2needle/2needle_0.parquet",
+  "source_row_index": 0,
+  "merged_split_offset": 0,
+  "n_needles": 2,
+  "desired_msg_index": 721,
+  "total_messages": 772,
+  "n_chars": 708925,
+  "date_added": "04-12-2025",
+  "random_string_to_prepend": "mWEa9DrPT3",
+  "transform_note": "question.txt is the final user message from the MRCR prompt JSON. context.txt renders every earlier message in order as numbered role-tagged transcript blocks. expected-answer.txt preserves the MRCR answer field unchanged."
+}

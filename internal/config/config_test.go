@@ -41,6 +41,31 @@ func TestInitUsesDefaultsWhenConfigFileIsMissing(t *testing.T) {
 	}
 }
 
+func TestInitUsesDefaultsWhenMissingDefaultConfigNameCollidesWithBinary(t *testing.T) {
+	clearActiveConfig()
+	unsetEnv(t, "SIGIL_LOG_LEVEL", "SIGIL_LOG_DIR")
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	if err := os.WriteFile(filepath.Join(workDir, "sigil"), []byte{0xff, 0xfe, 0xfd}, 0o755); err != nil {
+		t.Fatalf("failed to write binary collision file: %v", err)
+	}
+
+	if err := Init(); err != nil {
+		t.Fatalf("expected defaults-only init success despite binary collision, got %v", err)
+	}
+
+	cfg := MustGet()
+	if cfg.LogLevel != DefaultLogLevel {
+		t.Fatalf("expected log level %q, got %q", DefaultLogLevel, cfg.LogLevel)
+	}
+
+	expectedLogDir := mustExpandPath(t, DefaultLogDir)
+	if cfg.LogDir != expectedLogDir {
+		t.Fatalf("expected log dir %q, got %q", expectedLogDir, cfg.LogDir)
+	}
+}
+
 func TestInitAppliesEnvironmentOverrides(t *testing.T) {
 	clearActiveConfig()
 	unsetEnv(t, "SIGIL_LOG_LEVEL", "SIGIL_LOG_DIR")
@@ -157,7 +182,7 @@ func TestExpandPathResolvesRelativePathsFromWorkingDirectory(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
 
-	expanded, err := ExpandPath("./sigil/logs")
+	expanded, err := ExpandPath("./.sigil/logs")
 	if err != nil {
 		t.Fatalf("expected expansion success, got %v", err)
 	}
@@ -166,7 +191,7 @@ func TestExpandPathResolvesRelativePathsFromWorkingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get working directory: %v", err)
 	}
-	expected := filepath.Clean(filepath.Join(currentDir, "./sigil/logs"))
+	expected := filepath.Clean(filepath.Join(currentDir, "./.sigil/logs"))
 	if expanded != expected {
 		t.Fatalf("expected expanded path %q, got %q", expected, expanded)
 	}

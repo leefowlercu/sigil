@@ -553,6 +553,50 @@ func TestExtractStructuredPayloadRejectsRawTextFallbackForNonLLMAnswerSchemas(t 
 	}
 }
 
+func TestExtractStructuredPayloadPrefersFinalAnswerPhaseForRLMResponses(t *testing.T) {
+	decoded := map[string]any{
+		"output": []any{
+			map[string]any{
+				"type":  "message",
+				"phase": "commentary",
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": `{"decision":"continue","continuation":{"repl_code":"fmt.Println(\"keep going\")","intent":"Inspect more context","expected_observation":"More evidence."}}`,
+					},
+				},
+			},
+			map[string]any{
+				"type":  "message",
+				"phase": "final_answer",
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/root/context.json"}],"confidence":"high"}}`,
+					},
+				},
+			},
+		},
+	}
+
+	payload, metadata, err := extractStructuredPayload(decoded, schema.SigilRLMResponseV1SchemaID)
+	if err != nil {
+		t.Fatalf("expected extraction success, got %v", err)
+	}
+	if payload["decision"] != "final" {
+		t.Fatalf("expected final payload selection, got %+v", payload)
+	}
+	if metadata["source"] != "output[1].content[0].text" {
+		t.Fatalf("expected final payload source, got %+v", metadata)
+	}
+	if metadata["phase"] != "final_answer" {
+		t.Fatalf("expected final_answer phase metadata, got %+v", metadata)
+	}
+	if metadata["candidate_count"] != 2 {
+		t.Fatalf("expected candidate_count=2, got %+v", metadata)
+	}
+}
+
 func TestInferEmitsExtractionMetadataWhenRawTextFallbackApplies(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

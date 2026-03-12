@@ -271,22 +271,29 @@ func extractStructuredPayload(decoded map[string]any, schemaID string) (map[stri
 	trimmedSchemaID := strings.TrimSpace(schemaID)
 	rawFallbackCandidate := ""
 	rawFallbackSource := ""
+	candidates := make([]structuredPayloadCandidate, 0, 4)
 
 	if text, ok := decoded["output_text"].(string); ok {
 		payload, err := decodePayloadText(text)
 		if err == nil {
-			return payload, nil, nil
+			candidates = append(candidates, structuredPayloadCandidate{
+				Payload: payload,
+				Source:  "output_text",
+			})
 		}
-		if trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && strings.TrimSpace(text) != "" {
+		if err != nil && trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && strings.TrimSpace(text) != "" {
 			rawFallbackCandidate = strings.TrimSpace(text)
 			rawFallbackSource = "output_text"
-		} else {
+		} else if err != nil {
 			return nil, nil, err
 		}
 	}
 
 	outputArray, ok := decoded["output"].([]any)
 	if !ok {
+		if len(candidates) > 0 {
+			return selectedStructuredPayload(candidates, trimmedSchemaID)
+		}
 		if rawFallbackCandidate != "" {
 			return map[string]any{"answer": rawFallbackCandidate}, map[string]any{
 				"mode":      "raw_text_fallback",
@@ -299,6 +306,7 @@ func extractStructuredPayload(decoded map[string]any, schemaID string) (map[stri
 
 	for outputIndex, outputItem := range outputArray {
 		outputMap := asMap(outputItem)
+		phase, _ := outputMap["phase"].(string)
 		contentArray, ok := outputMap["content"].([]any)
 		if !ok {
 			continue
@@ -320,7 +328,12 @@ func extractStructuredPayload(decoded map[string]any, schemaID string) (map[stri
 			}
 			payload, err := decodePayloadText(text)
 			if err == nil {
-				return payload, nil, nil
+				candidates = append(candidates, structuredPayloadCandidate{
+					Payload: payload,
+					Source:  fmt.Sprintf("output[%d].content[%d].text", outputIndex, contentIndex),
+					Phase:   strings.TrimSpace(phase),
+				})
+				continue
 			}
 			if trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && rawFallbackCandidate == "" {
 				rawFallbackCandidate = strings.TrimSpace(text)
@@ -333,6 +346,10 @@ func extractStructuredPayload(decoded map[string]any, schemaID string) (map[stri
 		}
 	}
 
+	if len(candidates) > 0 {
+		return selectedStructuredPayload(candidates, trimmedSchemaID)
+	}
+
 	if trimmedSchemaID == schema.SigilLLMAnswerV1SchemaID && rawFallbackCandidate != "" {
 		return map[string]any{"answer": rawFallbackCandidate}, map[string]any{
 			"mode":      "raw_text_fallback",
@@ -342,6 +359,57 @@ func extractStructuredPayload(decoded map[string]any, schemaID string) (map[stri
 	}
 
 	return nil, nil, fmt.Errorf("output_text content not found")
+}
+
+type structuredPayloadCandidate struct {
+	Payload map[string]any
+	Source  string
+	Phase   string
+}
+
+func selectedStructuredPayload(candidates []structuredPayloadCandidate, schemaID string) (map[string]any, map[string]any, error) {
+	if len(candidates) == 0 {
+		return nil, nil, fmt.Errorf("structured payload candidate list is empty")
+	}
+
+	selected := candidates[len(candidates)-1]
+	if strings.TrimSpace(schemaID) == schema.SigilRLMResponseV1SchemaID {
+		for index := len(candidates) - 1; index >= 0; index-- {
+			candidate := candidates[index]
+			if structuredDecision(candidate.Payload) == "final" && candidate.Phase == "final_answer" {
+				selected = candidate
+				break
+			}
+		}
+		if structuredDecision(selected.Payload) != "final" {
+			for index := len(candidates) - 1; index >= 0; index-- {
+				candidate := candidates[index]
+				if structuredDecision(candidate.Payload) == "final" {
+					selected = candidate
+					break
+				}
+			}
+		}
+	}
+
+	metadata := map[string]any{
+		"mode":            "structured_payload",
+		"source":          selected.Source,
+		"candidate_count": len(candidates),
+	}
+	if selected.Phase != "" {
+		metadata["phase"] = selected.Phase
+	}
+
+	return selected.Payload, metadata, nil
+}
+
+func structuredDecision(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	decision, _ := payload["decision"].(string)
+	return strings.TrimSpace(decision)
 }
 
 func decodePayloadText(text string) (map[string]any, error) {

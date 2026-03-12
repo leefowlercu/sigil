@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/leefowlercu/sigil/internal/repl"
+	"github.com/leefowlercu/sigil/internal/runtime"
 )
 
 var (
@@ -59,22 +60,34 @@ func (d *subcallDispatcher) current() (SubcallBindings, error) {
 	return d.bindings, nil
 }
 
+func dereferenceString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 // REPLSessionManager owns one persistent REPL session per node id.
 type REPLSessionManager struct {
-	mu       sync.Mutex
-	factory  repl.SessionFactory
-	sessions map[string]sessionEntry
+	mu        sync.Mutex
+	factory   repl.SessionFactory
+	artifacts *ActionArtifactStore
+	sessions  map[string]sessionEntry
 }
 
 // NewREPLSessionManager constructs a session manager.
-func NewREPLSessionManager(factory repl.SessionFactory) (*REPLSessionManager, error) {
+func NewREPLSessionManager(factory repl.SessionFactory, artifacts *ActionArtifactStore) (*REPLSessionManager, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("session factory is required; %w", ErrInvalidManagerInput)
 	}
+	if artifacts == nil {
+		return nil, fmt.Errorf("action artifact store is required; %w", ErrInvalidManagerInput)
+	}
 
 	return &REPLSessionManager{
-		factory:  factory,
-		sessions: make(map[string]sessionEntry),
+		factory:   factory,
+		artifacts: artifacts,
+		sessions:  make(map[string]sessionEntry),
 	}, nil
 }
 
@@ -138,6 +151,27 @@ func (m *REPLSessionManager) SessionForNode(ctx context.Context, input NodeSessi
 				return nil, currentErr
 			}
 			return current.RLMQueryBatched(callCtx, requests)
+		},
+		ReadActionOutput: func(outputRef string) (repl.ActionOutput, error) {
+			if strings.TrimSpace(outputRef) != outputRef {
+				return repl.ActionOutput{}, fmt.Errorf("output_ref %q must be canonical without leading or trailing whitespace", outputRef)
+			}
+			if _, err := runtime.ParseActionOutputRef(outputRef); err != nil {
+				return repl.ActionOutput{}, err
+			}
+
+			artifact, err := m.artifacts.Read(input.RunID, outputRef)
+			if err != nil {
+				return repl.ActionOutput{}, err
+			}
+
+			return repl.ActionOutput{
+				Status:       artifact.Status,
+				Stdout:       artifact.Stdout,
+				Stderr:       artifact.Stderr,
+				ErrorCode:    dereferenceString(artifact.ErrorCode),
+				ErrorMessage: dereferenceString(artifact.ErrorMessage),
+			}, nil
 		},
 	})
 	if err != nil {

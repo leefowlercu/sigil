@@ -231,6 +231,23 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 				}
 				return EncodeBatchedResults(results), nil
 			}),
+			"ReadActionOutput": reflect.ValueOf(func(outputRef string) (ActionOutput, error) {
+				if _, ctxErr := session.activeExecContext(); ctxErr != nil {
+					return ActionOutput{}, ctxErr
+				}
+				output, err := options.ReadActionOutput(outputRef)
+				if err != nil {
+					if _, ok := CodeOf(err); ok {
+						return ActionOutput{}, err
+					}
+					return ActionOutput{}, WrapError(
+						ErrorCodeActionOutputRead,
+						fmt.Sprintf("read_action_output failed for %q", outputRef),
+						err,
+					)
+				}
+				return output, nil
+			}),
 		},
 	}
 	if err := interpreter.Use(exports); err != nil {
@@ -251,6 +268,9 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 	}
 	if _, err := interpreter.Eval(`var rlm_query_batched = RLMQueryBatched`); err != nil {
 		return nil, WrapError(ErrorCodeSessionInit, "failed to expose rlm_query_batched binding", err)
+	}
+	if _, err := interpreter.Eval(`var read_action_output = ReadActionOutput`); err != nil {
+		return nil, WrapError(ErrorCodeSessionInit, "failed to expose read_action_output binding", err)
 	}
 	if _, err := interpreter.Eval(`var context string`); err != nil {
 		return nil, WrapError(ErrorCodeSessionInit, "failed to declare context binding", err)

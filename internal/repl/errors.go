@@ -27,6 +27,7 @@ const (
 	ErrorCodeSubcallInvalidInput ErrorCode = "repl_subcall_invalid_input"
 	ErrorCodeSubcallInference    ErrorCode = "repl_subcall_inference"
 	ErrorCodeSubcallEventPersist ErrorCode = "repl_subcall_event_persist"
+	ErrorCodeActionOutputRead    ErrorCode = "repl_action_output_read"
 )
 
 // Error is a typed REPL runtime error that preserves machine-readable code.

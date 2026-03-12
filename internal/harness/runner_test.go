@@ -244,20 +244,33 @@ func hydrateFinalEvidenceRef(result inference.Result, request inference.Request)
 	if result.SchemaID != schema.SigilRLMResponseV1SchemaID {
 		return result
 	}
+	if len(request.Messages) < 2 {
+		return result
+	}
+	var envelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(request.Messages[1].Content), &envelope); err != nil {
+		return result
+	}
+
+	if continuationPayload, ok := result.ValidatedPayload["continuation"].(map[string]any); ok {
+		replCode, replCodeOK := continuationPayload["repl_code"].(string)
+		if replCodeOK {
+			if strings.TrimSpace(envelope.ContextMetadata.ContextRef) != "" {
+				replCode = strings.ReplaceAll(replCode, "__context_ref__", envelope.ContextMetadata.ContextRef)
+			}
+			if envelope.PreviousActionFeedback != nil && strings.TrimSpace(envelope.PreviousActionFeedback.OutputRef) != "" {
+				replCode = strings.ReplaceAll(replCode, "__previous_output_ref__", envelope.PreviousActionFeedback.OutputRef)
+			}
+			continuationPayload["repl_code"] = replCode
+		}
+	}
+
 	finalPayload, ok := result.ValidatedPayload["final"].(map[string]any)
 	if !ok {
 		return result
 	}
 	evidenceRaw, ok := finalPayload["evidence"].([]any)
 	if !ok || len(evidenceRaw) == 0 {
-		return result
-	}
-
-	if len(request.Messages) < 2 {
-		return result
-	}
-	var envelope StepInputEnvelope
-	if err := json.Unmarshal([]byte(request.Messages[1].Content), &envelope); err != nil {
 		return result
 	}
 
@@ -463,6 +476,94 @@ func TestRunnerRunIncludesPreviousActionFeedbackOnSubsequentStep(t *testing.T) {
 	}
 	if len(feedback.StdoutPreview) != stepInputPreviewCapBytes {
 		t.Fatalf("expected stdout preview size %d, got %d", stepInputPreviewCapBytes, len(feedback.StdoutPreview))
+	}
+}
+
+func TestRunnerRunCanRecoverExactActionOutputViaReadActionOutput(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	largeStdout := strings.Repeat("a", stepInputPreviewCapBytes+32)
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; fmt.Print("` + largeStdout + `")`)},
+			{result: continueResult(`import "fmt"; output, err := read_action_output("__previous_output_ref__"); if err != nil { panic(err) }; fmt.Print(output.Stdout)`)},
+			{result: finalResult("done")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
+		TemplateVars:  map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.State != "completed" {
+		t.Fatalf("expected completed state, got %q", result.State)
+	}
+	if len(inferenceClient.requests) != 3 {
+		t.Fatalf("expected exactly three inference requests, got %d", len(inferenceClient.requests))
+	}
+
+	var secondEnvelope StepInputEnvelope
+	if err := json.Unmarshal([]byte(inferenceClient.requests[1].Messages[1].Content), &secondEnvelope); err != nil {
+		t.Fatalf("expected second envelope decode success, got %v", err)
+	}
+	if secondEnvelope.PreviousActionFeedback == nil {
+		t.Fatal("expected previous_action_feedback in second step")
+	}
+	if !secondEnvelope.PreviousActionFeedback.StdoutTruncated {
+		t.Fatal("expected second-step stdout preview to remain truncated")
+	}
+	if len(secondEnvelope.PreviousActionFeedback.StdoutPreview) != stepInputPreviewCapBytes {
+		t.Fatalf("expected truncated stdout preview size %d, got %d", stepInputPreviewCapBytes, len(secondEnvelope.PreviousActionFeedback.StdoutPreview))
+	}
+
+	events := mustReadPersistedEvents(t, baseDir)
+	var actionOutputRefs []string
+	for _, event := range events {
+		if event.Type != runtime.EventTypeNodeActionExecuted {
+			continue
+		}
+		payload, ok := event.Payload.(runtime.NodeActionExecutedPayload)
+		if !ok {
+			t.Fatalf("expected node.action.executed payload type, got %T", event.Payload)
+		}
+		actionOutputRefs = append(actionOutputRefs, payload.OutputRef)
+	}
+	if len(actionOutputRefs) != 2 {
+		t.Fatalf("expected two node.action.executed output refs, got %d", len(actionOutputRefs))
+	}
+
+	artifacts, err := NewActionArtifactStore(baseDir)
+	if err != nil {
+		t.Fatalf("expected artifact store construction success, got %v", err)
+	}
+	firstArtifact, err := artifacts.Read(result.RunID, actionOutputRefs[0])
+	if err != nil {
+		t.Fatalf("expected first action artifact read success, got %v", err)
+	}
+	secondArtifact, err := artifacts.Read(result.RunID, actionOutputRefs[1])
+	if err != nil {
+		t.Fatalf("expected second action artifact read success, got %v", err)
+	}
+
+	if firstArtifact.Stdout != largeStdout {
+		t.Fatalf("expected first artifact stdout to hold full extracted string, got %q", firstArtifact.Stdout)
+	}
+	if secondArtifact.Stdout != largeStdout {
+		t.Fatalf("expected second artifact stdout recovered through read_action_output to match full string, got %q", secondArtifact.Stdout)
+	}
+	if secondArtifact.Stdout == secondEnvelope.PreviousActionFeedback.StdoutPreview {
+		t.Fatal("expected exact recovered stdout to exceed bounded preview")
 	}
 }
 

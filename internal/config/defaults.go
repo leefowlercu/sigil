@@ -9,7 +9,7 @@ const (
 	// DefaultLogLevel is the baseline log level.
 	DefaultLogLevel = "info"
 	// DefaultLogDir is the baseline log directory.
-	DefaultLogDir = "./sigil/logs"
+	DefaultLogDir = "./.sigil/logs"
 
 	// DefaultRunGateway is the default inference gateway.
 	DefaultRunGateway = "openrouter"

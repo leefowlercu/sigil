@@ -81,23 +81,21 @@ func InitFromPath(configPath string) (err error) {
 	}()
 
 	path := resolveConfigPath(configPath, DefaultConfigPath)
-
-	configName, configDir, err := splitConfigPath(path)
+	configFile, err := normalizeConfigFilePath(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve config path; %w", err)
 	}
 
 	v := viper.New()
-	v.SetConfigName(configName)
+	v.SetConfigFile(configFile)
 	v.SetConfigType("yaml")
-	v.AddConfigPath(configDir)
 	v.SetEnvPrefix(applicationEnvPrefix)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
 	registerDefaults(v)
 
-	if err := readConfig(v, true); err != nil {
+	if err := readConfig(v, configFile, true); err != nil {
 		return err
 	}
 
@@ -136,23 +134,21 @@ func initRunFromPath(runConfigPath string, allowMissing bool) (err error) {
 	}()
 
 	path := resolveConfigPath(runConfigPath, DefaultRunConfigPath)
-
-	configName, configDir, err := splitConfigPath(path)
+	configFile, err := normalizeConfigFilePath(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve run config path; %w", err)
 	}
 
 	v := viper.New()
-	v.SetConfigName(configName)
+	v.SetConfigFile(configFile)
 	v.SetConfigType("yaml")
-	v.AddConfigPath(configDir)
 	v.SetEnvPrefix(runEnvPrefix)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
 	registerRunDefaults(v)
 
-	if err := readConfig(v, allowMissing); err != nil {
+	if err := readConfig(v, configFile, allowMissing); err != nil {
 		return err
 	}
 
@@ -282,7 +278,7 @@ func resolveConfigPath(configPath string, fallback string) string {
 	return path
 }
 
-func splitConfigPath(configPath string) (string, string, error) {
+func normalizeConfigFilePath(configPath string) (string, error) {
 	cleanPath := filepath.Clean(configPath)
 	base := filepath.Base(cleanPath)
 	ext := filepath.Ext(base)
@@ -290,24 +286,15 @@ func splitConfigPath(configPath string) (string, string, error) {
 	switch ext {
 	case "", ".yaml", ".yml":
 	default:
-		return "", "", fmt.Errorf("config path %q must use a YAML extension", configPath)
+		return "", fmt.Errorf("config path %q must use a YAML extension", configPath)
 	}
 
-	configName := base
-	if ext != "" {
-		configName = strings.TrimSuffix(base, ext)
-	}
-
+	configName := strings.TrimSuffix(base, ext)
 	if configName == "" {
-		return "", "", fmt.Errorf("config path %q has no file name", configPath)
+		return "", fmt.Errorf("config path %q has no file name", configPath)
 	}
 
-	configDir := filepath.Dir(cleanPath)
-	if configDir == "" {
-		configDir = "."
-	}
-
-	return configName, configDir, nil
+	return cleanPath, nil
 }
 
 func registerDefaults(v *viper.Viper) {
@@ -340,7 +327,20 @@ func registerRunDefaults(v *viper.Viper) {
 	v.SetDefault("guardrails.max_consecutive_step_failures", defaults.Guardrails.MaxConsecutiveStepFailures)
 }
 
-func readConfig(v *viper.Viper, allowMissing bool) error {
+func readConfig(v *viper.Viper, configFile string, allowMissing bool) error {
+	if allowMissing {
+		info, err := os.Stat(configFile)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("failed to stat config; %w", err)
+		}
+		if info.IsDir() {
+			return nil
+		}
+	}
+
 	if err := v.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
 		if allowMissing && errors.As(err, &notFound) {

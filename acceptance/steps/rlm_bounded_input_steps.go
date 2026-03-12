@@ -16,6 +16,7 @@ import (
 	sigilharness "github.com/leefowlercu/sigil/internal/harness"
 	sigilinference "github.com/leefowlercu/sigil/internal/inference"
 	sigilschema "github.com/leefowlercu/sigil/internal/inference/schema"
+	sigilrepl "github.com/leefowlercu/sigil/internal/repl"
 	sigilruntime "github.com/leefowlercu/sigil/internal/runtime"
 )
 
@@ -86,6 +87,7 @@ func registerRLMBoundedInputSteps(ctx *godog.ScenarioContext, world *harnessWorl
 	ctx.Step(`^previous-action feedback includes deterministic subcall summary counts$`, world.previousactionFeedbackIncludesDeterministicSubcallSummaryCounts)
 	ctx.Step(`^previous-action feedback block is omitted from user step envelope$`, world.previousactionFeedbackBlockIsOmittedFromUserStepEnvelope)
 	ctx.Step(`^action artifact remains source of truth for full stdout and stderr while model input uses bounded previews$`, world.actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrWhileModelInputUsesBoundedPreviews)
+	ctx.Step(`^exact action stdout remains recoverable through read_action_output using that output_ref$`, world.exactActionStdoutRemainsRecoverableThroughRead_action_outputUsingThatOutput_ref)
 
 	ctx.Step(`^harness user turn artifact input is prepared$`, world.harnessUserTurnArtifactInputIsPrepared)
 	ctx.Step(`^compact node turn user artifact is persisted$`, world.compactNodeTurnUserArtifactIsPersisted)
@@ -439,6 +441,80 @@ func (w *harnessWorld) actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrW
 	}
 	if feedback.StderrTruncated && !strings.HasPrefix(artifact.Stderr, feedback.StderrPreview) {
 		return fmt.Errorf("expected stderr preview to match artifact stderr prefix")
+	}
+	return nil
+}
+
+func (w *harnessWorld) exactActionStdoutRemainsRecoverableThroughRead_action_outputUsingThatOutput_ref() error {
+	state := w.rlm()
+	feedback := state.boundedNextEnvelope.PreviousActionFeedback
+	if feedback == nil {
+		return fmt.Errorf("expected previous_action_feedback for exact stdout recovery")
+	}
+	parsed, err := sigilruntime.ParseActionOutputRef(feedback.OutputRef)
+	if err != nil {
+		return err
+	}
+	artifactStore, err := sigilharness.NewActionArtifactStore(w.runsBaseDir())
+	if err != nil {
+		return err
+	}
+	session, err := sigilrepl.NewFactory().NewSession(context.Background(), sigilrepl.SessionOptions{
+		RunID:   state.boundedRunResult.RunID,
+		NodeID:  parsed.NodeID,
+		Depth:   0,
+		Context: "bounded-context",
+		LLMQuery: func(_ context.Context, _ sigilrepl.QueryRequest) (string, error) {
+			return "", nil
+		},
+		RLMQuery: func(_ context.Context, _ sigilrepl.QueryRequest) (string, error) {
+			return "", nil
+		},
+		LLMQueryBatched: func(_ context.Context, _ []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
+			return nil, nil
+		},
+		RLMQueryBatched: func(_ context.Context, _ []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
+			return nil, nil
+		},
+		ReadActionOutput: func(outputRef string) (sigilrepl.ActionOutput, error) {
+			if strings.TrimSpace(outputRef) != outputRef {
+				return sigilrepl.ActionOutput{}, fmt.Errorf("output_ref %q must be canonical without leading or trailing whitespace", outputRef)
+			}
+			if _, err := sigilruntime.ParseActionOutputRef(outputRef); err != nil {
+				return sigilrepl.ActionOutput{}, err
+			}
+			artifact, err := artifactStore.Read(state.boundedRunResult.RunID, outputRef)
+			if err != nil {
+				return sigilrepl.ActionOutput{}, err
+			}
+			errorCode := ""
+			if artifact.ErrorCode != nil {
+				errorCode = *artifact.ErrorCode
+			}
+			errorMessage := ""
+			if artifact.ErrorMessage != nil {
+				errorMessage = *artifact.ErrorMessage
+			}
+			return sigilrepl.ActionOutput{
+				Status:       artifact.Status,
+				Stdout:       artifact.Stdout,
+				Stderr:       artifact.Stderr,
+				ErrorCode:    errorCode,
+				ErrorMessage: errorMessage,
+			}, nil
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create read_action_output session; %w", err)
+	}
+	defer session.Close()
+
+	result, err := session.Exec(context.Background(), `import "fmt"; output, err := read_action_output("`+feedback.OutputRef+`"); if err != nil { panic(err) }; fmt.Print(output.Stdout)`)
+	if err != nil {
+		return fmt.Errorf("failed to recover exact action stdout through read_action_output; %w", err)
+	}
+	if result.Stdout != state.boundedActionArtifact.Stdout {
+		return fmt.Errorf("expected exact action stdout %q, got %q", state.boundedActionArtifact.Stdout, result.Stdout)
 	}
 	return nil
 }
