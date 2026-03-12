@@ -18,6 +18,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 	renderer.WritePreflight(StartPreflight{
 		ConfigPath:       "./sigil.yaml",
 		RunConfigPath:    "./sigil-run.yaml",
+		RunsBaseDir:      "/tmp/custom-runs",
 		Gateway:          "openrouter",
 		Provider:         "openai",
 		Model:            "gpt-5.1",
@@ -157,6 +158,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 	rendered := buffer.String()
 	expectedSnippets := []string{
 		"Run start",
+		"Runs dir: /tmp/custom-runs",
 		"Profile: recursive",
 		"Run queued: run_id=" + runID,
 		"Run running: run_id=" + runID,

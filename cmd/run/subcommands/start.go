@@ -34,13 +34,15 @@ func NewStartCmd() *cobra.Command {
 
 	startCmd := &cobra.Command{
 		Use:   "start",
-		Short: "Execute a blocking harness run from resolved config inputs",
-		Long: "sigil run start initializes config inputs and executes the harness synchronously.\n\n" +
-			"This command resolves application and run configuration paths, validates command input constraints, renders prompt/context templates when configured, and runs the harness until the run reaches a terminal state.",
+		Short: "Execute a harness run from resolved config inputs",
+		Long: "sigil run start initializes config inputs and executes the harness.\n\n" +
+			"This command resolves application and run configuration paths, validates command input constraints, renders prompt/context templates when configured, and runs the harness in the foreground until the run reaches a terminal state.",
 		Example: "# Start using default config paths\n" +
 			"  sigil run start\n\n" +
 			"# Start with explicit config paths\n" +
 			"  sigil run start --config ./configs/sigil.yaml --run-config ./configs/sigil-run.yaml\n\n" +
+			"# Start using a custom runs directory\n" +
+			"  sigil run --run-dir /tmp/sigil-runs start\n\n" +
 			"# Start with machine-readable JSON output\n" +
 			"  sigil run start -o json\n\n" +
 			"# Start with template variables\n" +
@@ -64,6 +66,9 @@ func resetStartFlags() {
 }
 
 func validateStartInputs(cmd *cobra.Command, args []string) error {
+	if err := validateInheritedRunDir(cmd); err != nil {
+		return err
+	}
 	if err := validateNoArgs(cmd, args); err != nil {
 		return err
 	}
@@ -147,9 +152,15 @@ func parseTemplateVars(entries []string) (map[string]string, error) {
 }
 
 func runStartCommand(cmd *cobra.Command, _ []string) error {
+	runsBaseDir, err := resolveRunsBaseDir(cmd)
+	if err != nil {
+		return err
+	}
+
 	runStartLogger().Info("run start command beginning",
 		"config_path", startConfigPath,
 		"run_config_path", startRunConfigPath,
+		"runs_base_dir", runsBaseDir,
 		"template_var_count", len(startTemplateVars),
 	)
 
@@ -190,13 +201,16 @@ func runStartCommand(cmd *cobra.Command, _ []string) error {
 	)
 
 	format := clioutput.ResolveFormat(cmd)
+
 	var textRenderer *clioutput.StartTextRenderer
-	runnerOptions := make([]harness.RunnerOption, 0, 1)
+	runnerOptions := make([]harness.RunnerOption, 0, 2)
+	runnerOptions = append(runnerOptions, harness.WithRunsBaseDir(runsBaseDir))
 	if format == clioutput.FormatText {
 		textRenderer = clioutput.NewStartTextRenderer(cmd.OutOrStdout())
 		textRenderer.WritePreflight(clioutput.StartPreflight{
 			ConfigPath:       startConfigPath,
 			RunConfigPath:    startRunConfigPath,
+			RunsBaseDir:      runsBaseDir,
 			Gateway:          runCfg.LLM.Gateway,
 			Provider:         runCfg.LLM.Provider,
 			Model:            runCfg.LLM.Model,

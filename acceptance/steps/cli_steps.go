@@ -99,6 +99,7 @@ type harnessWorld struct {
 	helperStdout             bytes.Buffer
 	helperStderr             bytes.Buffer
 	invalidProcessCmd        *exec.Cmd
+	runInspection            *runInspectionState
 }
 
 // InitializeScenario wires all acceptance steps for harness.feature.
@@ -188,6 +189,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		world.helperStdout.Reset()
 		world.helperStderr.Reset()
 		world.invalidProcessCmd = nil
+		world.runInspection = nil
 
 		return ctx, nil
 	})
@@ -382,6 +384,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 
 	registerRLMHarnessSteps(ctx, world)
 	registerInferenceSteps(ctx, world)
+	registerRunInspectionSteps(ctx, world)
 }
 
 func (w *harnessWorld) aCleanSigilWorkingDirectory() error {
@@ -1977,7 +1980,11 @@ func (w *harnessWorld) aUserRuns(commandLine string) error {
 		return fmt.Errorf("expected command to start with sigil, got %q", tokens[0])
 	}
 
-	if len(tokens) >= 3 && tokens[1] == "run" && tokens[2] == "start" {
+	return w.executeSigilArgs(tokens[1:])
+}
+
+func (w *harnessWorld) executeSigilArgs(args []string) error {
+	if isRunStartArgs(args) {
 		if err := w.ensureRunStartMockGateway(); err != nil {
 			return err
 		}
@@ -1988,7 +1995,7 @@ func (w *harnessWorld) aUserRuns(commandLine string) error {
 	var stderr bytes.Buffer
 	rootCmd.SetOut(&stdout)
 	rootCmd.SetErr(&stderr)
-	rootCmd.SetArgs(tokens[1:])
+	rootCmd.SetArgs(args)
 
 	w.lastErr = rootCmd.Execute()
 	w.lastStdout = stdout.String()
@@ -2000,6 +2007,20 @@ func (w *harnessWorld) aUserRuns(commandLine string) error {
 
 	w.lastExitCode = 0
 	return nil
+}
+
+func isRunStartArgs(args []string) bool {
+	if len(args) == 0 || args[0] != "run" {
+		return false
+	}
+
+	for _, arg := range args[1:] {
+		if arg == "start" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (w *harnessWorld) ensureRunStartMockGateway() error {

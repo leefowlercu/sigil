@@ -59,7 +59,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run usage/help is printed
     And command exits with status code 0
 
-  Scenario: Delegates sigil run start behavior to PRD-0410 run-start command-execution contract
+  Scenario: Delegates sigil run start behavior to PRD-0130 and PRD-0410 run-start contracts
     Given the sigil executable is available
     And no default start config files exist
     When a user runs `sigil run start`
@@ -149,6 +149,151 @@ Feature: Sigil baseline CLI and config contracts
     When a user runs `sigil unknown`
     Then command exits non-zero
     And command error contains `unknown command`
+
+  Scenario: Exposes run inspection subcommands under sigil run
+    Given the sigil executable is available
+    When a user runs `sigil run --help`
+    Then command exits with status code 0
+    And command output contains `list`
+    And command output contains `status`
+    And command output contains `inspect`
+    And command output contains `events`
+
+  Scenario: Inherits run storage override flag across sigil run subcommands
+    Given the sigil executable is available
+    When run subcommand help surfaces are inspected for inherited run-dir support
+    Then each inspected run help surface documents `--run-dir`
+
+  Scenario: Overrides default run storage base directory with inherited --run-dir for sigil run start
+    Given valid application and run configuration inputs
+    When a user runs sigil run start with inherited run-dir override in json mode
+    Then command exits with status code 0
+    And the run start result events path is stored under "./custom-runs"
+
+  Scenario: Rejects explicit empty inherited --run-dir value for sigil run start
+    Given the sigil executable is available
+    When sigil run start is invoked with an explicit empty inherited run-dir value
+    Then command exits non-zero
+    And command error contains `invalid --run-dir value; path cannot be empty`
+
+  Scenario: Overrides default run storage base directory with inherited --run-dir for sigil run stop
+    Given a terminal run exists only in the selected run directory
+    When a user runs sigil run stop for the selected run directory
+    Then command exits with status code 0
+    And the stop result references the selected run directory "./custom-runs"
+
+  Scenario: Rejects explicit empty inherited --run-dir value for sigil run stop
+    Given the sigil executable is available
+    When sigil run stop is invoked with an explicit empty inherited run-dir value
+    Then command exits non-zero
+    And command error contains `invalid --run-dir value; path cannot be empty`
+
+  Scenario: Lists runs newest-first from the selected run directory
+    Given one or more persisted runs exist in the selected run directory
+    When a user runs sigil run list for the selected run directory
+    Then the returned run summaries are ordered newest-first by queued time
+
+  Scenario: Returns empty success when sigil run list targets a missing selected run directory
+    Given the selected run directory does not exist
+    When a user runs sigil run list for the missing selected run directory
+    Then the command exits with status code 0 and returns an empty result
+
+  Scenario: Requires exactly one UUIDv7 run-id positional argument for sigil run status
+    Given the sigil executable is available
+    When a user runs `sigil run status`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 0`
+    When a user runs `sigil run status not-a-uuid`
+    Then command exits non-zero
+    And command error contains `run-id must be UUIDv7`
+    When a user runs `sigil run status 019c7714-3b77-74d1-9866-e1f484aae2ab extra`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 2`
+
+  Scenario: Requires exactly one UUIDv7 run-id positional argument for sigil run inspect
+    Given the sigil executable is available
+    When a user runs `sigil run inspect`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 0`
+    When a user runs `sigil run inspect not-a-uuid`
+    Then command exits non-zero
+    And command error contains `run-id must be UUIDv7`
+    When a user runs `sigil run inspect 019c7714-3b77-74d1-9866-e1f484aae2ab extra`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 2`
+
+  Scenario: Requires exactly one UUIDv7 run-id positional argument for sigil run events
+    Given the sigil executable is available
+    When a user runs `sigil run events`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 0`
+    When a user runs `sigil run events not-a-uuid`
+    Then command exits non-zero
+    And command error contains `run-id must be UUIDv7`
+    When a user runs `sigil run events 019c7714-3b77-74d1-9866-e1f484aae2ab extra`
+    Then command exits non-zero
+    And command error contains `accepts 1 arg(s), received 2`
+
+  Scenario: Rejects invalid inherited output value for sigil run inspection commands
+    Given the sigil executable is available
+    When a user runs `sigil run list --output yaml`
+    Then command exits non-zero
+    And command error contains `output must be one of: text, json`
+
+  Scenario: Prints run list summaries in text and json output modes
+    Given persisted runs exist in the selected run directory
+    When a user runs sigil run list in text mode and in json mode
+    Then both outputs return the same run-summary set in their respective formats
+
+  Scenario: Prints run status summary in text and json output modes
+    Given a targeted persisted run exists in the selected run directory
+    When a user runs sigil run status for the targeted run in text mode and in json mode
+    Then both outputs return the same run summary in their respective formats
+
+  Scenario: Prints run inspection summary in text and json output modes
+    Given a targeted persisted run exists in the selected run directory
+    When a user runs sigil run inspect for the targeted run in text mode and in json mode
+    Then both outputs return the same run inspection summary in their respective formats
+
+  Scenario: Returns canonical run events in append order for sigil run events
+    Given a targeted persisted run exists in the selected run directory
+    When a user runs sigil run events for the targeted run in json mode
+    Then the returned event stream preserves canonical append order
+
+  Scenario: Uses inherited run-dir override across sigil run inspection commands
+    Given persisted runs exist outside the default run storage directory
+    When run inspection commands are executed with inherited run-dir override
+    Then only runs stored under "./custom-runs" are inspected
+
+  Scenario: Derives run summary from canonical events and auxiliary control metadata
+    Given canonical events and auxiliary control metadata exist for one run
+    When a run summary is requested from the selected run directory
+    Then the summary is derived from canonical events plus auxiliary control metadata
+
+  Scenario: Derives run projection from canonical events without materializing a second source of truth
+    Given canonical events and run-local refs exist for one run
+    When a run projection is requested from the selected run directory
+    Then the projection is derived on demand without persisting a separate read model
+
+  Scenario: Reports pid status as current missing not_running or stale from process metadata
+    Given process metadata states vary across runs
+    When run summaries are derived from the selected run directory
+    Then pid_status reports current missing not_running or stale accordingly
+
+  Scenario: Surfaces stop_requested from stop-request metadata without changing event authority
+    Given stop-request metadata exists for one run
+    When a run summary or run projection is requested from the selected run directory
+    Then stop_requested is surfaced without changing canonical event authority
+
+  Scenario: Preserves final answer and accounting as refs in run projection output
+    Given canonical terminal refs exist for one run
+    When a run projection is requested from the selected run directory
+    Then final-answer and accounting data are exposed as refs rather than inline artifact bodies
+
+  Scenario: Fails targeted run queries when canonical event logs are missing or corrupt
+    Given a targeted run has missing or corrupt canonical event storage
+    When targeted run queries are requested from the selected run directory
+    Then targeted run queries fail for missing or corrupt canonical event storage
 
   Scenario: Loads default run configuration file from current working directory
     Given run configuration exists at "./sigil-run.yaml" with:

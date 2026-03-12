@@ -300,6 +300,11 @@ func resolveBaseDir(baseDir string) (string, error) {
 	return filepath.Clean(filepath.Join(cwd, clean)), nil
 }
 
+// ResolveRunsBaseDir returns the normalized absolute runs base directory path.
+func ResolveRunsBaseDir(baseDir string) (string, error) {
+	return resolveBaseDir(baseDir)
+}
+
 func (s *EventStore) now() time.Time {
 	if s == nil || s.nowFn == nil {
 		return time.Now().UTC()

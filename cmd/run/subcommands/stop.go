@@ -52,6 +52,9 @@ func NewStopCmd() *cobra.Command {
 }
 
 func validateStopInputs(cmd *cobra.Command, args []string) error {
+	if err := validateInheritedRunDir(cmd); err != nil {
+		return err
+	}
 	if err := cobra.ExactArgs(1)(cmd, args); err != nil {
 		return err
 	}
@@ -74,7 +77,12 @@ func validateStopInputs(cmd *cobra.Command, args []string) error {
 }
 
 func runStopCommand(cmd *cobra.Command, _ []string) error {
-	status, err := runtime.ResolveRunStatus(runtime.DefaultRunsBaseDir, stopRunID)
+	runsBaseDir, err := resolveRunsBaseDir(cmd)
+	if err != nil {
+		return err
+	}
+
+	status, err := runtime.ResolveRunStatus(runsBaseDir, stopRunID)
 	if err != nil {
 		stopLogger().Error("failed to resolve run state", "run_id", stopRunID, "error", err)
 		return fmt.Errorf("failed to resolve run state; %w", err)
@@ -89,13 +97,13 @@ func runStopCommand(cmd *cobra.Command, _ []string) error {
 		return writeStopResult(cmd, result)
 	}
 
-	processMetadata, err := runtime.ReadProcessMetadata(runtime.DefaultRunsBaseDir, stopRunID)
+	processMetadata, err := runtime.ReadProcessMetadata(runsBaseDir, stopRunID)
 	if err != nil {
 		stopLogger().Error("failed to resolve process metadata", "run_id", stopRunID, "error", err)
 		return fmt.Errorf("failed to resolve live process metadata; %w", err)
 	}
 
-	if err := runtime.WriteStopRequestMetadata(runtime.DefaultRunsBaseDir, runtime.StopRequestMetadata{
+	if err := runtime.WriteStopRequestMetadata(runsBaseDir, runtime.StopRequestMetadata{
 		RunID:       stopRunID,
 		RequestedAt: time.Now().UTC(),
 		RequestedBy: runtime.StopRequesterCLIRunStop,
@@ -108,7 +116,7 @@ func runStopCommand(cmd *cobra.Command, _ []string) error {
 
 	if err := runtime.ValidateLiveProcessMetadata(processMetadata); err != nil {
 		if errors.Is(err, runtime.ErrProcessNotRunning) {
-			return waitForTerminalStopState(cmd, result, processMetadata, time.Now().Add(stopProcessExitGrace))
+			return waitForTerminalStopState(cmd, runsBaseDir, result, processMetadata, time.Now().Add(stopProcessExitGrace))
 		}
 		stopLogger().Error("failed to validate process identity", "run_id", stopRunID, "pid", processMetadata.PID, "error", err)
 		return fmt.Errorf("failed to validate live process metadata; %w", err)
@@ -124,15 +132,15 @@ func runStopCommand(cmd *cobra.Command, _ []string) error {
 			stopLogger().Error("failed to signal process", "run_id", stopRunID, "pid", processMetadata.PID, "error", err)
 			return fmt.Errorf("failed to signal run process; %w", err)
 		}
-		return waitForTerminalStopState(cmd, result, processMetadata, time.Now().Add(stopProcessExitGrace))
+		return waitForTerminalStopState(cmd, runsBaseDir, result, processMetadata, time.Now().Add(stopProcessExitGrace))
 	}
 
-	return waitForTerminalStopState(cmd, result, processMetadata, time.Time{})
+	return waitForTerminalStopState(cmd, runsBaseDir, result, processMetadata, time.Time{})
 }
 
-func waitForTerminalStopState(cmd *cobra.Command, result stopResult, processMetadata runtime.ProcessMetadata, processExitDeadline time.Time) error {
+func waitForTerminalStopState(cmd *cobra.Command, runsBaseDir string, result stopResult, processMetadata runtime.ProcessMetadata, processExitDeadline time.Time) error {
 	for {
-		status, err := runtime.ResolveRunStatus(runtime.DefaultRunsBaseDir, stopRunID)
+		status, err := runtime.ResolveRunStatus(runsBaseDir, stopRunID)
 		if err != nil {
 			stopLogger().Error("failed to poll run state", "run_id", stopRunID, "error", err)
 			return fmt.Errorf("failed to poll run state; %w", err)

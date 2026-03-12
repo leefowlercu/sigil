@@ -16,6 +16,7 @@ import (
 type StartPreflight struct {
 	ConfigPath       string
 	RunConfigPath    string
+	RunsBaseDir      string
 	Gateway          string
 	Provider         string
 	Model            string
@@ -73,6 +74,7 @@ func (r *StartTextRenderer) WritePreflight(preflight StartPreflight) {
 	r.writef("Run start\n")
 	r.writef("  Config path: %s\n", preflight.ConfigPath)
 	r.writef("  Run config path: %s\n", preflight.RunConfigPath)
+	r.writef("  Runs dir: %s\n", preflight.RunsBaseDir)
 	r.writef("  Gateway: %s\n", preflight.Gateway)
 	r.writef("  Provider: %s\n", preflight.Provider)
 	r.writef("  Model: %s\n", preflight.Model)
