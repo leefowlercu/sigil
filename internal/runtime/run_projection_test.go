@@ -133,13 +133,13 @@ func TestLoadRunProjectionIncludesConfiguredPathsAndDerivedCounts(t *testing.T) 
 		AnswerBytes:   7,
 		DurationMS:    11,
 		Accounting:    accounting.UnavailableSummary("openai", "gpt-5.1", ""),
-		AccountingRef: "run-output://node/root/subcall-accounting.json",
+		AccountingRef: "run-artifact://node/root/subcall-accounting.json",
 	}); err != nil {
 		t.Fatalf("expected subcall append success, got %v", err)
 	}
-	outputRef, err := BuildActionOutputRef(rootNode.ID, stepStarted.StepID, 1)
+	actionRef, err := BuildActionArtifactRef(rootNode.ID, stepStarted.StepID, 1)
 	if err != nil {
-		t.Fatalf("expected action output ref build success, got %v", err)
+		t.Fatalf("expected action action ref build success, got %v", err)
 	}
 	if err := lifecycle.AppendNodeActionExecuted(rootNode.ID, NodeActionExecutedPayload{
 		StepID:      stepStarted.StepID,
@@ -148,7 +148,7 @@ func TestLoadRunProjectionIncludesConfiguredPathsAndDerivedCounts(t *testing.T) 
 		Language:    "go",
 		Status:      ActionExecutionStatusCompleted,
 		DurationMS:  13,
-		OutputRef:   outputRef,
+		ActionRef:   actionRef,
 	}); err != nil {
 		t.Fatalf("expected action append success, got %v", err)
 	}

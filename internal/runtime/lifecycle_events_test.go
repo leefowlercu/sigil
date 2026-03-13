@@ -229,10 +229,10 @@ func TestLifecycleAppendsStepTurnAndActionEvents(t *testing.T) {
 		t.Fatalf("expected step started append success, got %v", err)
 	}
 
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleUser, stepStarted.StepID, "run-output://turn/user"); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleUser, stepStarted.StepID, "run-artifact://turn/user"); err != nil {
 		t.Fatalf("expected user turn append success, got %v", err)
 	}
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleModel, stepStarted.StepID, "run-output://turn/model"); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleModel, stepStarted.StepID, "run-artifact://turn/model"); err != nil {
 		t.Fatalf("expected model turn append success, got %v", err)
 	}
 	if err := lifecycle.AppendNodeSubcallExecuted(rootNode.ID, NodeSubcallExecutedPayload{
@@ -252,9 +252,9 @@ func TestLifecycleAppendsStepTurnAndActionEvents(t *testing.T) {
 		t.Fatalf("expected subcall append success, got %v", err)
 	}
 
-	outputRef, err := BuildActionOutputRef(rootNode.ID, stepStarted.StepID, 1)
+	actionRef, err := BuildActionArtifactRef(rootNode.ID, stepStarted.StepID, 1)
 	if err != nil {
-		t.Fatalf("expected output ref build success, got %v", err)
+		t.Fatalf("expected action ref build success, got %v", err)
 	}
 	if err := lifecycle.AppendNodeActionExecuted(rootNode.ID, NodeActionExecutedPayload{
 		StepID:      stepStarted.StepID,
@@ -263,7 +263,7 @@ func TestLifecycleAppendsStepTurnAndActionEvents(t *testing.T) {
 		Language:    "go",
 		Status:      ActionExecutionStatusCompleted,
 		DurationMS:  1,
-		OutputRef:   outputRef,
+		ActionRef:   actionRef,
 	}); err != nil {
 		t.Fatalf("expected action append success, got %v", err)
 	}

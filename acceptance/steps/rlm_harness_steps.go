@@ -46,7 +46,7 @@ type rlmAcceptanceState struct {
 	actionPayload      sigilruntime.NodeActionExecutedPayload
 	actionErr          error
 	artifactPath       string
-	actionOutputRef    string
+	actionRef          string
 	actionOutputResult sigilrepl.ActionOutput
 	actionOutputErr    error
 
@@ -145,7 +145,7 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^openai system prompt explains compile-safe structured prompt strings$`, world.openaiSystemPromptExplainsCompilesafeStructuredPromptStrings)
 	ctx.Step(`^openai system prompt explains safe structured parsing in repl code$`, world.openaiSystemPromptExplainsSafeStructuredParsingInReplCode)
 	ctx.Step(`^anthropic system prompt preserves safety rules without openai block sections$`, world.anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlockSections)
-	ctx.Step(`^system prompt requires byte-for-byte previous_action_feedback\.output_ref reuse with context_ref fallback$`, world.systemPromptRequiresByteforbytePrevious_action_feedbackoutput_refReuseWithContext_refFallback)
+	ctx.Step(`^system prompt requires byte-for-byte previous_action_feedback\.action_ref reuse with context_ref fallback$`, world.systemPromptRequiresByteforbytePrevious_action_feedbackaction_refReuseWithContext_refFallback)
 
 	ctx.Step(`^harness execution starts$`, world.harnessExecutionStarts)
 	ctx.Step(`^exactly one root node exists with depth (\d+) and null parent$`, world.exactlyOneRootNodeExistsWithDepthAndNullParent)
@@ -244,9 +244,9 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 
 	ctx.Step(`^an action execution completes or fails$`, world.anActionExecutionCompletesOrFails)
 	ctx.Step(`^action artifact persistence executes$`, world.actionArtifactPersistenceExecutes)
-	ctx.Step(`^artifact is persisted and node\.action\.executed\.output_ref is set to canonical artifact reference$`, world.artifactIsPersistedAndNodeactionexecutedoutput_refIsSetToCanonicalArtifactReference)
+	ctx.Step(`^artifact is persisted and node\.action\.executed\.action_ref is set to canonical artifact reference$`, world.artifactIsPersistedAndNodeactionexecutedaction_refIsSetToCanonicalArtifactReference)
 	ctx.Step(`^a canonical current-run action artifact with exact stdout and stderr is persisted$`, world.aCanonicalCurrentrunActionArtifactWithExactStdoutAndStderrIsPersisted)
-	ctx.Step(`^read_action_output is invoked in REPL with that output_ref$`, world.read_action_outputIsInvokedInREPLWithThatOutput_ref)
+	ctx.Step(`^read_action_artifact is invoked in REPL with that action_ref$`, world.readActionArtifactIsInvokedInREPLWithThatActionRef)
 	ctx.Step(`^exact action output fields are returned to REPL context$`, world.exactActionOutputFieldsAreReturnedToREPLContext)
 
 	ctx.Step(`^fatal REPL infrastructure failure occurs$`, world.fatalREPLInfrastructureFailureOccurs)
@@ -333,7 +333,7 @@ func (w *harnessWorld) ensureRuntime(maxDepth int, factory sigilrepl.SessionFact
 	state.activeStepID = ""
 	state.actionPayload = sigilruntime.NodeActionExecutedPayload{}
 	state.actionErr = nil
-	state.actionOutputRef = ""
+	state.actionRef = ""
 	state.actionOutputResult = sigilrepl.ActionOutput{}
 	state.actionOutputErr = nil
 	state.queryResult = ""
@@ -451,7 +451,7 @@ func (w *harnessWorld) executeContinueAction(code string) error {
 	}
 
 	if execErr == nil {
-		artifact, artifactPath, artifactErr := w.readActionArtifact(payload.OutputRef)
+		artifact, artifactPath, artifactErr := w.readActionArtifact(payload.ActionRef)
 		if artifactErr == nil {
 			state.artifactPath = artifactPath
 			if strings.TrimSpace(artifact.Stdout) != "" {
@@ -463,8 +463,8 @@ func (w *harnessWorld) executeContinueAction(code string) error {
 	return execErr
 }
 
-func (w *harnessWorld) readActionArtifact(outputRef string) (sigilharness.ActionArtifact, string, error) {
-	parsed, err := sigilruntime.ParseActionOutputRef(outputRef)
+func (w *harnessWorld) readActionArtifact(actionRef string) (sigilharness.ActionArtifact, string, error) {
+	parsed, err := sigilruntime.ParseActionArtifactRef(actionRef)
 	if err != nil {
 		return sigilharness.ActionArtifact{}, "", err
 	}
@@ -582,12 +582,12 @@ func (w *harnessWorld) effectiveSystemPromptEqualsResolvedBasePrompt() error {
 	return nil
 }
 
-func (w *harnessWorld) systemPromptRequiresByteforbytePrevious_action_feedbackoutput_refReuseWithContext_refFallback() error {
+func (w *harnessWorld) systemPromptRequiresByteforbytePrevious_action_feedbackaction_refReuseWithContext_refFallback() error {
 	prompt := w.rlm().effectivePrompt
 	requiredSnippets := []string{
-		"If you cite previous_action_feedback.output_ref, copy it byte-for-byte.",
+		"If you cite previous_action_feedback.action_ref, copy it byte-for-byte.",
 		"Do not shorten, rewrite, splice, or synthesize run-artifact or run-output UUID segments.",
-		"If you cannot preserve an exact action output_ref, cite context_ref instead of inventing a run-artifact ref.",
+		"If you cannot preserve an exact action_ref, cite context_ref instead of inventing a run-artifact ref.",
 		`{"ref":"run-artifact://node/019cc5fc-b991-7b33-bb66-c4e2508378f8/step/019cc5fc-b99b-7b33-bb66-c4e2508378f8/action-1.json"}`,
 	}
 	for _, snippet := range requiredSnippets {
@@ -626,16 +626,16 @@ func (w *harnessWorld) openaiSystemPromptIncludesSearchDisciplineAndTimeoutRecov
 		"Do NOT use rlm_query_batched for coarse search over unknown full-context partitions.",
 		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
 		"If execution_state.recursive_subcalls_allowed=false, stay local for this step even if recursive APIs are available.",
-		"read_action_output(output_ref string) (ActionOutput, error)",
+		"read_action_artifact(action_ref string) (ActionOutput, error)",
 		"If an action times out or previous_action_feedback.error_message indicates timeout, reduce chunk size and fan-out on the next step and prefer REPL or llm_query before more recursion.",
 		"If a complete local scan of the current context finds no matching evidence, finalize absence now rather than repartitioning the same context again.",
 		"include span_start or span_end only when you know exact integer offsets",
-		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only. Call read_action_output(output_ref) before rescanning large context, or continue with a smaller and more targeted action.",
-		"If execution_state.same_context_as_previous_step=true and previous_action_feedback.output_ref is present, ask first whether the prior action output might already contain the deliverable.",
+		"If stdout_preview or stderr_preview is truncated, treat the preview as partial evidence only. Call read_action_artifact(action_ref) before rescanning large context, or continue with a smaller and more targeted action.",
+		"If execution_state.same_context_as_previous_step=true and previous_action_feedback.action_ref is present, ask first whether the prior action output might already contain the deliverable.",
 		"Signals that the prior action likely already has the deliverable include: preview text shows the answer prefix, labeled extraction markers such as FINAL_START or FINAL_END, reported exact lengths, or found=true style indicators next to long text.",
-		"When those signals are present, do NOT re-scan the full raw context first. Call read_action_output(previous_action_feedback.output_ref), inspect the exact stdout or stderr locally, and continue from that recovered value.",
-		"If read_action_output(output_ref) returns the exact long string you need, assign it to a persistent REPL variable and verify its length before using a later step to finalize.",
-		"After read_action_output recovers the exact prior output, only return to a full-context scan if that recovered output still lacks the needed data.",
+		"When those signals are present, do NOT re-scan the full raw context first. Call read_action_artifact(previous_action_feedback.action_ref), inspect the exact stdout or stderr locally, and continue from that recovered value.",
+		"If read_action_artifact(action_ref) returns the exact long string you need, assign it to a persistent REPL variable and verify its length before using a later step to finalize.",
+		"After read_action_artifact recovers the exact prior output, only return to a full-context scan if that recovered output still lacks the needed data.",
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {
@@ -696,18 +696,18 @@ func (w *harnessWorld) openaiSystemPromptExplainsSafeStructuredParsingInReplCode
 func (w *harnessWorld) anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlockSections() error {
 	prompt := w.rlm().effectivePrompt
 	requiredSnippets := []string{
-		"read_action_output(output_ref string) (ActionOutput, error)",
+		"read_action_artifact(action_ref string) (ActionOutput, error)",
 		"Evidence rules:",
 		"Finalization gate:",
 		"decision=final is allowed only when the requested deliverable is obtained, final.answer matches the requested answer format, and at least one valid evidence ref directly supports the answer.",
-		"If you cite previous_action_feedback.output_ref, copy it byte-for-byte.",
+		"If you cite previous_action_feedback.action_ref, copy it byte-for-byte.",
 		"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
 		"If you need structured data, ask the subcall to return minified JSON text inside the answer string and parse that string in REPL.",
 		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
 		"If previous_action_feedback refers to the same context and its preview suggests the prior action already found or printed the target, prefer exact output recovery over another raw-context scan.",
-		"On preview truncation, treat previews as partial and call read_action_output(output_ref) before rescanning large context.",
-		"If execution_state.same_context_as_previous_step=true and previous_action_feedback.output_ref is present, first ask whether the prior action output might already contain the deliverable.",
-		"When those signals are present, do not rescan the full raw context first. Call read_action_output(previous_action_feedback.output_ref), inspect the recovered stdout or stderr locally, and continue from that exact output.",
+		"On preview truncation, treat previews as partial and call read_action_artifact(action_ref) before rescanning large context.",
+		"If execution_state.same_context_as_previous_step=true and previous_action_feedback.action_ref is present, first ask whether the prior action output might already contain the deliverable.",
+		"When those signals are present, do not rescan the full raw context first. Call read_action_artifact(previous_action_feedback.action_ref), inspect the recovered stdout or stderr locally, and continue from that exact output.",
 		"Include span_start or span_end only when you know exact integer offsets; otherwise omit span fields entirely.",
 	}
 	for _, snippet := range requiredSnippets {
@@ -812,10 +812,10 @@ func (w *harnessWorld) transcriptContributionsArePersistedForThatStep() error {
 		return fmt.Errorf("expected active step before recording transcript contributions")
 	}
 	nodeID := state.activeNode.ID
-	if err := w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleUser, state.activeStepID, "run-output://turn/user"); err != nil {
+	if err := w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleUser, state.activeStepID, "run-artifact://turn/user"); err != nil {
 		return err
 	}
-	return w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleModel, state.activeStepID, "run-output://turn/model")
+	return w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleModel, state.activeStepID, "run-artifact://turn/model")
 }
 
 func (w *harnessWorld) eachTurnContributionIsRecordedWithRoleUserOrModel() error {
@@ -1060,8 +1060,8 @@ func (w *harnessWorld) childNodeCompletes() error {
 	if strings.TrimSpace(w.rlm().childNode.ID) == "" {
 		return fmt.Errorf("expected child node before completion")
 	}
-	outputRef := "run-output://child/final-answer"
-	if err := w.lifecycle.CompleteNode(w.rlm().childNode.ID, &outputRef); err != nil {
+	actionRef := "run-artifact://child/final-answer"
+	if err := w.lifecycle.CompleteNode(w.rlm().childNode.ID, &actionRef); err != nil {
 		return err
 	}
 	w.rlm().queryResult = w.rlm().childFinalAnswer
@@ -1087,7 +1087,7 @@ func (w *harnessWorld) anActiveRootNodeInferenceResultIsDecisionFinalWithAnswer(
 		return err
 	}
 	w.rlm().rootFinalAnswer = answer
-	w.rlm().rootFinalRef = "run-output://node/root/final-answer"
+	w.rlm().rootFinalRef = "run-artifact://node/root/final-answer"
 	return nil
 }
 
@@ -1179,7 +1179,7 @@ func (w *harnessWorld) subsequentActionsRunInTheSameNodeREPLSessionState() error
 	if w.rlm().sessionManager.SessionCount() != 1 {
 		return fmt.Errorf("expected one persistent REPL session, got %d", w.rlm().sessionManager.SessionCount())
 	}
-	artifact, _, err := w.readActionArtifact(w.rlm().actionPayload.OutputRef)
+	artifact, _, err := w.readActionArtifact(w.rlm().actionPayload.ActionRef)
 	if err != nil {
 		return err
 	}
@@ -1230,7 +1230,7 @@ func (w *harnessWorld) continuationrepl_codeExecutesInTheCurrentNodelocalREPLSes
 	if w.rlm().actionPayload.Status != sigilruntime.ActionExecutionStatusCompleted {
 		return fmt.Errorf("expected completed action, got %q", w.rlm().actionPayload.Status)
 	}
-	artifact, _, err := w.readActionArtifact(w.rlm().actionPayload.OutputRef)
+	artifact, _, err := w.readActionArtifact(w.rlm().actionPayload.ActionRef)
 	if err != nil {
 		return err
 	}
@@ -1439,7 +1439,7 @@ func (w *harnessWorld) recursiveSubcallTimeoutBudgetsAreObserved() error {
 			}
 			return results, nil
 		},
-		ReadActionOutput: noopActionOutputRead,
+		ReadActionArtifact: noopActionOutputRead,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create repl session; %w", err)
@@ -1520,7 +1520,7 @@ func (w *harnessWorld) recursiveSubcallExecutionIsInProgress() error {
 			}
 			return results, nil
 		},
-		ReadActionOutput: noopActionOutputRead,
+		ReadActionArtifact: noopActionOutputRead,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create repl session; %w", err)
@@ -1613,7 +1613,7 @@ func (w *harnessWorld) outputCaptureGuardrailsAreEnforced() error {
 }
 
 func (w *harnessWorld) outputsAreTruncatedWithDeterministicTruncationMarker() error {
-	artifact, _, err := w.readActionArtifact(w.rlm().actionPayload.OutputRef)
+	artifact, _, err := w.readActionArtifact(w.rlm().actionPayload.ActionRef)
 	if err != nil {
 		return err
 	}
@@ -1651,18 +1651,18 @@ func (w *harnessWorld) anActionExecutionCompletesOrFails() error {
 }
 
 func (w *harnessWorld) actionArtifactPersistenceExecutes() error {
-	if strings.TrimSpace(w.rlm().actionPayload.OutputRef) == "" {
-		return fmt.Errorf("expected action output_ref to be present")
+	if strings.TrimSpace(w.rlm().actionPayload.ActionRef) == "" {
+		return fmt.Errorf("expected action_ref to be present")
 	}
 	return nil
 }
 
-func (w *harnessWorld) artifactIsPersistedAndNodeactionexecutedoutput_refIsSetToCanonicalArtifactReference() error {
+func (w *harnessWorld) artifactIsPersistedAndNodeactionexecutedaction_refIsSetToCanonicalArtifactReference() error {
 	payload := w.rlm().actionPayload
-	if strings.TrimSpace(payload.OutputRef) == "" {
-		return fmt.Errorf("expected non-empty action output_ref")
+	if strings.TrimSpace(payload.ActionRef) == "" {
+		return fmt.Errorf("expected non-empty action_ref")
 	}
-	parsed, err := sigilruntime.ParseActionOutputRef(payload.OutputRef)
+	parsed, err := sigilruntime.ParseActionArtifactRef(payload.ActionRef)
 	if err != nil {
 		return err
 	}
@@ -1693,7 +1693,7 @@ func (w *harnessWorld) aCanonicalCurrentrunActionArtifactWithExactStdoutAndStder
 	}
 	errorCode := "repl_execution_compile"
 	errorMessage := "compile failed exactly"
-	outputRef, err := state.artifactStore.Persist(sigilharness.ActionArtifact{
+	actionRef, err := state.artifactStore.Persist(sigilharness.ActionArtifact{
 		RunID:        w.lifecycle.RunID(),
 		NodeID:       state.activeNode.ID,
 		StepID:       stepID.String(),
@@ -1709,16 +1709,16 @@ func (w *harnessWorld) aCanonicalCurrentrunActionArtifactWithExactStdoutAndStder
 	if err != nil {
 		return fmt.Errorf("failed to persist canonical action artifact; %w", err)
 	}
-	state.actionOutputRef = outputRef
+	state.actionRef = actionRef
 	state.actionOutputResult = sigilrepl.ActionOutput{}
 	state.actionOutputErr = nil
 	return nil
 }
 
-func (w *harnessWorld) read_action_outputIsInvokedInREPLWithThatOutput_ref() error {
+func (w *harnessWorld) readActionArtifactIsInvokedInREPLWithThatActionRef() error {
 	state := w.rlm()
-	if strings.TrimSpace(state.actionOutputRef) == "" {
-		return fmt.Errorf("expected action output_ref fixture to be initialized")
+	if strings.TrimSpace(state.actionRef) == "" {
+		return fmt.Errorf("expected action_ref fixture to be initialized")
 	}
 	session, err := state.sessionManager.SessionForNode(context.Background(), sigilharness.NodeSessionInput{
 		RunID:   w.lifecycle.RunID(),
@@ -1737,7 +1737,7 @@ import (
 	"encoding/json"
 	"fmt"
 )
-output, err := read_action_output("`+state.actionOutputRef+`")
+output, err := read_action_artifact("`+state.actionRef+`")
 if err != nil { panic(err) }
 encoded, err := json.Marshal(output)
 if err != nil { panic(err) }
@@ -1749,14 +1749,14 @@ fmt.Print(string(encoded))
 	}
 	state.actionOutputResult = sigilrepl.ActionOutput{}
 	if err := json.Unmarshal([]byte(result.Stdout), &state.actionOutputResult); err != nil {
-		return fmt.Errorf("failed to decode read_action_output result; %w", err)
+		return fmt.Errorf("failed to decode read_action_artifact result; %w", err)
 	}
 	return nil
 }
 
 func (w *harnessWorld) exactActionOutputFieldsAreReturnedToREPLContext() error {
 	if w.rlm().actionOutputErr != nil {
-		return fmt.Errorf("expected read_action_output success, got %v", w.rlm().actionOutputErr)
+		return fmt.Errorf("expected read_action_artifact success, got %v", w.rlm().actionOutputErr)
 	}
 	expected := sigilrepl.ActionOutput{
 		Status:       "failed",
@@ -2394,7 +2394,7 @@ func (w *harnessWorld) guardrailActionArtifacts() ([]sigilharness.ActionArtifact
 		if !ok {
 			return nil, fmt.Errorf("expected node.action.executed payload, got %T", event.Payload)
 		}
-		parsed, err := sigilruntime.ParseActionOutputRef(payload.OutputRef)
+		parsed, err := sigilruntime.ParseActionArtifactRef(payload.ActionRef)
 		if err != nil {
 			return nil, err
 		}

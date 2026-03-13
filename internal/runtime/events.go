@@ -146,7 +146,7 @@ type NodeStartedPayload struct {
 type NodeCompletedPayload struct {
 	Status        string            `json:"status"`
 	DurationMS    int               `json:"duration_ms"`
-	OutputRef     *string           `json:"output_ref,omitempty"`
+	ResultRef     *string           `json:"result_ref,omitempty"`
 	Accounting    accounting.Rollup `json:"accounting"`
 	AccountingRef *string           `json:"accounting_ref,omitempty"`
 }
@@ -213,7 +213,7 @@ type NodeActionExecutedPayload struct {
 	Language     string                `json:"language"`
 	Status       ActionExecutionStatus `json:"status"`
 	DurationMS   int                   `json:"duration_ms"`
-	OutputRef    string                `json:"output_ref"`
+	ActionRef    string                `json:"action_ref"`
 	ErrorCode    *string               `json:"error_code,omitempty"`
 	ErrorMessage *string               `json:"error_message,omitempty"`
 }

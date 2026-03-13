@@ -658,7 +658,7 @@ func decisionInvalidGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"maybe","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"maybe","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/example/context.json"}]}}`}}},
 		},
 	}
 }
@@ -670,7 +670,7 @@ func continueBranchInvalidGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"},"final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"},"final":{"answer":"done","evidence":[{"ref":"run-artifact://node/example/context.json"}]}}`}}},
 		},
 	}
 }
@@ -694,7 +694,7 @@ func finalBranchInvalidGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]},"continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/example/context.json"}]},"continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"}}`}}},
 		},
 	}
 }
@@ -718,7 +718,7 @@ func finalInvalidConfidenceGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}],"confidence":"certain"}}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/example/context.json"}],"confidence":"certain"}}`}}},
 		},
 	}
 }
@@ -730,7 +730,7 @@ func unknownFieldGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/example/context.json"}]},"unexpected":"value"}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/example/context.json"}]},"unexpected":"value"}`}}},
 		},
 	}
 }

@@ -152,15 +152,15 @@ func (m *REPLSessionManager) SessionForNode(ctx context.Context, input NodeSessi
 			}
 			return current.RLMQueryBatched(callCtx, requests)
 		},
-		ReadActionOutput: func(outputRef string) (repl.ActionOutput, error) {
-			if strings.TrimSpace(outputRef) != outputRef {
-				return repl.ActionOutput{}, fmt.Errorf("output_ref %q must be canonical without leading or trailing whitespace", outputRef)
+		ReadActionArtifact: func(actionRef string) (repl.ActionOutput, error) {
+			if strings.TrimSpace(actionRef) != actionRef {
+				return repl.ActionOutput{}, fmt.Errorf("action_ref %q must be canonical without leading or trailing whitespace", actionRef)
 			}
-			if _, err := runtime.ParseActionOutputRef(outputRef); err != nil {
+			if _, err := runtime.ParseActionArtifactRef(actionRef); err != nil {
 				return repl.ActionOutput{}, err
 			}
 
-			artifact, err := m.artifacts.Read(input.RunID, outputRef)
+			artifact, err := m.artifacts.Read(input.RunID, actionRef)
 			if err != nil {
 				return repl.ActionOutput{}, err
 			}

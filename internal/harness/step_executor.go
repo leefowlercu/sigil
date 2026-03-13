@@ -129,12 +129,12 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 		)
 	}
 
-	outputRef, err := e.artifacts.Persist(artifact)
+	actionRef, err := e.artifacts.Persist(artifact)
 	if err != nil {
 		logger.Error("failed to persist action artifact", "error", err)
 		return runtime.NodeActionExecutedPayload{}, fmt.Errorf("failed to persist action artifact; %w", err)
 	}
-	payload.OutputRef = outputRef
+	payload.ActionRef = actionRef
 
 	if err := e.lifecycle.AppendNodeActionExecuted(node.ID, payload); err != nil {
 		logger.Error("failed to append node.action.executed", "error", err)
@@ -144,7 +144,7 @@ func (e *StepExecutor) ExecuteContinueAction(ctx context.Context, input Continue
 	logger.Info("continue action recorded",
 		"status", payload.Status,
 		"duration_ms", payload.DurationMS,
-		"output_ref", payload.OutputRef,
+		"action_ref", payload.ActionRef,
 	)
 
 	if fatalErr != nil {

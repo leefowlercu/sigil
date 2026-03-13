@@ -13,11 +13,7 @@ import (
 )
 
 var (
-	runOutputContextRefPattern   = regexp.MustCompile(`^run-output://node/([^/]+)/context\.json$`)
-	runOutputFinalRefPattern     = regexp.MustCompile(`^run-output://node/([^/]+)/final-answer\.json$`)
-	runOutputTurnUserRefPattern  = regexp.MustCompile(`^run-output://node/([^/]+)/step/([^/]+)/turn-user\.json$`)
-	runOutputTurnModelRefPattern = regexp.MustCompile(`^run-output://node/([^/]+)/step/([^/]+)/turn-model\.json$`)
-	malformedActionRefPattern    = regexp.MustCompile(`^run-artifact://node/([^/]+)/action-([1-9][0-9]*)\.json$`)
+	malformedActionRefPattern = regexp.MustCompile(`^run-artifact://node/([^/]+)/action-([1-9][0-9]*)\.json$`)
 )
 
 func resolveFinalEvidenceRefs(runID string, runsBaseDir string, artifacts *ActionArtifactStore, currentNodeID string, evidence []FinalEvidence) error {
@@ -48,52 +44,44 @@ func resolveEvidenceRef(runID string, runsBaseDir string, artifacts *ActionArtif
 		return "", fmt.Errorf("ref is required")
 	}
 
-	if strings.HasPrefix(trimmed, runtime.ActionOutputRefPrefix) {
-		if _, err := artifacts.Read(runID, trimmed); err != nil {
-			repairedRef, repaired := normalizeMalformedActionRef(runID, runsBaseDir, currentNodeID, trimmed)
-			if repaired {
-				if _, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil {
-					return repairedRef, nil
+	if strings.HasPrefix(trimmed, runtime.ArtifactRefPrefix) {
+		if _, err := runtime.ParseActionArtifactRef(trimmed); err == nil {
+			if _, readErr := artifacts.Read(runID, trimmed); readErr != nil {
+				repairedRef, repaired := normalizeMalformedActionRef(runID, runsBaseDir, currentNodeID, trimmed)
+				if repaired {
+					if _, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil {
+						return repairedRef, nil
+					}
 				}
+				return "", fmt.Errorf("failed to resolve action artifact ref %q; %w", trimmed, readErr)
 			}
-			return "", fmt.Errorf("failed to resolve run-artifact ref %q; %w", trimmed, err)
+			return trimmed, nil
 		}
+		if repairedRef, repaired := normalizeMalformedActionRef(runID, runsBaseDir, currentNodeID, trimmed); repaired {
+			if _, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil {
+				return repairedRef, nil
+			}
+		}
+
+		artifactPath, err := runtime.ResolveArtifactRefPath(trimmed)
+		if err != nil {
+			return "", err
+		}
+
+		pathParts := append([]string{runsBaseDir, runID, "artifacts"}, artifactPath...)
+		path := filepath.Join(pathParts...)
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve artifact ref %q at %q; %w", trimmed, path, err)
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("artifact ref %q resolved to directory %q", trimmed, path)
+		}
+
 		return trimmed, nil
 	}
 
-	outputPath, err := resolveRunOutputPath(trimmed)
-	if err != nil {
-		return "", err
-	}
-
-	pathParts := append([]string{runsBaseDir, runID, "outputs"}, outputPath...)
-	path := filepath.Join(pathParts...)
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve run-output ref %q at %q; %w", trimmed, path, err)
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("run-output ref %q resolved to directory %q", trimmed, path)
-	}
-
-	return trimmed, nil
-}
-
-func resolveRunOutputPath(ref string) ([]string, error) {
-	if matches := runOutputContextRefPattern.FindStringSubmatch(ref); len(matches) == 2 {
-		return []string{"node", matches[1], "context.json"}, nil
-	}
-	if matches := runOutputFinalRefPattern.FindStringSubmatch(ref); len(matches) == 2 {
-		return []string{"node", matches[1], "final-answer.json"}, nil
-	}
-	if matches := runOutputTurnUserRefPattern.FindStringSubmatch(ref); len(matches) == 3 {
-		return []string{"node", matches[1], "step", matches[2], "turn-user.json"}, nil
-	}
-	if matches := runOutputTurnModelRefPattern.FindStringSubmatch(ref); len(matches) == 3 {
-		return []string{"node", matches[1], "step", matches[2], "turn-model.json"}, nil
-	}
-
-	return nil, fmt.Errorf("unsupported run-output ref %q", ref)
+	return "", fmt.Errorf("unsupported artifact ref %q", ref)
 }
 
 func normalizeMalformedActionRef(runID string, runsBaseDir string, currentNodeID string, ref string) (string, bool) {
@@ -141,7 +129,7 @@ func normalizeMalformedActionRef(runID string, runsBaseDir string, currentNodeID
 		return "", false
 	}
 
-	canonicalRef, err := runtime.BuildActionOutputRef(currentNodeID, candidates[0], actionIndex)
+	canonicalRef, err := runtime.BuildActionArtifactRef(currentNodeID, candidates[0], actionIndex)
 	if err != nil {
 		return "", false
 	}

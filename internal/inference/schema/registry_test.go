@@ -55,7 +55,7 @@ func TestValidateSigilRLMResponseV1AcceptsValidBranches(t *testing.T) {
 					"answer": "done",
 					"evidence": []any{
 						map[string]any{
-							"ref":        "run-output://node/a/final-answer.json",
+							"ref":        "run-artifact://node/a/final-answer.json",
 							"chunk_id":   "chunk-17",
 							"span_start": 10,
 							"span_end":   32,
@@ -102,13 +102,13 @@ func TestValidateSigilRLMResponseV1RejectsInvalidPayloads(t *testing.T) {
 		{name: "final missing final branch", payload: map[string]any{"decision": "final"}},
 		{name: "final missing evidence", payload: map[string]any{"decision": "final", "final": map[string]any{"answer": "done"}}},
 		{name: "final empty evidence array", payload: map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{}}}},
-		{name: "final invalid confidence", payload: map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "run-output://node/x/final-answer.json"}}, "confidence": "sure"}}},
-		{name: "final malformed evidence span range", payload: map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "run-output://node/x/final-answer.json", "span_start": 9, "span_end": 3}}}}},
+		{name: "final invalid confidence", payload: map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "run-artifact://node/x/final-answer.json"}}, "confidence": "sure"}}},
+		{name: "final malformed evidence span range", payload: map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "run-artifact://node/x/final-answer.json", "span_start": 9, "span_end": 3}}}}},
 		{name: "final forbids continuation", payload: map[string]any{
 			"decision": "final",
 			"final": map[string]any{
 				"answer":   "done",
-				"evidence": []any{map[string]any{"ref": "run-output://node/x/final-answer.json"}},
+				"evidence": []any{map[string]any{"ref": "run-artifact://node/x/final-answer.json"}},
 			},
 			"continuation": map[string]any{"repl_code": "fmt.Println(\"next\")"},
 		}},
@@ -116,7 +116,7 @@ func TestValidateSigilRLMResponseV1RejectsInvalidPayloads(t *testing.T) {
 			"decision": "final",
 			"final": map[string]any{
 				"answer":   "done",
-				"evidence": []any{map[string]any{"ref": "run-output://node/x/final-answer.json"}},
+				"evidence": []any{map[string]any{"ref": "run-artifact://node/x/final-answer.json"}},
 			},
 			"unknown": "x",
 		}},
@@ -133,7 +133,7 @@ func TestValidateSigilRLMResponseV1RejectsInvalidPayloads(t *testing.T) {
 			"decision": "final",
 			"final": map[string]any{
 				"answer":   "done",
-				"evidence": []any{map[string]any{"ref": "run-output://node/x/final-answer.json"}},
+				"evidence": []any{map[string]any{"ref": "run-artifact://node/x/final-answer.json"}},
 				"unknown":  "x",
 			},
 		}},
@@ -149,7 +149,7 @@ func TestValidateSigilRLMResponseV1RejectsInvalidPayloads(t *testing.T) {
 			"decision": "final",
 			"final": map[string]any{
 				"answer":   "   ",
-				"evidence": []any{map[string]any{"ref": "run-output://node/x/final-answer.json"}},
+				"evidence": []any{map[string]any{"ref": "run-artifact://node/x/final-answer.json"}},
 			},
 		}},
 	}

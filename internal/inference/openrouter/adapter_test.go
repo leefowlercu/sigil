@@ -572,7 +572,7 @@ func TestExtractStructuredPayloadPrefersFinalAnswerPhaseForRLMResponses(t *testi
 				"content": []any{
 					map[string]any{
 						"type": "output_text",
-						"text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-output://node/root/context.json"}],"confidence":"high"}}`,
+						"text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/root/context.json"}],"confidence":"high"}}`,
 					},
 				},
 			},

@@ -73,13 +73,13 @@ func NewActionArtifactStore(runsBaseDir string) (*ActionArtifactStore, error) {
 	return &ActionArtifactStore{runsBaseDir: clean}, nil
 }
 
-// Persist writes action artifact and returns canonical output_ref.
+// Persist writes an action artifact and returns its canonical action_ref.
 func (s *ActionArtifactStore) Persist(artifact ActionArtifact) (string, error) {
 	if s == nil {
 		return "", fmt.Errorf("artifact store is required")
 	}
 
-	outputRef, err := runtime.BuildActionOutputRef(artifact.NodeID, artifact.StepID, artifact.ActionIndex)
+	actionRef, err := runtime.BuildActionArtifactRef(artifact.NodeID, artifact.StepID, artifact.ActionIndex)
 	if err != nil {
 		return "", err
 	}
@@ -98,11 +98,11 @@ func (s *ActionArtifactStore) Persist(artifact ActionArtifact) (string, error) {
 		return "", fmt.Errorf("failed to persist action artifact %q; %w", artifactPath, err)
 	}
 
-	return outputRef, nil
+	return actionRef, nil
 }
 
-// Read loads a previously persisted action artifact from canonical output_ref.
-func (s *ActionArtifactStore) Read(runID string, outputRef string) (ActionArtifact, error) {
+// Read loads a previously persisted action artifact from a canonical action_ref.
+func (s *ActionArtifactStore) Read(runID string, actionRef string) (ActionArtifact, error) {
 	if s == nil {
 		return ActionArtifact{}, fmt.Errorf("artifact store is required")
 	}
@@ -110,7 +110,7 @@ func (s *ActionArtifactStore) Read(runID string, outputRef string) (ActionArtifa
 		return ActionArtifact{}, fmt.Errorf("run id is required")
 	}
 
-	parsed, err := runtime.ParseActionOutputRef(outputRef)
+	parsed, err := runtime.ParseActionArtifactRef(actionRef)
 	if err != nil {
 		return ActionArtifact{}, err
 	}

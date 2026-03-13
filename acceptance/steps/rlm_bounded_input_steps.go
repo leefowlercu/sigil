@@ -83,11 +83,11 @@ func registerRLMBoundedInputSteps(ctx *godog.ScenarioContext, world *harnessWorl
 	ctx.Step(`^a harness runner has previous continue action feedback$`, world.aHarnessRunnerHasPreviousContinueActionFeedback)
 	ctx.Step(`^a harness runner has previous continue action subcall feedback$`, world.aHarnessRunnerHasPreviousContinueActionSubcallFeedback)
 	ctx.Step(`^model-step inference input is constructed for next step$`, world.modelstepInferenceInputIsConstructedForNextStep)
-	ctx.Step(`^previous-action feedback summary includes output_ref and bounded preview truncation metadata$`, world.previousactionFeedbackSummaryIncludesOutput_refAndBoundedPreviewTruncationMetadata)
+	ctx.Step(`^previous-action feedback summary includes action_ref and bounded preview truncation metadata$`, world.previousActionFeedbackSummaryIncludesActionRefAndBoundedPreviewTruncationMetadata)
 	ctx.Step(`^previous-action feedback includes deterministic subcall summary counts$`, world.previousactionFeedbackIncludesDeterministicSubcallSummaryCounts)
 	ctx.Step(`^previous-action feedback block is omitted from user step envelope$`, world.previousactionFeedbackBlockIsOmittedFromUserStepEnvelope)
 	ctx.Step(`^action artifact remains source of truth for full stdout and stderr while model input uses bounded previews$`, world.actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrWhileModelInputUsesBoundedPreviews)
-	ctx.Step(`^exact action stdout remains recoverable through read_action_output using that output_ref$`, world.exactActionStdoutRemainsRecoverableThroughRead_action_outputUsingThatOutput_ref)
+	ctx.Step(`^exact action stdout remains recoverable through read_action_artifact using that action_ref$`, world.exactActionStdoutRemainsRecoverableThroughReadActionArtifactUsingThatActionRef)
 
 	ctx.Step(`^harness user turn artifact input is prepared$`, world.harnessUserTurnArtifactInputIsPrepared)
 	ctx.Step(`^compact node turn user artifact is persisted$`, world.compactNodeTurnUserArtifactIsPersisted)
@@ -281,7 +281,7 @@ func (w *harnessWorld) aHarnessRunnerHasPreviousContinueActionFeedback() error {
 	if err != nil {
 		return err
 	}
-	actionArtifact, err := artifactStore.Read(state.boundedRunResult.RunID, feedback.OutputRef)
+	actionArtifact, err := artifactStore.Read(state.boundedRunResult.RunID, feedback.ActionRef)
 	if err != nil {
 		return err
 	}
@@ -318,16 +318,16 @@ func (w *harnessWorld) modelstepInferenceInputIsConstructedForNextStep() error {
 	return nil
 }
 
-func (w *harnessWorld) previousactionFeedbackSummaryIncludesOutput_refAndBoundedPreviewTruncationMetadata() error {
+func (w *harnessWorld) previousActionFeedbackSummaryIncludesActionRefAndBoundedPreviewTruncationMetadata() error {
 	feedback := w.rlm().boundedNextEnvelope.PreviousActionFeedback
 	if feedback == nil {
 		return fmt.Errorf("expected previous_action_feedback block")
 	}
-	if strings.TrimSpace(feedback.OutputRef) == "" {
-		return fmt.Errorf("expected non-empty previous_action_feedback.output_ref")
+	if strings.TrimSpace(feedback.ActionRef) == "" {
+		return fmt.Errorf("expected non-empty previous_action_feedback.action_ref")
 	}
-	if _, err := sigilruntime.ParseActionOutputRef(feedback.OutputRef); err != nil {
-		return fmt.Errorf("expected canonical previous_action_feedback.output_ref, got %q: %w", feedback.OutputRef, err)
+	if _, err := sigilruntime.ParseActionArtifactRef(feedback.ActionRef); err != nil {
+		return fmt.Errorf("expected canonical previous_action_feedback.action_ref, got %q: %w", feedback.ActionRef, err)
 	}
 	if !feedback.StdoutTruncated && !feedback.StderrTruncated {
 		return fmt.Errorf("expected at least one bounded preview truncation flag to be true")
@@ -386,7 +386,7 @@ func (w *harnessWorld) compactNodeTurnUserArtifactIsPersisted() error {
 		if !ok {
 			return fmt.Errorf("expected node.turn.user payload type, got %T", event.Payload)
 		}
-		path, err := resolveRunOutputPath(w.runsBaseDir(), w.rlm().boundedRunResult.RunID, payload.ContentRef)
+		path, err := resolveArtifactPath(w.runsBaseDir(), w.rlm().boundedRunResult.RunID, payload.ContentRef)
 		if err != nil {
 			return err
 		}
@@ -445,13 +445,13 @@ func (w *harnessWorld) actionArtifactRemainsSourceOfTruthForFullStdoutAndStderrW
 	return nil
 }
 
-func (w *harnessWorld) exactActionStdoutRemainsRecoverableThroughRead_action_outputUsingThatOutput_ref() error {
+func (w *harnessWorld) exactActionStdoutRemainsRecoverableThroughReadActionArtifactUsingThatActionRef() error {
 	state := w.rlm()
 	feedback := state.boundedNextEnvelope.PreviousActionFeedback
 	if feedback == nil {
 		return fmt.Errorf("expected previous_action_feedback for exact stdout recovery")
 	}
-	parsed, err := sigilruntime.ParseActionOutputRef(feedback.OutputRef)
+	parsed, err := sigilruntime.ParseActionArtifactRef(feedback.ActionRef)
 	if err != nil {
 		return err
 	}
@@ -476,14 +476,14 @@ func (w *harnessWorld) exactActionStdoutRemainsRecoverableThroughRead_action_out
 		RLMQueryBatched: func(_ context.Context, _ []sigilrepl.BatchedQueryRequest) ([]sigilrepl.BatchedQueryResult, error) {
 			return nil, nil
 		},
-		ReadActionOutput: func(outputRef string) (sigilrepl.ActionOutput, error) {
-			if strings.TrimSpace(outputRef) != outputRef {
-				return sigilrepl.ActionOutput{}, fmt.Errorf("output_ref %q must be canonical without leading or trailing whitespace", outputRef)
+		ReadActionArtifact: func(actionRef string) (sigilrepl.ActionOutput, error) {
+			if strings.TrimSpace(actionRef) != actionRef {
+				return sigilrepl.ActionOutput{}, fmt.Errorf("action_ref %q must be canonical without leading or trailing whitespace", actionRef)
 			}
-			if _, err := sigilruntime.ParseActionOutputRef(outputRef); err != nil {
+			if _, err := sigilruntime.ParseActionArtifactRef(actionRef); err != nil {
 				return sigilrepl.ActionOutput{}, err
 			}
-			artifact, err := artifactStore.Read(state.boundedRunResult.RunID, outputRef)
+			artifact, err := artifactStore.Read(state.boundedRunResult.RunID, actionRef)
 			if err != nil {
 				return sigilrepl.ActionOutput{}, err
 			}
@@ -505,13 +505,13 @@ func (w *harnessWorld) exactActionStdoutRemainsRecoverableThroughRead_action_out
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create read_action_output session; %w", err)
+		return fmt.Errorf("failed to create read_action_artifact session; %w", err)
 	}
 	defer session.Close()
 
-	result, err := session.Exec(context.Background(), `import "fmt"; output, err := read_action_output("`+feedback.OutputRef+`"); if err != nil { panic(err) }; fmt.Print(output.Stdout)`)
+	result, err := session.Exec(context.Background(), `import "fmt"; output, err := read_action_artifact("`+feedback.ActionRef+`"); if err != nil { panic(err) }; fmt.Print(output.Stdout)`)
 	if err != nil {
-		return fmt.Errorf("failed to recover exact action stdout through read_action_output; %w", err)
+		return fmt.Errorf("failed to recover exact action stdout through read_action_artifact; %w", err)
 	}
 	if result.Stdout != state.boundedActionArtifact.Stdout {
 		return fmt.Errorf("expected exact action stdout %q, got %q", state.boundedActionArtifact.Stdout, result.Stdout)
@@ -852,7 +852,7 @@ func (w *harnessWorld) successfulRunSummaryAndTerminalEventsIncludeAccounting() 
 		return fmt.Errorf("expected complete run summary cost status, got %q", state.boundedRunResult.Accounting.TreeTotal.CostStatus)
 	}
 
-	runAccountingPath, err := resolveRunOutputPath(w.runsBaseDir(), state.boundedRunResult.RunID, "run-output://run/accounting.json")
+	runAccountingPath, err := resolveArtifactPath(w.runsBaseDir(), state.boundedRunResult.RunID, "run-artifact://run/accounting.json")
 	if err != nil {
 		return err
 	}
@@ -891,7 +891,7 @@ func (w *harnessWorld) successfulRunSummaryAndTerminalEventsIncludeAccounting() 
 			if !ok {
 				return fmt.Errorf("expected node.turn.model payload type, got %T", event.Payload)
 			}
-			modelTurnPath, err := resolveRunOutputPath(w.runsBaseDir(), state.boundedRunResult.RunID, payload.ContentRef)
+			modelTurnPath, err := resolveArtifactPath(w.runsBaseDir(), state.boundedRunResult.RunID, payload.ContentRef)
 			if err != nil {
 				return err
 			}
@@ -1005,7 +1005,7 @@ func (w *harnessWorld) subcallEventsAndActionArtifactsIncludeLeafAccountingSumma
 			if !ok {
 				return fmt.Errorf("expected node.action.executed payload type, got %T", event.Payload)
 			}
-			artifact, err := artifactStore.Read(state.boundedRunResult.RunID, payload.OutputRef)
+			artifact, err := artifactStore.Read(state.boundedRunResult.RunID, payload.ActionRef)
 			if err != nil {
 				return err
 			}
@@ -1269,9 +1269,9 @@ func readEventsFromPath(path string) ([]sigilruntime.EventEnvelope, error) {
 	return events, nil
 }
 
-func resolveRunOutputPath(runsBaseDir string, runID string, contentRef string) (string, error) {
+func resolveArtifactPath(runsBaseDir string, runID string, contentRef string) (string, error) {
 	trimmed := strings.TrimSpace(contentRef)
-	const prefix = "run-output://"
+	const prefix = "run-artifact://"
 	if !strings.HasPrefix(trimmed, prefix) {
 		return "", fmt.Errorf("unsupported content_ref %q", contentRef)
 	}
@@ -1279,5 +1279,5 @@ func resolveRunOutputPath(runsBaseDir string, runID string, contentRef string) (
 	if strings.TrimSpace(relative) == "" {
 		return "", fmt.Errorf("content_ref path is empty")
 	}
-	return filepath.Join(runsBaseDir, runID, "outputs", filepath.FromSlash(relative)), nil
+	return filepath.Join(runsBaseDir, runID, "artifacts", filepath.FromSlash(relative)), nil
 }

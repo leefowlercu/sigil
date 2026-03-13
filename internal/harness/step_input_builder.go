@@ -52,7 +52,7 @@ type PreviousActionSubcallSummary struct {
 
 // PreviousActionFeedback is bounded feedback included in subsequent model-step input.
 type PreviousActionFeedback struct {
-	OutputRef       string                        `json:"output_ref"`
+	ActionRef       string                        `json:"action_ref"`
 	Status          string                        `json:"status"`
 	ErrorCode       *string                       `json:"error_code,omitempty"`
 	ErrorMessage    *string                       `json:"error_message,omitempty"`
@@ -160,11 +160,11 @@ func buildPreviousActionFeedback(runID string, artifacts *ActionArtifactStore, p
 	if artifacts == nil {
 		return nil, fmt.Errorf("artifact store is required")
 	}
-	if strings.TrimSpace(payload.OutputRef) == "" {
-		return nil, fmt.Errorf("output_ref is required")
+	if strings.TrimSpace(payload.ActionRef) == "" {
+		return nil, fmt.Errorf("action_ref is required")
 	}
 
-	artifact, err := artifacts.Read(runID, payload.OutputRef)
+	artifact, err := artifacts.Read(runID, payload.ActionRef)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func buildPreviousActionFeedback(runID string, artifacts *ActionArtifactStore, p
 	stderrPreview, stderrBytes, stderrTruncated := boundedPreview(artifact.Stderr, stepInputPreviewCapBytes)
 
 	return &PreviousActionFeedback{
-		OutputRef:       payload.OutputRef,
+		ActionRef:       payload.ActionRef,
 		Status:          string(payload.Status),
 		ErrorCode:       cloneOptional(payload.ErrorCode),
 		ErrorMessage:    cloneOptional(payload.ErrorMessage),

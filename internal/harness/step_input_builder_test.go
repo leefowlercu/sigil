@@ -11,7 +11,7 @@ import (
 
 func TestBuildContextMetadataReturnsDeterministicIdentity(t *testing.T) {
 	raw := "line-1\nline-2"
-	contextRef := "run-output://node/test/context.json"
+	contextRef := "run-artifact://node/test/context.json"
 
 	metadata := buildContextMetadata(raw, contextRef)
 	sum := sha256.Sum256([]byte(raw))
@@ -37,7 +37,7 @@ func TestBuildContextMetadataReturnsDeterministicIdentity(t *testing.T) {
 }
 
 func TestBuildStepExecutionStateIncludesBudgetsAndRecursionPolicy(t *testing.T) {
-	metadata := buildContextMetadata("line-1\nline-2", "run-output://node/test/context.json")
+	metadata := buildContextMetadata("line-1\nline-2", "run-artifact://node/test/context.json")
 	node := runtime.Node{ID: "node-1", Depth: 2}
 	reason := "small context already used recursive subcalls in this node; stay local in later steps"
 
@@ -109,7 +109,7 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 			{ExecutionMode: string(runtime.SubcallExecutionModeFallback), Status: string(runtime.ActionExecutionStatusFailed)},
 		},
 	}
-	outputRef, err := store.Persist(artifact)
+	actionRef, err := store.Persist(artifact)
 	if err != nil {
 		t.Fatalf("expected action artifact persist success, got %v", err)
 	}
@@ -121,7 +121,7 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 		Language:     "go",
 		Status:       runtime.ActionExecutionStatusFailed,
 		DurationMS:   5,
-		OutputRef:    outputRef,
+		ActionRef:    actionRef,
 		ErrorCode:    &errorCode,
 		ErrorMessage: &errorMessage,
 	})
@@ -129,8 +129,8 @@ func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 		t.Fatalf("expected previous-action feedback build success, got %v", err)
 	}
 
-	if feedback.OutputRef != outputRef {
-		t.Fatalf("expected feedback output_ref %q, got %q", outputRef, feedback.OutputRef)
+	if feedback.ActionRef != actionRef {
+		t.Fatalf("expected feedback action_ref %q, got %q", actionRef, feedback.ActionRef)
 	}
 	if !feedback.StdoutTruncated {
 		t.Fatalf("expected stdout_truncated=true")

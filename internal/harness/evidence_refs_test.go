@@ -11,16 +11,16 @@ func TestResolveFinalEvidenceRefsAcceptsRunOutputAndRunArtifactRefs(t *testing.T
 	nodeID := mustUUIDv7String(t)
 	stepID := mustUUIDv7String(t)
 
-	turnOutputs, err := NewTurnOutputStore(runsBaseDir)
+	runArtifacts, err := NewRunArtifactStore(runsBaseDir)
 	if err != nil {
-		t.Fatalf("expected turn output store creation success, got %v", err)
+		t.Fatalf("expected run artifact store creation success, got %v", err)
 	}
 	artifactStore, err := NewActionArtifactStore(runsBaseDir)
 	if err != nil {
 		t.Fatalf("expected action artifact store creation success, got %v", err)
 	}
 
-	contextRef, err := turnOutputs.PersistContext(runID, nodeID, "context")
+	contextRef, err := runArtifacts.PersistContext(runID, nodeID, "context")
 	if err != nil {
 		t.Fatalf("expected context persistence success, got %v", err)
 	}
@@ -58,7 +58,7 @@ func TestResolveFinalEvidenceRefsRejectsUnresolvableRefs(t *testing.T) {
 	}
 
 	evidence := []FinalEvidence{
-		{Ref: "run-output://node/missing/context.json"},
+		{Ref: "run-artifact://node/missing/context.json"},
 	}
 	err = resolveFinalEvidenceRefs(runID, runsBaseDir, artifactStore, nodeID, evidence)
 	if err == nil {

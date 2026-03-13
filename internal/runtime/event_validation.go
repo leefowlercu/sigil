@@ -336,7 +336,7 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		allowed := map[string]struct{}{
 			"status":         {},
 			"duration_ms":    {},
-			"output_ref":     {},
+			"result_ref":     {},
 			"accounting":     {},
 			"accounting_ref": {},
 		}
@@ -354,8 +354,8 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		if payload.DurationMS < 0 {
 			return nil, fmt.Errorf("node.completed duration_ms must be >= 0; %w", ErrInvalidEvent)
 		}
-		if payload.OutputRef != nil && strings.TrimSpace(*payload.OutputRef) == "" {
-			return nil, fmt.Errorf("node.completed output_ref must be non-empty when present; %w", ErrInvalidEvent)
+		if payload.ResultRef != nil && strings.TrimSpace(*payload.ResultRef) == "" {
+			return nil, fmt.Errorf("node.completed result_ref must be non-empty when present; %w", ErrInvalidEvent)
 		}
 		if payload.AccountingRef != nil && strings.TrimSpace(*payload.AccountingRef) == "" {
 			return nil, fmt.Errorf("node.completed accounting_ref must be non-empty when present; %w", ErrInvalidEvent)
@@ -617,7 +617,7 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			"language":      {},
 			"status":        {},
 			"duration_ms":   {},
-			"output_ref":    {},
+			"action_ref":    {},
 			"error_code":    {},
 			"error_message": {},
 		}
@@ -628,7 +628,7 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 			"language":     {},
 			"status":       {},
 			"duration_ms":  {},
-			"output_ref":   {},
+			"action_ref":   {},
 		}
 		var payload NodeActionExecutedPayload
 		if err := decodePayloadStrict(payloadRaw, allowed, required, &payload); err != nil {
@@ -652,11 +652,11 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		if payload.DurationMS < 0 {
 			return nil, fmt.Errorf("node.action.executed duration_ms must be >= 0; %w", ErrInvalidEvent)
 		}
-		if strings.TrimSpace(payload.OutputRef) == "" {
-			return nil, fmt.Errorf("node.action.executed output_ref must be non-empty; %w", ErrInvalidEvent)
+		if strings.TrimSpace(payload.ActionRef) == "" {
+			return nil, fmt.Errorf("node.action.executed action_ref must be non-empty; %w", ErrInvalidEvent)
 		}
-		if _, err := ParseActionOutputRef(payload.OutputRef); err != nil {
-			return nil, fmt.Errorf("node.action.executed output_ref is invalid; %w", err)
+		if _, err := ParseActionArtifactRef(payload.ActionRef); err != nil {
+			return nil, fmt.Errorf("node.action.executed action_ref is invalid; %w", err)
 		}
 		if payload.Status == ActionExecutionStatusCompleted {
 			if payload.ErrorCode != nil || payload.ErrorMessage != nil {
@@ -948,18 +948,18 @@ func validateEventShape(event EventEnvelope) error {
 		if !ok {
 			return fmt.Errorf("node.action.executed payload type is invalid; %w", ErrInvalidEvent)
 		}
-		parsedRef, err := ParseActionOutputRef(payload.OutputRef)
+		parsedRef, err := ParseActionArtifactRef(payload.ActionRef)
 		if err != nil {
-			return fmt.Errorf("node.action.executed output_ref is invalid; %w", err)
+			return fmt.Errorf("node.action.executed action_ref is invalid; %w", err)
 		}
 		if event.NodeID == nil || parsedRef.NodeID != *event.NodeID {
-			return fmt.Errorf("node.action.executed output_ref node id must match event node_id; %w", ErrInvalidEvent)
+			return fmt.Errorf("node.action.executed action_ref node id must match event node_id; %w", ErrInvalidEvent)
 		}
 		if parsedRef.StepID != payload.StepID {
-			return fmt.Errorf("node.action.executed output_ref step id must match payload step_id; %w", ErrInvalidEvent)
+			return fmt.Errorf("node.action.executed action_ref step id must match payload step_id; %w", ErrInvalidEvent)
 		}
 		if parsedRef.ActionIndex != payload.ActionIndex {
-			return fmt.Errorf("node.action.executed output_ref action index must match payload action_index; %w", ErrInvalidEvent)
+			return fmt.Errorf("node.action.executed action_ref action index must match payload action_index; %w", ErrInvalidEvent)
 		}
 	}
 

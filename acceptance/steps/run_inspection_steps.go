@@ -202,8 +202,8 @@ func (w *harnessWorld) aTerminalRunExistsOnlyInTheSelectedRunDirectory() error {
 		return nil
 	}
 
-	finalAnswerRef := "run-output://run/final-answer.json"
-	accountingRef := "run-output://run/accounting.json"
+	finalAnswerRef := "run-artifact://run/final-answer.json"
+	accountingRef := "run-artifact://run/accounting.json"
 	runID, err := w.createCompletedRun(state.selectedRunsDir, &finalAnswerRef, &accountingRef)
 	if err != nil {
 		return err
@@ -776,8 +776,8 @@ func (w *harnessWorld) ensureSelectedRunListFixtures() error {
 		return err
 	}
 	time.Sleep(10 * time.Millisecond)
-	finalAnswerRef := "run-output://run/final-answer.json"
-	accountingRef := "run-output://run/accounting.json"
+	finalAnswerRef := "run-artifact://run/final-answer.json"
+	accountingRef := "run-artifact://run/accounting.json"
 	targetedRunID, err := w.createCompletedRun(state.selectedRunsDir, &finalAnswerRef, &accountingRef)
 	if err != nil {
 		return err
@@ -799,8 +799,8 @@ func (w *harnessWorld) ensureProjectionFixtures() error {
 		return nil
 	}
 
-	finalAnswerRef := "run-output://run/final-answer.json"
-	accountingRef := "run-output://run/accounting.json"
+	finalAnswerRef := "run-artifact://run/final-answer.json"
+	accountingRef := "run-artifact://run/accounting.json"
 	summaryRunID, err := w.createCompletedRun(state.selectedRunsDir, &finalAnswerRef, &accountingRef)
 	if err != nil {
 		return err

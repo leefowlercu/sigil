@@ -193,14 +193,14 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 	parentID := mustUUIDv7String(t)
 	stepID := mustUUIDv7String(t)
 	failedStepID := mustUUIDv7String(t)
-	contentRef := "run-output://node/turn/1"
+	contentRef := "run-artifact://node/turn/1"
 	errorCode := "action.failed"
 	errorMessage := "failed action execution"
 	accountingSummary := testAccountingSummary()
 	accountingRollup := testAccountingRollup()
-	outputRef, err := BuildActionOutputRef(nodeID, stepID, 1)
+	actionRef, err := BuildActionArtifactRef(nodeID, stepID, 1)
 	if err != nil {
-		t.Fatalf("failed to build output_ref fixture: %v", err)
+		t.Fatalf("failed to build action_ref fixture: %v", err)
 	}
 
 	testCases := []struct {
@@ -357,7 +357,7 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 				Language:    "go",
 				Status:      ActionExecutionStatusCompleted,
 				DurationMS:  10,
-				OutputRef:   outputRef,
+				ActionRef:   actionRef,
 			},
 		},
 		{
@@ -370,7 +370,7 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 				Language:     "go",
 				Status:       ActionExecutionStatusFailed,
 				DurationMS:   10,
-				OutputRef:    outputRef,
+				ActionRef:    actionRef,
 				ErrorCode:    &errorCode,
 				ErrorMessage: &errorMessage,
 			},
@@ -521,7 +521,7 @@ func TestParseEventEnvelopeStrictRejectsInvalidStepTurnAndActionPayloadInvariant
 			payload: map[string]any{
 				"step_id":     stepID,
 				"role":        "model",
-				"content_ref": "run-output://turn/1",
+				"content_ref": "run-artifact://turn/1",
 			},
 		},
 		{
@@ -534,11 +534,11 @@ func TestParseEventEnvelopeStrictRejectsInvalidStepTurnAndActionPayloadInvariant
 				"language":     "go",
 				"status":       "failed",
 				"duration_ms":  1,
-				"output_ref":   "run-artifact://node/" + nodeID + "/step/" + stepID + "/action-1.json",
+				"action_ref":   "run-artifact://node/" + nodeID + "/step/" + stepID + "/action-1.json",
 			},
 		},
 		{
-			name:      "node action executed invalid output_ref identity mismatch",
+			name:      "node action executed invalid action_ref identity mismatch",
 			eventType: EventTypeNodeActionExecuted,
 			payload: map[string]any{
 				"step_id":      stepID,
@@ -547,7 +547,7 @@ func TestParseEventEnvelopeStrictRejectsInvalidStepTurnAndActionPayloadInvariant
 				"language":     "go",
 				"status":       "completed",
 				"duration_ms":  1,
-				"output_ref":   "run-artifact://node/" + mustUUIDv7String(t) + "/step/" + stepID + "/action-1.json",
+				"action_ref":   "run-artifact://node/" + mustUUIDv7String(t) + "/step/" + stepID + "/action-1.json",
 			},
 		},
 		{
@@ -1140,11 +1140,11 @@ func testAccountingRollup() accounting.Rollup {
 }
 
 func testStepAccountingRef(nodeID string, stepID string) string {
-	return "run-output://node/" + nodeID + "/step/" + stepID + "/accounting.json"
+	return "run-artifact://node/" + nodeID + "/step/" + stepID + "/accounting.json"
 }
 
 func testSubcallAccountingRef(nodeID string, stepID string, subcallIndex int) string {
-	return fmt.Sprintf("run-output://node/%s/step/%s/subcall-%d-accounting.json", nodeID, stepID, subcallIndex)
+	return fmt.Sprintf("run-artifact://node/%s/step/%s/subcall-%d-accounting.json", nodeID, stepID, subcallIndex)
 }
 
 func assertLegacyPayloadAccountingDefaults(t *testing.T, payload any) {

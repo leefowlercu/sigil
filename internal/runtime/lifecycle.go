@@ -585,7 +585,7 @@ func (l *Lifecycle) AppendNodeActionExecuted(nodeID string, payload NodeActionEx
 			"step_id", payload.StepID,
 			"action_index", payload.ActionIndex,
 			"error_code", valueOrEmptyString(payload.ErrorCode),
-			"output_ref", payload.OutputRef,
+			"action_ref", payload.ActionRef,
 		)
 	} else {
 		lifecycleLogger().Debug("appended node.action.executed",
@@ -593,7 +593,7 @@ func (l *Lifecycle) AppendNodeActionExecuted(nodeID string, payload NodeActionEx
 			"node_id", nodeID,
 			"step_id", payload.StepID,
 			"action_index", payload.ActionIndex,
-			"output_ref", payload.OutputRef,
+			"action_ref", payload.ActionRef,
 		)
 	}
 
@@ -632,12 +632,12 @@ func (l *Lifecycle) AppendNodeStepCompleted(nodeID string, payload NodeStepCompl
 }
 
 // CompleteNode appends node.completed for an existing node.
-func (l *Lifecycle) CompleteNode(nodeID string, outputRef *string) error {
-	return l.CompleteNodeWithAccounting(nodeID, outputRef, unavailableRollupForLifecycle(), nil)
+func (l *Lifecycle) CompleteNode(nodeID string, resultRef *string) error {
+	return l.CompleteNodeWithAccounting(nodeID, resultRef, unavailableRollupForLifecycle(), nil)
 }
 
 // CompleteNodeWithAccounting appends node.completed for an existing node.
-func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, outputRef *string, nodeAccounting accounting.Rollup, accountingRef *string) error {
+func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, resultRef *string, nodeAccounting accounting.Rollup, accountingRef *string) error {
 	if l.state != RunStateRunning {
 		return fmt.Errorf("cannot complete node while run state is %q; %w", l.state, ErrRunNotRunning)
 	}
@@ -655,7 +655,7 @@ func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, outputRef *string,
 	payload := NodeCompletedPayload{
 		Status:        "completed",
 		DurationMS:    durationMS,
-		OutputRef:     cloneStringPointer(outputRef),
+		ResultRef:     cloneStringPointer(resultRef),
 		Accounting:    nodeAccounting,
 		AccountingRef: cloneStringPointer(accountingRef),
 	}
@@ -666,7 +666,7 @@ func (l *Lifecycle) CompleteNodeWithAccounting(nodeID string, outputRef *string,
 	lifecycleLogger().Info("appended node.completed",
 		"run_id", l.runID,
 		"node_id", nodeID,
-		"output_ref", valueOrEmptyString(outputRef),
+		"result_ref", valueOrEmptyString(resultRef),
 	)
 	delete(l.nodeStartedAt, nodeID)
 	l.nodeTerminalByID[nodeID] = EventTypeNodeCompleted
@@ -839,9 +839,9 @@ func unavailableRollupForLifecycle() accounting.Rollup {
 }
 
 func defaultStepAccountingRef(nodeID string, stepID string) string {
-	return fmt.Sprintf("run-output://node/%s/step/%s/accounting.json", nodeID, stepID)
+	return fmt.Sprintf("run-artifact://node/%s/step/%s/accounting.json", nodeID, stepID)
 }
 
 func defaultStepSubcallAccountingRef(nodeID string, stepID string, subcallIndex int) string {
-	return fmt.Sprintf("run-output://node/%s/step/%s/subcall-%d-accounting.json", nodeID, stepID, subcallIndex)
+	return fmt.Sprintf("run-artifact://node/%s/step/%s/subcall-%d-accounting.json", nodeID, stepID, subcallIndex)
 }

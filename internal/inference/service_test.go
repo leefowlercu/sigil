@@ -93,7 +93,7 @@ func validFinalPayload() map[string]any {
 		"decision": "final",
 		"final": map[string]any{
 			"answer":     "done",
-			"evidence":   []any{map[string]any{"ref": "run-output://node/example/context.json"}},
+			"evidence":   []any{map[string]any{"ref": "run-artifact://node/example/context.json"}},
 			"confidence": "medium",
 		},
 	}

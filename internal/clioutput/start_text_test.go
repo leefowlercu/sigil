@@ -31,7 +31,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 	rootNodeID := "019cc706-2222-7222-8222-222222222222"
 	childNodeID := "019cc706-3333-7333-8333-333333333333"
 	stepID := "019cc706-4444-7444-8444-444444444444"
-	accountingRef := "run-output://run/accounting.json"
+	accountingRef := "run-artifact://run/accounting.json"
 	rollup := testRollup()
 
 	renderer.ObserveEvent(runtime.EventEnvelope{
@@ -100,7 +100,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 			DurationMS:    12,
 			ChildNodeID:   &childNodeID,
 			Accounting:    accounting.ZeroSummary("openai", "gpt-5.1", "v1"),
-			AccountingRef: "run-output://node/root/step/1/subcall-1-accounting.json",
+			AccountingRef: "run-artifact://node/root/step/1/subcall-1-accounting.json",
 		},
 	})
 	renderer.ObserveEvent(runtime.EventEnvelope{
@@ -113,7 +113,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 			ActionIndex: 1,
 			Status:      runtime.ActionExecutionStatusCompleted,
 			DurationMS:  15,
-			OutputRef:   "run-artifact://node/root/step/1/action-1.json",
+			ActionRef:   "run-artifact://node/root/step/1/action-1.json",
 		},
 	})
 	renderer.ObserveEvent(runtime.EventEnvelope{
@@ -136,7 +136,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 		Payload: runtime.RunCompletedPayload{
 			Status:         "completed",
 			DurationMS:     42,
-			FinalAnswerRef: stringPointer("run-output://node/root/final-answer.json"),
+			FinalAnswerRef: stringPointer("run-artifact://node/root/final-answer.json"),
 			Accounting:     rollup,
 			AccountingRef:  &accountingRef,
 		},
@@ -146,7 +146,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 		RunID:          runID,
 		State:          "completed",
 		FinalAnswer:    "done",
-		FinalAnswerRef: "run-output://node/root/final-answer.json",
+		FinalAnswerRef: "run-artifact://node/root/final-answer.json",
 		EventsPath:     "/tmp/.sigil/runs/" + runID + "/events.jsonl",
 		Accounting:     rollup,
 	})
@@ -173,7 +173,7 @@ func TestStartTextRendererRendersProgressTreeAndSummary(t *testing.T) {
 		"Duration (ms): 42",
 		"Final answer:",
 		"Accounting ref: " + accountingRef,
-		"Accounting path: /tmp/.sigil/runs/" + runID + "/outputs/run/accounting.json",
+		"Accounting path: /tmp/.sigil/runs/" + runID + "/artifacts/run/accounting.json",
 	}
 	for _, snippet := range expectedSnippets {
 		if !strings.Contains(rendered, snippet) {

@@ -11,19 +11,19 @@ import (
 	"github.com/leefowlercu/sigil/internal/inference"
 )
 
-// TurnOutputStore persists user/model turn artifacts and final-answer outputs.
-type TurnOutputStore struct {
+// RunArtifactStore persists user/model turn artifacts and final-answer artifacts.
+type RunArtifactStore struct {
 	runsBaseDir string
 }
 
-// NewTurnOutputStore constructs a turn output store for a runs base directory.
-func NewTurnOutputStore(runsBaseDir string) (*TurnOutputStore, error) {
+// NewRunArtifactStore constructs a run artifact store for a runs base directory.
+func NewRunArtifactStore(runsBaseDir string) (*RunArtifactStore, error) {
 	clean := strings.TrimSpace(runsBaseDir)
 	if clean == "" {
 		return nil, fmt.Errorf("runs base directory is required")
 	}
 
-	return &TurnOutputStore{runsBaseDir: clean}, nil
+	return &RunArtifactStore{runsBaseDir: clean}, nil
 }
 
 type userTurnArtifact struct {
@@ -78,13 +78,13 @@ type finalAnswerArtifact struct {
 }
 
 // PersistUserTurn stores a compact user turn artifact and returns content_ref.
-func (s *TurnOutputStore) PersistUserTurn(runID string, nodeID string, stepID string, envelope StepInputEnvelope, messages []inference.Message) (string, error) {
+func (s *RunArtifactStore) PersistUserTurn(runID string, nodeID string, stepID string, envelope StepInputEnvelope, messages []inference.Message) (string, error) {
 	if s == nil {
-		return "", fmt.Errorf("turn output store is required")
+		return "", fmt.Errorf("run artifact store is required")
 	}
 
-	ref := fmt.Sprintf("run-output://node/%s/step/%s/turn-user.json", nodeID, stepID)
-	path := filepath.Join(s.runsBaseDir, runID, "outputs", "node", nodeID, "step", stepID, "turn-user.json")
+	ref := fmt.Sprintf("run-artifact://node/%s/step/%s/turn-user.json", nodeID, stepID)
+	path := filepath.Join(s.runsBaseDir, runID, "artifacts", "node", nodeID, "step", stepID, "turn-user.json")
 	messageArtifacts := make([]userTurnMessageArtifact, 0, len(messages))
 	for _, message := range messages {
 		messageArtifacts = append(messageArtifacts, userTurnMessageArtifact{
@@ -100,27 +100,27 @@ func (s *TurnOutputStore) PersistUserTurn(runID string, nodeID string, stepID st
 		ModelInputEnvelope: envelope,
 		ModelInputMessages: messageArtifacts,
 	}
-	if err := writeOutputArtifact(path, payload); err != nil {
+	if err := writeArtifactFile(path, payload); err != nil {
 		return "", err
 	}
 
 	return ref, nil
 }
 
-// PersistContext stores node context output and returns content_ref.
-func (s *TurnOutputStore) PersistContext(runID string, nodeID string, contextBody string) (string, error) {
+// PersistContext stores node context artifact and returns content_ref.
+func (s *RunArtifactStore) PersistContext(runID string, nodeID string, contextBody string) (string, error) {
 	if s == nil {
-		return "", fmt.Errorf("turn output store is required")
+		return "", fmt.Errorf("run artifact store is required")
 	}
 
-	ref := fmt.Sprintf("run-output://node/%s/context.json", nodeID)
-	path := filepath.Join(s.runsBaseDir, runID, "outputs", "node", nodeID, "context.json")
+	ref := fmt.Sprintf("run-artifact://node/%s/context.json", nodeID)
+	path := filepath.Join(s.runsBaseDir, runID, "artifacts", "node", nodeID, "context.json")
 	payload := contextArtifact{
 		RunID:   runID,
 		NodeID:  nodeID,
 		Context: contextBody,
 	}
-	if err := writeOutputArtifact(path, payload); err != nil {
+	if err := writeArtifactFile(path, payload); err != nil {
 		return "", err
 	}
 
@@ -128,13 +128,13 @@ func (s *TurnOutputStore) PersistContext(runID string, nodeID string, contextBod
 }
 
 // PersistModelTurn stores a model turn artifact and returns content_ref.
-func (s *TurnOutputStore) PersistModelTurn(runID string, nodeID string, stepID string, result inference.Result) (string, error) {
+func (s *RunArtifactStore) PersistModelTurn(runID string, nodeID string, stepID string, result inference.Result) (string, error) {
 	if s == nil {
-		return "", fmt.Errorf("turn output store is required")
+		return "", fmt.Errorf("run artifact store is required")
 	}
 
-	ref := fmt.Sprintf("run-output://node/%s/step/%s/turn-model.json", nodeID, stepID)
-	path := filepath.Join(s.runsBaseDir, runID, "outputs", "node", nodeID, "step", stepID, "turn-model.json")
+	ref := fmt.Sprintf("run-artifact://node/%s/step/%s/turn-model.json", nodeID, stepID)
+	path := filepath.Join(s.runsBaseDir, runID, "artifacts", "node", nodeID, "step", stepID, "turn-model.json")
 	payload := modelTurnArtifact{
 		RunID:         runID,
 		NodeID:        nodeID,
@@ -151,21 +151,21 @@ func (s *TurnOutputStore) PersistModelTurn(runID string, nodeID string, stepID s
 		Accounting:    result.Accounting,
 		RawMetadata:   result.RawMetadata,
 	}
-	if err := writeOutputArtifact(path, payload); err != nil {
+	if err := writeArtifactFile(path, payload); err != nil {
 		return "", err
 	}
 
 	return ref, nil
 }
 
-// PersistFinalAnswer stores final-answer output and returns final_answer_ref/output_ref.
-func (s *TurnOutputStore) PersistFinalAnswer(runID string, nodeID string, answer string, evidence []FinalEvidence, confidence *string) (string, error) {
+// PersistFinalAnswer stores final-answer artifact and returns final_answer_ref/result_ref.
+func (s *RunArtifactStore) PersistFinalAnswer(runID string, nodeID string, answer string, evidence []FinalEvidence, confidence *string) (string, error) {
 	if s == nil {
-		return "", fmt.Errorf("turn output store is required")
+		return "", fmt.Errorf("run artifact store is required")
 	}
 
-	ref := fmt.Sprintf("run-output://node/%s/final-answer.json", nodeID)
-	path := filepath.Join(s.runsBaseDir, runID, "outputs", "node", nodeID, "final-answer.json")
+	ref := fmt.Sprintf("run-artifact://node/%s/final-answer.json", nodeID)
+	path := filepath.Join(s.runsBaseDir, runID, "artifacts", "node", nodeID, "final-answer.json")
 	evidenceArtifacts := make([]finalEvidenceArtifact, 0, len(evidence))
 	for _, item := range evidence {
 		evidenceArtifacts = append(evidenceArtifacts, finalEvidenceArtifact{
@@ -182,25 +182,25 @@ func (s *TurnOutputStore) PersistFinalAnswer(runID string, nodeID string, answer
 		Evidence:    evidenceArtifacts,
 		Confidence:  cloneOptional(confidence),
 	}
-	if err := writeOutputArtifact(path, payload); err != nil {
+	if err := writeArtifactFile(path, payload); err != nil {
 		return "", err
 	}
 
 	return ref, nil
 }
 
-func writeOutputArtifact(path string, payload any) error {
+func writeArtifactFile(path string, payload any) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return fmt.Errorf("failed to create output artifact directory %q; %w", directory, err)
+		return fmt.Errorf("failed to create artifact file directory %q; %w", directory, err)
 	}
 
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to encode output artifact; %w", err)
+		return fmt.Errorf("failed to encode artifact file; %w", err)
 	}
 	if err := os.WriteFile(path, encoded, 0o644); err != nil {
-		return fmt.Errorf("failed to write output artifact %q; %w", path, err)
+		return fmt.Errorf("failed to write artifact file %q; %w", path, err)
 	}
 
 	return nil

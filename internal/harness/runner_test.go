@@ -258,8 +258,8 @@ func hydrateFinalEvidenceRef(result inference.Result, request inference.Request)
 			if strings.TrimSpace(envelope.ContextMetadata.ContextRef) != "" {
 				replCode = strings.ReplaceAll(replCode, "__context_ref__", envelope.ContextMetadata.ContextRef)
 			}
-			if envelope.PreviousActionFeedback != nil && strings.TrimSpace(envelope.PreviousActionFeedback.OutputRef) != "" {
-				replCode = strings.ReplaceAll(replCode, "__previous_output_ref__", envelope.PreviousActionFeedback.OutputRef)
+			if envelope.PreviousActionFeedback != nil && strings.TrimSpace(envelope.PreviousActionFeedback.ActionRef) != "" {
+				replCode = strings.ReplaceAll(replCode, "__previous_action_ref__", envelope.PreviousActionFeedback.ActionRef)
 			}
 			continuationPayload["repl_code"] = replCode
 		}
@@ -286,16 +286,16 @@ func hydrateFinalEvidenceRef(result inference.Result, request inference.Request)
 				continue
 			}
 			evidenceItem["ref"] = envelope.ContextMetadata.ContextRef
-		case "__previous_output_ref__":
-			if envelope.PreviousActionFeedback == nil || strings.TrimSpace(envelope.PreviousActionFeedback.OutputRef) == "" {
+		case "__previous_action_ref__":
+			if envelope.PreviousActionFeedback == nil || strings.TrimSpace(envelope.PreviousActionFeedback.ActionRef) == "" {
 				continue
 			}
-			evidenceItem["ref"] = envelope.PreviousActionFeedback.OutputRef
-		case "__previous_output_ref_malformed__":
-			if envelope.PreviousActionFeedback == nil || strings.TrimSpace(envelope.PreviousActionFeedback.OutputRef) == "" {
+			evidenceItem["ref"] = envelope.PreviousActionFeedback.ActionRef
+		case "__previous_action_ref_malformed__":
+			if envelope.PreviousActionFeedback == nil || strings.TrimSpace(envelope.PreviousActionFeedback.ActionRef) == "" {
 				continue
 			}
-			parsedRef, err := runtime.ParseActionOutputRef(envelope.PreviousActionFeedback.OutputRef)
+			parsedRef, err := runtime.ParseActionArtifactRef(envelope.PreviousActionFeedback.ActionRef)
 			if err != nil {
 				continue
 			}
@@ -462,14 +462,14 @@ func TestRunnerRunIncludesPreviousActionFeedbackOnSubsequentStep(t *testing.T) {
 		t.Fatal("expected second envelope to include previous action feedback")
 	}
 	feedback := secondEnvelope.PreviousActionFeedback
-	if strings.TrimSpace(feedback.OutputRef) == "" {
-		t.Fatal("expected feedback.output_ref to be populated")
+	if strings.TrimSpace(feedback.ActionRef) == "" {
+		t.Fatal("expected feedback.action_ref to be populated")
 	}
 	if feedback.Status != string(runtime.ActionExecutionStatusCompleted) {
 		t.Fatalf("expected feedback.status=completed, got %q", feedback.Status)
 	}
 	if !feedback.StdoutTruncated {
-		t.Fatal("expected stdout preview to be marked truncated for oversized action output")
+		t.Fatal("expected stdout preview to be marked truncated for oversized action artifact")
 	}
 	if feedback.StdoutBytes <= stepInputPreviewCapBytes {
 		t.Fatalf("expected stdout_bytes > %d, got %d", stepInputPreviewCapBytes, feedback.StdoutBytes)
@@ -479,13 +479,13 @@ func TestRunnerRunIncludesPreviousActionFeedbackOnSubsequentStep(t *testing.T) {
 	}
 }
 
-func TestRunnerRunCanRecoverExactActionOutputViaReadActionOutput(t *testing.T) {
+func TestRunnerRunCanRecoverExactActionOutputViaReadActionArtifact(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	largeStdout := strings.Repeat("a", stepInputPreviewCapBytes+32)
 	inferenceClient := &queuedInference{
 		responses: []queuedInferenceResponse{
 			{result: continueResult(`import "fmt"; fmt.Print("` + largeStdout + `")`)},
-			{result: continueResult(`import "fmt"; output, err := read_action_output("__previous_output_ref__"); if err != nil { panic(err) }; fmt.Print(output.Stdout)`)},
+			{result: continueResult(`import "fmt"; output, err := read_action_artifact("__previous_action_ref__"); if err != nil { panic(err) }; fmt.Print(output.Stdout)`)},
 			{result: finalResult("done")},
 		},
 	}
@@ -528,7 +528,7 @@ func TestRunnerRunCanRecoverExactActionOutputViaReadActionOutput(t *testing.T) {
 	}
 
 	events := mustReadPersistedEvents(t, baseDir)
-	var actionOutputRefs []string
+	var actionRefs []string
 	for _, event := range events {
 		if event.Type != runtime.EventTypeNodeActionExecuted {
 			continue
@@ -537,21 +537,21 @@ func TestRunnerRunCanRecoverExactActionOutputViaReadActionOutput(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected node.action.executed payload type, got %T", event.Payload)
 		}
-		actionOutputRefs = append(actionOutputRefs, payload.OutputRef)
+		actionRefs = append(actionRefs, payload.ActionRef)
 	}
-	if len(actionOutputRefs) != 2 {
-		t.Fatalf("expected two node.action.executed output refs, got %d", len(actionOutputRefs))
+	if len(actionRefs) != 2 {
+		t.Fatalf("expected two node.action.executed action refs, got %d", len(actionRefs))
 	}
 
 	artifacts, err := NewActionArtifactStore(baseDir)
 	if err != nil {
 		t.Fatalf("expected artifact store construction success, got %v", err)
 	}
-	firstArtifact, err := artifacts.Read(result.RunID, actionOutputRefs[0])
+	firstArtifact, err := artifacts.Read(result.RunID, actionRefs[0])
 	if err != nil {
 		t.Fatalf("expected first action artifact read success, got %v", err)
 	}
-	secondArtifact, err := artifacts.Read(result.RunID, actionOutputRefs[1])
+	secondArtifact, err := artifacts.Read(result.RunID, actionRefs[1])
 	if err != nil {
 		t.Fatalf("expected second action artifact read success, got %v", err)
 	}
@@ -560,7 +560,7 @@ func TestRunnerRunCanRecoverExactActionOutputViaReadActionOutput(t *testing.T) {
 		t.Fatalf("expected first artifact stdout to hold full extracted string, got %q", firstArtifact.Stdout)
 	}
 	if secondArtifact.Stdout != largeStdout {
-		t.Fatalf("expected second artifact stdout recovered through read_action_output to match full string, got %q", secondArtifact.Stdout)
+		t.Fatalf("expected second artifact stdout recovered through read_action_artifact to match full string, got %q", secondArtifact.Stdout)
 	}
 	if secondArtifact.Stdout == secondEnvelope.PreviousActionFeedback.StdoutPreview {
 		t.Fatal("expected exact recovered stdout to exceed bounded preview")
@@ -1252,7 +1252,7 @@ func TestRunnerRunInterruptsQueuedRunBeforeExecutionStart(t *testing.T) {
 		t.Fatalf("expected interrupted_node_id to be omitted before execution start, got %q", *payload.InterruptedNodeID)
 	}
 	if payload.AccountingRef != nil {
-		t.Fatalf("expected accounting_ref to remain omitted without turn outputs, got %q", *payload.AccountingRef)
+		t.Fatalf("expected accounting_ref to remain omitted without persisted run artifacts, got %q", *payload.AccountingRef)
 	}
 
 	runID := events[0].RunID
@@ -1354,7 +1354,7 @@ func TestRunnerRunInterruptsActiveWorkWithoutSyntheticNodeFailure(t *testing.T) 
 	if payload.Accounting.TreeTotal.TotalTokens == nil || *payload.Accounting.TreeTotal.TotalTokens != totalTokens {
 		t.Fatalf("expected partial accounting total_tokens=%d, got %+v", totalTokens, payload.Accounting.TreeTotal.TotalTokens)
 	}
-	if payload.AccountingRef == nil || *payload.AccountingRef != "run-output://run/accounting.json" {
+	if payload.AccountingRef == nil || *payload.AccountingRef != "run-artifact://run/accounting.json" {
 		t.Fatalf("expected run accounting_ref, got %+v", payload.AccountingRef)
 	}
 
@@ -1428,7 +1428,7 @@ func TestRunnerRunFailsWithOutputValidationWhenFinalEvidenceIsUnresolvable(t *te
 						"decision": "final",
 						"final": map[string]any{
 							"answer":   "done",
-							"evidence": []any{map[string]any{"ref": "run-output://node/missing/context.json"}},
+							"evidence": []any{map[string]any{"ref": "run-artifact://node/missing/context.json"}},
 						},
 					},
 					Gateway:           "openrouter",
@@ -1466,12 +1466,12 @@ func TestRunnerRunFailsWithOutputValidationWhenFinalEvidenceIsUnresolvable(t *te
 	}
 }
 
-func TestRunnerRunNormalizesMalformedPreviousActionOutputRefInFinalEvidence(t *testing.T) {
+func TestRunnerRunNormalizesMalformedPreviousActionArtifactRefInFinalEvidence(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
 		responses: []queuedInferenceResponse{
 			{result: continueResult(`import "fmt"; fmt.Print("ok")`)},
-			{result: finalResultWithEvidence("done", "__previous_output_ref_malformed__")},
+			{result: finalResultWithEvidence("done", "__previous_action_ref_malformed__")},
 		},
 	}
 
@@ -1501,16 +1501,16 @@ func TestRunnerRunNormalizesMalformedPreviousActionOutputRefInFinalEvidence(t *t
 	if secondStepEnvelope.PreviousActionFeedback == nil {
 		t.Fatal("expected second-step previous_action_feedback")
 	}
-	expectedRef := secondStepEnvelope.PreviousActionFeedback.OutputRef
+	expectedRef := secondStepEnvelope.PreviousActionFeedback.ActionRef
 	if strings.TrimSpace(expectedRef) == "" {
-		t.Fatal("expected previous_action_feedback.output_ref")
+		t.Fatal("expected previous_action_feedback.action_ref")
 	}
 
-	outputPath, err := resolveRunOutputPath(result.FinalAnswerRef)
+	outputPath, err := runtime.ResolveArtifactRefPath(result.FinalAnswerRef)
 	if err != nil {
 		t.Fatalf("expected final answer ref path resolution success, got %v", err)
 	}
-	finalAnswerPath := filepath.Join(append([]string{baseDir, result.RunID, "outputs"}, outputPath...)...)
+	finalAnswerPath := filepath.Join(append([]string{baseDir, result.RunID, "artifacts"}, outputPath...)...)
 	encoded, err := os.ReadFile(finalAnswerPath)
 	if err != nil {
 		t.Fatalf("expected final answer artifact read success, got %v", err)
@@ -2090,7 +2090,7 @@ func TestRunnerRunFailsWhenRecursiveSubcallTokenBudgetGuardrailBreached(t *testi
 	}
 	for _, artifact := range mustReadActionArtifacts(t, baseDir) {
 		if strings.Contains(artifact.Stdout, "after-budget") {
-			t.Fatalf("expected recursive subcall budget failure to abort post-breach action output, got stdout %q", artifact.Stdout)
+			t.Fatalf("expected recursive subcall budget failure to abort post-breach action artifact, got stdout %q", artifact.Stdout)
 		}
 		if len(artifact.Subcalls) != 1 {
 			t.Fatalf("expected one subcall trace in action artifact, got %d", len(artifact.Subcalls))
@@ -2760,10 +2760,10 @@ func TestRunnerRunIncludesAccountingInRunResultAndEvents(t *testing.T) {
 		t.Fatalf("expected events file read success, got %v", err)
 	}
 	eventsText := string(eventsBytes)
-	if !strings.Contains(eventsText, `"accounting_ref":"run-output://run/accounting.json"`) {
+	if !strings.Contains(eventsText, `"accounting_ref":"run-artifact://run/accounting.json"`) {
 		t.Fatalf("expected run.completed accounting_ref in events, got %q", eventsText)
 	}
-	if !strings.Contains(eventsText, `"accounting_ref":"run-output://node/`) {
+	if !strings.Contains(eventsText, `"accounting_ref":"run-artifact://node/`) {
 		t.Fatalf("expected node.step.completed accounting_ref in events, got %q", eventsText)
 	}
 }
@@ -2773,7 +2773,7 @@ func TestRunResultIsJSONSerializable(t *testing.T) {
 		RunID:          "run",
 		State:          "completed",
 		FinalAnswer:    "done",
-		FinalAnswerRef: "run-output://node/x/final-answer.json",
+		FinalAnswerRef: "run-artifact://node/x/final-answer.json",
 		EventsPath:     "/tmp/events.jsonl",
 	}
 	if _, err := json.Marshal(payload); err != nil {

@@ -163,7 +163,7 @@ func TestStepExecutorExecuteContinueActionRecordsFailedActionWithoutFatalError(t
 		t.Fatalf("expected compile error code, got %v", payload.ErrorCode)
 	}
 
-	artifact, err := artifacts.Read(lifecycle.RunID(), payload.OutputRef)
+	artifact, err := artifacts.Read(lifecycle.RunID(), payload.ActionRef)
 	if err != nil {
 		t.Fatalf("expected artifact read success, got %v", err)
 	}

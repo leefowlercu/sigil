@@ -173,7 +173,7 @@ func TestCloseAllClosesManagedSessionsAndReturnsJoinedErrors(t *testing.T) {
 	}
 }
 
-func TestSessionForNodeProvidesReadActionOutputForCurrentRun(t *testing.T) {
+func TestSessionForNodeProvidesReadActionArtifactForCurrentRun(t *testing.T) {
 	runsDir := filepath.Join(t.TempDir(), "sigil-runs")
 	artifacts, err := NewActionArtifactStore(runsDir)
 	if err != nil {
@@ -190,7 +190,7 @@ func TestSessionForNodeProvidesReadActionOutputForCurrentRun(t *testing.T) {
 	stepID := mustManagerUUIDv7String(t)
 	errorCode := "repl_execution_compile"
 	errorMessage := "compile failed"
-	outputRef, err := artifacts.Persist(ActionArtifact{
+	actionRef, err := artifacts.Persist(ActionArtifact{
 		RunID:        runID,
 		NodeID:       nodeID,
 		StepID:       stepID,
@@ -220,11 +220,11 @@ func TestSessionForNodeProvidesReadActionOutputForCurrentRun(t *testing.T) {
 	if len(factory.options) != 1 {
 		t.Fatalf("expected one captured session option set, got %d", len(factory.options))
 	}
-	if factory.options[0].ReadActionOutput == nil {
-		t.Fatal("expected ReadActionOutput binding to be wired")
+	if factory.options[0].ReadActionArtifact == nil {
+		t.Fatal("expected ReadActionArtifact binding to be wired")
 	}
 
-	output, err := factory.options[0].ReadActionOutput(outputRef)
+	output, err := factory.options[0].ReadActionArtifact(actionRef)
 	if err != nil {
 		t.Fatalf("expected read action output success, got %v", err)
 	}
@@ -234,8 +234,8 @@ func TestSessionForNodeProvidesReadActionOutputForCurrentRun(t *testing.T) {
 	if output.ErrorCode != errorCode || output.ErrorMessage != errorMessage {
 		t.Fatalf("unexpected action output error metadata %+v", output)
 	}
-	if _, err := factory.options[0].ReadActionOutput(" " + outputRef + " "); err == nil {
-		t.Fatal("expected non-canonical whitespace-padded output_ref to fail")
+	if _, err := factory.options[0].ReadActionArtifact(" " + actionRef + " "); err == nil {
+		t.Fatal("expected non-canonical whitespace-padded action_ref to fail")
 	}
 }
 

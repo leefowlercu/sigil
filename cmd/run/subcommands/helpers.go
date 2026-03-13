@@ -356,9 +356,9 @@ func writeRunProjectionText(writer io.Writer, heading string, projection runtime
 		); err != nil {
 			return fmt.Errorf("failed to write node projection; %w", err)
 		}
-		if node.OutputRef != nil {
-			if _, err := fmt.Fprintf(writer, "    Output ref: %s\n", *node.OutputRef); err != nil {
-				return fmt.Errorf("failed to write node output ref; %w", err)
+		if node.ResultRef != nil {
+			if _, err := fmt.Fprintf(writer, "    Result ref: %s\n", *node.ResultRef); err != nil {
+				return fmt.Errorf("failed to write node result ref; %w", err)
 			}
 		}
 		if node.AccountingRef != nil {

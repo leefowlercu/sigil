@@ -143,10 +143,10 @@ func (r *StartTextRenderer) ObserveEvent(event runtime.EventEnvelope) {
 		}
 		stepIndex := r.stepIndexByID[payload.StepID]
 		if payload.ErrorCode != nil {
-			r.writeNodeLineLocked(*event.NodeID, "Action %d failed: step=%d duration_ms=%d error_code=%s output_ref=%s", payload.ActionIndex, stepIndex, payload.DurationMS, *payload.ErrorCode, payload.OutputRef)
+			r.writeNodeLineLocked(*event.NodeID, "Action %d failed: step=%d duration_ms=%d error_code=%s action_ref=%s", payload.ActionIndex, stepIndex, payload.DurationMS, *payload.ErrorCode, payload.ActionRef)
 			return
 		}
-		r.writeNodeLineLocked(*event.NodeID, "Action %d completed: step=%d duration_ms=%d output_ref=%s", payload.ActionIndex, stepIndex, payload.DurationMS, payload.OutputRef)
+		r.writeNodeLineLocked(*event.NodeID, "Action %d completed: step=%d duration_ms=%d action_ref=%s", payload.ActionIndex, stepIndex, payload.DurationMS, payload.ActionRef)
 	case runtime.NodeStepCompletedPayload:
 		if event.NodeID == nil {
 			return
@@ -157,7 +157,7 @@ func (r *StartTextRenderer) ObserveEvent(event runtime.EventEnvelope) {
 		if event.NodeID == nil {
 			return
 		}
-		r.writeNodeLineLocked(*event.NodeID, "Node completed: status=%s duration_ms=%d output_ref=%s", payload.Status, payload.DurationMS, valueOrPlaceholder(payload.OutputRef))
+		r.writeNodeLineLocked(*event.NodeID, "Node completed: status=%s duration_ms=%d result_ref=%s", payload.Status, payload.DurationMS, valueOrPlaceholder(payload.ResultRef))
 	case runtime.NodeFailedPayload:
 		if event.NodeID == nil {
 			return
@@ -211,7 +211,7 @@ func (r *StartTextRenderer) WriteCompletedSummary(result harness.RunResult) {
 	r.writeAccountingSummaryLocked("    Tree total", accountingRollup.TreeTotal)
 	if accountingRef != nil {
 		r.writefLocked("    Accounting ref: %s\n", *accountingRef)
-		r.writefLocked("    Accounting path: %s\n", filepath.Join(filepath.Dir(result.EventsPath), "outputs", "run", "accounting.json"))
+		r.writefLocked("    Accounting path: %s\n", filepath.Join(filepath.Dir(result.EventsPath), "artifacts", "run", "accounting.json"))
 	}
 }
 

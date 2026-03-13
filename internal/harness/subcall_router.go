@@ -54,7 +54,7 @@ type SubcallRouter struct {
 	actionIndex    int
 	forceLocalOnly bool
 	nonRecursive   bool
-	turnOutputs    *TurnOutputStore
+	runArtifacts   *RunArtifactStore
 	ledger         *accounting.Ledger
 	guardrails     *deterministicGuardrails
 	executeChild   childNodeExecutor
@@ -76,7 +76,7 @@ type SubcallRouterInput struct {
 	ActionIndex    int
 	ForceLocalOnly bool
 	NonRecursive   bool
-	TurnOutputs    *TurnOutputStore
+	RunArtifacts   *RunArtifactStore
 	Ledger         *accounting.Ledger
 	Guardrails     *deterministicGuardrails
 	ExecuteChild   childNodeExecutor
@@ -98,8 +98,8 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 	if input.ActionIndex < 1 {
 		return nil, fmt.Errorf("action index must be >= 1")
 	}
-	if input.TurnOutputs == nil {
-		return nil, fmt.Errorf("turn output store is required")
+	if input.RunArtifacts == nil {
+		return nil, fmt.Errorf("run artifact store is required")
 	}
 	if input.Ledger == nil {
 		return nil, fmt.Errorf("accounting ledger is required")
@@ -117,7 +117,7 @@ func NewSubcallRouter(input SubcallRouterInput) (*SubcallRouter, error) {
 		actionIndex:    input.ActionIndex,
 		forceLocalOnly: input.ForceLocalOnly,
 		nonRecursive:   input.NonRecursive,
-		turnOutputs:    input.TurnOutputs,
+		runArtifacts:   input.RunArtifacts,
 		ledger:         input.Ledger,
 		guardrails:     input.Guardrails,
 		executeChild:   input.ExecuteChild,
@@ -386,7 +386,7 @@ func (r *SubcallRouter) persistRecord(subcallType runtime.SubcallType, request r
 		subcallAccounting = accounting.UnavailableSummary(r.runConfig.LLM.Provider, r.runConfig.LLM.Model, r.runConfig.Accounting.PricingVersion)
 	}
 	r.ledger.RecordSubcall(r.node.ID, r.stepID, subcallAccounting)
-	accountingRef, err := r.turnOutputs.PersistSubcallAccounting(r.lifecycle.RunID(), r.node.ID, r.stepID, subcallIndex, subcallAccounting)
+	accountingRef, err := r.runArtifacts.PersistSubcallAccounting(r.lifecycle.RunID(), r.node.ID, r.stepID, subcallIndex, subcallAccounting)
 	if err != nil {
 		wrapped := repl.WrapError(repl.ErrorCodeSubcallEventPersist, "failed to persist subcall accounting output", err)
 		r.setFatal(wrapped)

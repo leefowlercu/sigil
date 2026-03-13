@@ -1494,7 +1494,7 @@ func (w *harnessWorld) coreV1PayloadValidationExecutes() error {
 			"status":         "completed",
 			"duration_ms":    0,
 			"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
-			"accounting_ref": "run-output://run/accounting.json",
+			"accounting_ref": "run-artifact://run/accounting.json",
 			"tool_trace": map[string]any{
 				"name": "deferred",
 			},
@@ -1558,7 +1558,7 @@ func (w *harnessWorld) requiredNodeStepFieldsAndDecisionActionInvariantsAreEnfor
 			"action_count":   0,
 			"duration_ms":    1,
 			"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
-			"accounting_ref": "run-output://node/" + nodeID + "/step/" + stepID + "/accounting.json",
+			"accounting_ref": "run-artifact://node/" + nodeID + "/step/" + stepID + "/accounting.json",
 		},
 	})
 	if err != nil {
@@ -1604,7 +1604,7 @@ func (w *harnessWorld) requiredNodeTurnFieldsAreEnforcedAndRoleValuesMatchEventT
 		"payload": map[string]any{
 			"step_id":     stepID,
 			"role":        "model",
-			"content_ref": "run-output://node/turn/1",
+			"content_ref": "run-artifact://node/turn/1",
 		},
 	})
 	if err != nil {
@@ -1625,7 +1625,7 @@ func (w *harnessWorld) nodeActionExecutedPayloadEnforcesSingleActionContinueInva
 	runID := mustUUIDv7StringOrPanic()
 	nodeID := mustUUIDv7StringOrPanic()
 	stepID := mustUUIDv7StringOrPanic()
-	outputRef, err := sigilruntime.BuildActionOutputRef(nodeID, stepID, 2)
+	actionRef, err := sigilruntime.BuildActionArtifactRef(nodeID, stepID, 2)
 	if err != nil {
 		return err
 	}
@@ -1646,7 +1646,7 @@ func (w *harnessWorld) nodeActionExecutedPayloadEnforcesSingleActionContinueInva
 			"language":     "go",
 			"status":       "completed",
 			"duration_ms":  1,
-			"output_ref":   outputRef,
+			"action_ref":   actionRef,
 		},
 	})
 	if err != nil {
@@ -2920,7 +2920,7 @@ func main() {
 
 	switch mode {
 	case "active_interrupt", "queued_interrupt":
-		accountingRef := "run-output://run/accounting/interrupted.json"
+		accountingRef := "run-artifact://run/accounting/interrupted.json"
 		requestedBy := runtime.StopRequesterCLIRunStop
 		if err := lifecycle.InterruptWith(runtime.RunInterruptedPayload{
 			Status:            "interrupted",
@@ -3171,8 +3171,8 @@ func validateCanonicalEventTypeFixtures() error {
 	nodeID := mustUUIDv7StringOrPanic()
 	parentID := mustUUIDv7StringOrPanic()
 	stepID := mustUUIDv7StringOrPanic()
-	contentRef := "run-output://node/turn/1"
-	outputRef, err := sigilruntime.BuildActionOutputRef(nodeID, stepID, 1)
+	contentRef := "run-artifact://node/turn/1"
+	actionRef, err := sigilruntime.BuildActionArtifactRef(nodeID, stepID, 1)
 	if err != nil {
 		return err
 	}
@@ -3270,7 +3270,7 @@ func validateCanonicalEventTypeFixtures() error {
 				"action_count":   1,
 				"duration_ms":    0,
 				"accounting":     acceptanceAccountingRollup("openai", "gpt-5.1"),
-				"accounting_ref": "run-output://node/" + nodeID + "/step/" + stepID + "/accounting.json",
+				"accounting_ref": "run-artifact://node/" + nodeID + "/step/" + stepID + "/accounting.json",
 			},
 		},
 		{
@@ -3313,7 +3313,7 @@ func validateCanonicalEventTypeFixtures() error {
 				"answer_bytes":   1,
 				"duration_ms":    1,
 				"accounting":     acceptanceAccountingSummary("openai", "gpt-5.1"),
-				"accounting_ref": "run-output://node/" + nodeID + "/step/" + stepID + "/subcall-1-accounting.json",
+				"accounting_ref": "run-artifact://node/" + nodeID + "/step/" + stepID + "/subcall-1-accounting.json",
 			},
 		},
 		{
@@ -3349,7 +3349,7 @@ func validateCanonicalEventTypeFixtures() error {
 				"language":     "go",
 				"status":       string(sigilruntime.ActionExecutionStatusCompleted),
 				"duration_ms":  0,
-				"output_ref":   outputRef,
+				"action_ref":   actionRef,
 			},
 		},
 		{

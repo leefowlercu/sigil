@@ -1509,15 +1509,15 @@ Feature: Sigil baseline CLI and config contracts
     When REPL import policy validation executes
     Then action fails with typed import-blocked error
 
-  Scenario: Persists per-action artifact and sets node.action.executed.output_ref
+  Scenario: Persists per-action artifact and sets node.action.executed.action_ref
     Given an action execution completes or fails
     When action artifact persistence executes
-    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+    Then artifact is persisted and node.action.executed.action_ref is set to canonical artifact reference
 
-  Scenario: Returns exact action output fields from canonical current-run output_ref via read_action_output
+  Scenario: Returns exact action output fields from canonical current-run action_ref via read_action_artifact
     Given a node-local REPL session is initialized
     And a canonical current-run action artifact with exact stdout and stderr is persisted
-    When read_action_output is invoked in REPL with that output_ref
+    When read_action_artifact is invoked in REPL with that action_ref
     Then exact action output fields are returned to REPL context
 
   Scenario: Fails run on fatal REPL infrastructure errors with typed error metadata
@@ -1530,10 +1530,10 @@ Feature: Sigil baseline CLI and config contracts
     When REPL bindings are inspected
     Then rlm_query(prompt, context) is available and returns answer plus error
 
-  Scenario: Exposes read_action_output helper in node-local REPL session
+  Scenario: Exposes read_action_artifact helper in node-local REPL session
     Given a node-local REPL session is initialized
     And a canonical current-run action artifact with exact stdout and stderr is persisted
-    When read_action_output is invoked in REPL with that output_ref
+    When read_action_artifact is invoked in REPL with that action_ref
     Then exact action output fields are returned to REPL context
 
   Scenario: Emits node.subcall.executed for each subcall item executed inside continue action
@@ -1572,10 +1572,10 @@ Feature: Sigil baseline CLI and config contracts
     When model-step inference input is constructed for first step
     Then user step envelope includes execution_state with depth step budgets and recursion-permission metadata
 
-  Scenario: Includes bounded previous-action feedback summary with output_ref and preview truncation metadata
+  Scenario: Includes bounded previous-action feedback summary with action_ref and preview truncation metadata
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
-    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+    Then previous-action feedback summary includes action_ref and bounded preview truncation metadata
 
   Scenario: Includes previous_action_feedback.subcall_summary with deterministic counts by execution mode and status
     Given a harness runner has previous continue action subcall feedback
@@ -1597,11 +1597,11 @@ Feature: Sigil baseline CLI and config contracts
     When model-step inference input is constructed for next step
     Then action artifact remains source of truth for full stdout and stderr while model input uses bounded previews
 
-  Scenario: Preserves bounded previous_action_feedback previews while exact action output remains recoverable through read_action_output
+  Scenario: Preserves bounded previous_action_feedback previews while exact action output remains recoverable through read_action_artifact
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
-    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
-    And exact action stdout remains recoverable through read_action_output using that output_ref
+    Then previous-action feedback summary includes action_ref and bounded preview truncation metadata
+    And exact action stdout remains recoverable through read_action_artifact using that action_ref
 
   Scenario: Constructs OpenRouter Responses API requests with message-array input preserving role order
     Given a valid inference request for execution
@@ -1686,7 +1686,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Persists subcall traces in action artifacts with stable subcall indexing
     Given an action execution completes or fails
     When action artifact persistence executes
-    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+    Then artifact is persisted and node.action.executed.action_ref is set to canonical artifact reference
 
   Scenario: Allows multiple subcalls inside one continuation action while preserving one action per continue step
     Given a node-local step with decision continue
@@ -1775,10 +1775,10 @@ Feature: Sigil baseline CLI and config contracts
     When model-step inference input is constructed for child step
     Then bounded model-input contract is applied to recursive child node step
 
-  Scenario: Exposes canonical and resolvable evidence references through context_ref and previous_action_feedback.output_ref
+  Scenario: Exposes canonical and resolvable evidence references through context_ref and previous_action_feedback.action_ref
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
-    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+    Then previous-action feedback summary includes action_ref and bounded preview truncation metadata
 
   Scenario: Validates final evidence references against run-local persisted artifacts before node completion
     Given an active root node inference result is decision final with answer "root final"
@@ -1790,10 +1790,10 @@ Feature: Sigil baseline CLI and config contracts
     When harness run execution handles bounded model-input failure
     Then run fails with typed infrastructure metadata for bounded model-input failure
 
-  Scenario: Accepts final evidence references for canonical run-output and run-artifact schemes
+  Scenario: Accepts final evidence references for the canonical artifact scheme
     Given an action execution completes or fails
     When action artifact persistence executes
-    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+    Then artifact is persisted and node.action.executed.action_ref is set to canonical artifact reference
 
   Scenario: Persists enriched final-answer artifact with answer evidence and optional confidence
     Given an active root node inference result is decision final with answer "root final"
@@ -1827,10 +1827,10 @@ Feature: Sigil baseline CLI and config contracts
     When harness effective system prompt is constructed
     Then effective system prompt equals resolved base prompt
 
-  Scenario: Requires byte-for-byte previous_action_feedback.output_ref reuse with context_ref fallback for final evidence citations
+  Scenario: Requires byte-for-byte previous_action_feedback.action_ref reuse with context_ref fallback for final evidence citations
     Given harness base system prompt resolution runs
     When harness effective system prompt is constructed
-    Then system prompt requires byte-for-byte previous_action_feedback.output_ref reuse with context_ref fallback
+    Then system prompt requires byte-for-byte previous_action_feedback.action_ref reuse with context_ref fallback
 
   Scenario: Defines node.failed event type for canonical failed-node terminalization
     Given canonical v1 run-event validation rules
@@ -1884,7 +1884,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Includes optional previous_action_feedback.error_detail for compile-stage failures
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
-    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+    Then previous-action feedback summary includes action_ref and bounded preview truncation metadata
 
   Scenario: Applies raw-text fallback only for plain-subcall schema sigil.llm.answer.v1
     Given a valid inference request for execution
@@ -1947,12 +1947,12 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Includes compile diagnostics in previous_action_feedback for subsequent model steps
     Given a harness runner has previous continue action feedback
     When model-step inference input is constructed for next step
-    Then previous-action feedback summary includes output_ref and bounded preview truncation metadata
+    Then previous-action feedback summary includes action_ref and bounded preview truncation metadata
 
   Scenario: Preserves node.action.executed payload contract while exposing diagnostics through artifact and feedback only
     Given an action execution completes or fails
     When action artifact persistence executes
-    Then artifact is persisted and node.action.executed.output_ref is set to canonical artifact reference
+    Then artifact is persisted and node.action.executed.action_ref is set to canonical artifact reference
 
   Scenario: Preserves one-action-per-continue-step and subcall observability contracts under hardening changes
     Given a node-local step with decision continue

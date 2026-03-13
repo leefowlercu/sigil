@@ -26,7 +26,7 @@ func (m *modelTurnPersistFailureInference) Infer(_ context.Context, request infe
 	if err != nil {
 		return inference.Result{}, err
 	}
-	modelTurnPath := filepath.Join(m.runsBaseDir, match.runID, "outputs", "node", match.nodeID, "step", match.stepID, "turn-model.json")
+	modelTurnPath := filepath.Join(m.runsBaseDir, match.runID, "artifacts", "node", match.nodeID, "step", match.stepID, "turn-model.json")
 	if err := os.MkdirAll(modelTurnPath, 0o755); err != nil {
 		return inference.Result{}, err
 	}
@@ -40,7 +40,7 @@ type stepArtifactMatch struct {
 }
 
 func findSingleStepArtifact(runsBaseDir string, artifactName string) (stepArtifactMatch, error) {
-	pattern := filepath.Join(runsBaseDir, "*", "outputs", "node", "*", "step", "*", artifactName)
+	pattern := filepath.Join(runsBaseDir, "*", "artifacts", "node", "*", "step", "*", artifactName)
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return stepArtifactMatch{}, err
@@ -144,9 +144,9 @@ func TestSubcallRouterPreservesLedgerAccountingWhenAppendFails(t *testing.T) {
 		t.Fatalf("expected step start success, got %v", err)
 	}
 
-	turnOutputs, err := NewTurnOutputStore(baseDir)
+	runArtifacts, err := NewRunArtifactStore(baseDir)
 	if err != nil {
-		t.Fatalf("expected turn output store creation success, got %v", err)
+		t.Fatalf("expected run artifact store creation success, got %v", err)
 	}
 	ledger := accounting.NewLedger("v1")
 	ledger.SetRootNodeID(rootNode.ID)
@@ -162,7 +162,7 @@ func TestSubcallRouterPreservesLedgerAccountingWhenAppendFails(t *testing.T) {
 		StepID:       stepStarted.StepID,
 		ActionIndex:  1,
 		NonRecursive: true,
-		TurnOutputs:  turnOutputs,
+		RunArtifacts: runArtifacts,
 		Ledger:       ledger,
 		ExecuteChild: func(context.Context, runtime.Node, string, string) (nodeExecutionResult, error) {
 			return nodeExecutionResult{}, nil

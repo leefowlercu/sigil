@@ -34,7 +34,7 @@ func TestParseDecisionPayloadFinalBranch(t *testing.T) {
 			"answer": "done",
 			"evidence": []any{
 				map[string]any{
-					"ref":        "run-output://node/example/context.json",
+					"ref":        "run-artifact://node/example/context.json",
 					"chunk_id":   "chunk-1",
 					"span_start": 0,
 					"span_end":   42,
@@ -72,7 +72,7 @@ func TestParseDecisionPayloadRejectsMalformedEvidenceSpan(t *testing.T) {
 			"answer": "done",
 			"evidence": []any{
 				map[string]any{
-					"ref":        "run-output://node/example/context.json",
+					"ref":        "run-artifact://node/example/context.json",
 					"span_start": 20,
 					"span_end":   10,
 				},

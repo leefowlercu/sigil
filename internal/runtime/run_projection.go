@@ -49,7 +49,7 @@ type RunNodeProjection struct {
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	TerminalAt    *time.Time `json:"terminal_at,omitempty"`
 	StepCount     int        `json:"step_count"`
-	OutputRef     *string    `json:"output_ref,omitempty"`
+	ResultRef     *string    `json:"result_ref,omitempty"`
 	AccountingRef *string    `json:"accounting_ref,omitempty"`
 	ErrorCode     *string    `json:"error_code,omitempty"`
 	ErrorMessage  *string    `json:"error_message,omitempty"`
@@ -190,7 +190,7 @@ func LoadRunProjection(baseDir string, runID string) (RunProjection, error) {
 			node := ensureProjectedNode(nodeByID, *event.NodeID)
 			node.State = payload.Status
 			node.TerminalAt = timePointer(event.Timestamp)
-			node.OutputRef = cloneStringPointer(payload.OutputRef)
+			node.ResultRef = cloneStringPointer(payload.ResultRef)
 			node.AccountingRef = cloneStringPointer(payload.AccountingRef)
 		case NodeFailedPayload:
 			if event.NodeID == nil {
@@ -408,7 +408,7 @@ func flattenProjectedNodes(nodeByID map[string]*RunNodeProjection) []RunNodeProj
 			StartedAt:     cloneTimePointer(node.StartedAt),
 			TerminalAt:    cloneTimePointer(node.TerminalAt),
 			StepCount:     node.StepCount,
-			OutputRef:     cloneStringPointer(node.OutputRef),
+			ResultRef:     cloneStringPointer(node.ResultRef),
 			AccountingRef: cloneStringPointer(node.AccountingRef),
 			ErrorCode:     cloneStringPointer(node.ErrorCode),
 			ErrorMessage:  cloneStringPointer(node.ErrorMessage),

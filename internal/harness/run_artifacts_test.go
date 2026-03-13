@@ -10,11 +10,11 @@ import (
 	"github.com/leefowlercu/sigil/internal/inference"
 )
 
-func TestTurnOutputStorePersistsUserAndModelTurns(t *testing.T) {
+func TestRunArtifactStorePersistsUserAndModelTurns(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
-	store, err := NewTurnOutputStore(baseDir)
+	store, err := NewRunArtifactStore(baseDir)
 	if err != nil {
-		t.Fatalf("expected turn output store creation success, got %v", err)
+		t.Fatalf("expected run artifact store creation success, got %v", err)
 	}
 
 	runID := mustUUIDv7String(t)
@@ -29,7 +29,7 @@ func TestTurnOutputStorePersistsUserAndModelTurns(t *testing.T) {
 			ContextBytes:     123,
 			ContextLineCount: 4,
 			ContextSHA256:    "abc123",
-			ContextRef:       "run-output://node/" + nodeID + "/context.json",
+			ContextRef:       "run-artifact://node/" + nodeID + "/context.json",
 		},
 	}
 	messages := []inference.Message{
@@ -61,7 +61,7 @@ func TestTurnOutputStorePersistsUserAndModelTurns(t *testing.T) {
 		t.Fatal("expected non-empty model turn ref")
 	}
 
-	userPath := filepath.Join(baseDir, runID, "outputs", "node", nodeID, "step", stepID, "turn-user.json")
+	userPath := filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "step", stepID, "turn-user.json")
 	if _, err := os.Stat(userPath); err != nil {
 		t.Fatalf("expected persisted user turn artifact %q, got %v", userPath, err)
 	}
@@ -88,23 +88,23 @@ func TestTurnOutputStorePersistsUserAndModelTurns(t *testing.T) {
 		t.Fatalf("expected model_input_messages length 2, got %T len=%d", userArtifact["model_input_messages"], len(msgValues))
 	}
 
-	modelPath := filepath.Join(baseDir, runID, "outputs", "node", nodeID, "step", stepID, "turn-model.json")
+	modelPath := filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "step", stepID, "turn-model.json")
 	if _, err := os.Stat(modelPath); err != nil {
 		t.Fatalf("expected persisted model turn artifact %q, got %v", modelPath, err)
 	}
 }
 
-func TestTurnOutputStorePersistsFinalAnswer(t *testing.T) {
+func TestRunArtifactStorePersistsFinalAnswer(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
-	store, err := NewTurnOutputStore(baseDir)
+	store, err := NewRunArtifactStore(baseDir)
 	if err != nil {
-		t.Fatalf("expected turn output store creation success, got %v", err)
+		t.Fatalf("expected run artifact store creation success, got %v", err)
 	}
 
 	runID := mustUUIDv7String(t)
 	nodeID := mustUUIDv7String(t)
 
-	evidence := []FinalEvidence{{Ref: "run-output://node/" + nodeID + "/context.json"}}
+	evidence := []FinalEvidence{{Ref: "run-artifact://node/" + nodeID + "/context.json"}}
 	confidence := "medium"
 
 	ref, err := store.PersistFinalAnswer(runID, nodeID, "done", evidence, &confidence)
@@ -115,17 +115,17 @@ func TestTurnOutputStorePersistsFinalAnswer(t *testing.T) {
 		t.Fatal("expected non-empty final-answer ref")
 	}
 
-	path := filepath.Join(baseDir, runID, "outputs", "node", nodeID, "final-answer.json")
+	path := filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "final-answer.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected persisted final-answer artifact %q, got %v", path, err)
 	}
 }
 
-func TestTurnOutputStorePersistsContext(t *testing.T) {
+func TestRunArtifactStorePersistsContext(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
-	store, err := NewTurnOutputStore(baseDir)
+	store, err := NewRunArtifactStore(baseDir)
 	if err != nil {
-		t.Fatalf("expected turn output store creation success, got %v", err)
+		t.Fatalf("expected run artifact store creation success, got %v", err)
 	}
 
 	runID := mustUUIDv7String(t)
@@ -135,21 +135,21 @@ func TestTurnOutputStorePersistsContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected context persist success, got %v", err)
 	}
-	if ref != "run-output://node/"+nodeID+"/context.json" {
+	if ref != "run-artifact://node/"+nodeID+"/context.json" {
 		t.Fatalf("expected context ref for node %q, got %q", nodeID, ref)
 	}
 
-	path := filepath.Join(baseDir, runID, "outputs", "node", nodeID, "context.json")
+	path := filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "context.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected persisted context artifact %q, got %v", path, err)
 	}
 }
 
-func TestTurnOutputStorePersistsAccountingArtifacts(t *testing.T) {
+func TestRunArtifactStorePersistsAccountingArtifacts(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
-	store, err := NewTurnOutputStore(baseDir)
+	store, err := NewRunArtifactStore(baseDir)
 	if err != nil {
-		t.Fatalf("expected turn output store creation success, got %v", err)
+		t.Fatalf("expected run artifact store creation success, got %v", err)
 	}
 
 	runID := mustUUIDv7String(t)
@@ -175,7 +175,7 @@ func TestTurnOutputStorePersistsAccountingArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected subcall accounting persist success, got %v", err)
 	}
-	if subcallRef != "run-output://node/"+nodeID+"/step/"+stepID+"/subcall-1-accounting.json" {
+	if subcallRef != "run-artifact://node/"+nodeID+"/step/"+stepID+"/subcall-1-accounting.json" {
 		t.Fatalf("unexpected subcall accounting ref %q", subcallRef)
 	}
 
@@ -183,7 +183,7 @@ func TestTurnOutputStorePersistsAccountingArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected step accounting persist success, got %v", err)
 	}
-	if stepRef != "run-output://node/"+nodeID+"/step/"+stepID+"/accounting.json" {
+	if stepRef != "run-artifact://node/"+nodeID+"/step/"+stepID+"/accounting.json" {
 		t.Fatalf("unexpected step accounting ref %q", stepRef)
 	}
 
@@ -191,7 +191,7 @@ func TestTurnOutputStorePersistsAccountingArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected node accounting persist success, got %v", err)
 	}
-	if nodeRef != "run-output://node/"+nodeID+"/accounting.json" {
+	if nodeRef != "run-artifact://node/"+nodeID+"/accounting.json" {
 		t.Fatalf("unexpected node accounting ref %q", nodeRef)
 	}
 
@@ -199,15 +199,15 @@ func TestTurnOutputStorePersistsAccountingArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected run accounting persist success, got %v", err)
 	}
-	if runRef != "run-output://run/accounting.json" {
+	if runRef != "run-artifact://run/accounting.json" {
 		t.Fatalf("unexpected run accounting ref %q", runRef)
 	}
 
 	paths := []string{
-		filepath.Join(baseDir, runID, "outputs", "node", nodeID, "step", stepID, "subcall-1-accounting.json"),
-		filepath.Join(baseDir, runID, "outputs", "node", nodeID, "step", stepID, "accounting.json"),
-		filepath.Join(baseDir, runID, "outputs", "node", nodeID, "accounting.json"),
-		filepath.Join(baseDir, runID, "outputs", "run", "accounting.json"),
+		filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "step", stepID, "subcall-1-accounting.json"),
+		filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "step", stepID, "accounting.json"),
+		filepath.Join(baseDir, runID, "artifacts", "node", nodeID, "accounting.json"),
+		filepath.Join(baseDir, runID, "artifacts", "run", "accounting.json"),
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
