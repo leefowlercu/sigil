@@ -32,12 +32,12 @@ func DeriveLogFilePath(logDir string) (string, error) {
 
 // Init configures structured JSON file logging as the application default logger.
 func Init(cfg config.Config) error {
-	derivedPath, err := DeriveLogFilePath(cfg.LogDir)
+	derivedPath, err := DeriveLogFilePath(cfg.Logs.Dir)
 	if err != nil {
 		return fmt.Errorf("failed to derive log file path; %w", err)
 	}
 
-	level, err := resolveLogLevel(cfg.LogLevel)
+	level, err := resolveLogLevel(cfg.Logs.Level)
 	if err != nil {
 		return fmt.Errorf("invalid log level; %w", err)
 	}

@@ -100,13 +100,12 @@ func ReadRunEvents(baseDir string, runID string) ([]EventEnvelope, error) {
 		return nil, err
 	}
 
-	eventsPath := filepath.Join(resolvedBaseDir, runID, eventsFileName)
-	events, _, err := parsePersistedEventsLocked(eventsPath, runID)
+	events, err := readRunEventsFromResolvedBaseDir(resolvedBaseDir, runID)
 	if err != nil {
 		return nil, err
 	}
 
-	return cloneEventEnvelopes(events), nil
+	return events, nil
 }
 
 // LoadRunProjection returns one derived run projection for status and inspect surfaces.
@@ -120,27 +119,54 @@ func LoadRunProjection(baseDir string, runID string) (RunProjection, error) {
 		return RunProjection{}, err
 	}
 
-	events, err := ReadRunEvents(resolvedBaseDir, runID)
+	events, err := readRunEventsFromResolvedBaseDir(resolvedBaseDir, runID)
 	if err != nil {
 		return RunProjection{}, err
 	}
 
+	return deriveRunProjectionFromResolvedBaseDir(resolvedBaseDir, runID, events)
+}
+
+// DeriveRunProjectionFromEvents returns one derived run projection from one caller-supplied canonical event slice.
+func DeriveRunProjectionFromEvents(baseDir string, runID string, events []EventEnvelope) (RunProjection, error) {
+	if err := validateUUIDv7String(runID); err != nil {
+		return RunProjection{}, fmt.Errorf("run-id must be UUIDv7; %w", err)
+	}
+
+	resolvedBaseDir, err := ResolveRunsBaseDir(baseDir)
+	if err != nil {
+		return RunProjection{}, err
+	}
+
+	return deriveRunProjectionFromResolvedBaseDir(resolvedBaseDir, runID, events)
+}
+
+func readRunEventsFromResolvedBaseDir(baseDir string, runID string) ([]EventEnvelope, error) {
+	eventsPath := filepath.Join(baseDir, runID, eventsFileName)
+	events, _, err := parsePersistedEventsLocked(eventsPath, runID)
+	if err != nil {
+		return nil, err
+	}
+	return cloneEventEnvelopes(events), nil
+}
+
+func deriveRunProjectionFromResolvedBaseDir(baseDir string, runID string, events []EventEnvelope) (RunProjection, error) {
 	projection := RunProjection{
 		RunID:      runID,
 		State:      string(deriveRunState(events)),
-		RunDir:     filepath.Join(resolvedBaseDir, runID),
-		EventsPath: filepath.Join(resolvedBaseDir, runID, eventsFileName),
+		RunDir:     filepath.Join(baseDir, runID),
+		EventsPath: filepath.Join(baseDir, runID, eventsFileName),
 		PIDStatus:  RunPIDStatusMissing,
 	}
 
-	pidStatus, processMetadata, err := loadProcessMetadataStatus(resolvedBaseDir, runID)
+	pidStatus, processMetadata, err := loadProcessMetadataStatus(baseDir, runID)
 	if err != nil {
 		return RunProjection{}, err
 	}
 	projection.PIDStatus = pidStatus
 	projection.ProcessMetadata = processMetadata
 
-	stopRequest, ok, err := loadStopRequestMetadata(resolvedBaseDir, runID)
+	stopRequest, ok, err := loadStopRequestMetadata(baseDir, runID)
 	if err != nil {
 		return RunProjection{}, err
 	}

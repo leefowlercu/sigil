@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/leefowlercu/sigil/cmd/appserver"
 	"github.com/leefowlercu/sigil/cmd/run"
 	"github.com/leefowlercu/sigil/internal/clioutput"
 	"github.com/leefowlercu/sigil/internal/config"
@@ -31,13 +32,16 @@ func NewRootCmd() *cobra.Command {
 		Example: "# Show root help and command tree\n" +
 			"  sigil --help\n\n" +
 			"# Show run command help\n" +
-			"  sigil run --help",
+			"  sigil run --help\n\n" +
+			"# Show app-server command help\n" +
+			"  sigil app-server --help",
 		PersistentPreRunE: initializeRootApplication,
 		RunE:              runRootCommand,
 	}
 
 	clioutput.AddOutputFlag(rootCmd, &rootOutputFormat)
 	rootCmd.AddCommand(run.NewRunCmd())
+	rootCmd.AddCommand(appserver.NewAppServerCmd())
 
 	return rootCmd
 }
@@ -62,8 +66,8 @@ func initializeRootApplication(cmd *cobra.Command, _ []string) error {
 	if pathErr != nil {
 		rootLogger().Warn("application logging initialized without active path",
 			"config_path", configPath,
-			"log_level", cfg.LogLevel,
-			"log_dir", cfg.LogDir,
+			"logs.level", cfg.Logs.Level,
+			"logs.dir", cfg.Logs.Dir,
 			"error", pathErr,
 		)
 		return nil
@@ -71,8 +75,8 @@ func initializeRootApplication(cmd *cobra.Command, _ []string) error {
 
 	rootLogger().Info("application logging initialized",
 		"config_path", configPath,
-		"log_level", cfg.LogLevel,
-		"log_dir", cfg.LogDir,
+		"logs.level", cfg.Logs.Level,
+		"logs.dir", cfg.Logs.Dir,
 		"log_path", logPath,
 	)
 

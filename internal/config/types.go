@@ -4,8 +4,49 @@ import "strings"
 
 // Config is the typed application configuration contract for sigil.
 type Config struct {
-	LogLevel string `yaml:"log_level" mapstructure:"log_level"`
-	LogDir   string `yaml:"log_dir" mapstructure:"log_dir"`
+	Logs      LogsConfig      `yaml:"logs" mapstructure:"logs"`
+	AppServer AppServerConfig `yaml:"app_server" mapstructure:"app_server"`
+}
+
+// LogsConfig defines application logging configuration.
+type LogsConfig struct {
+	Level string `yaml:"level" mapstructure:"level"`
+	Dir   string `yaml:"dir" mapstructure:"dir"`
+}
+
+// AppServerConfig defines application-level app-server behavior.
+type AppServerConfig struct {
+	InstanceName   string                       `yaml:"instance_name" mapstructure:"instance_name"`
+	InstanceID     string                       `yaml:"instance_id" mapstructure:"instance_id"`
+	RunDir         string                       `yaml:"run_dir" mapstructure:"run_dir"`
+	AllowedOrigins []string                     `yaml:"allowed_origins" mapstructure:"allowed_origins"`
+	WebSocket      AppServerWebSocketConfig     `yaml:"websocket" mapstructure:"websocket"`
+	Health         AppServerHealthConfig        `yaml:"health" mapstructure:"health"`
+	Subscriptions  AppServerSubscriptionsConfig `yaml:"subscriptions" mapstructure:"subscriptions"`
+	Limits         AppServerLimitsConfig        `yaml:"limits" mapstructure:"limits"`
+}
+
+// AppServerWebSocketConfig defines WebSocket listener defaults.
+type AppServerWebSocketConfig struct {
+	ListenAddr string `yaml:"listen_addr" mapstructure:"listen_addr"`
+	Path       string `yaml:"path" mapstructure:"path"`
+}
+
+// AppServerHealthConfig defines HTTP health endpoint paths.
+type AppServerHealthConfig struct {
+	ReadyPath string `yaml:"ready_path" mapstructure:"ready_path"`
+	LivePath  string `yaml:"live_path" mapstructure:"live_path"`
+}
+
+// AppServerSubscriptionsConfig defines subscription polling defaults.
+type AppServerSubscriptionsConfig struct {
+	PollIntervalMS int `yaml:"poll_interval_ms" mapstructure:"poll_interval_ms"`
+}
+
+// AppServerLimitsConfig defines transport safety limits.
+type AppServerLimitsConfig struct {
+	MaxConnections int `yaml:"max_connections" mapstructure:"max_connections"`
+	MaxFrameBytes  int `yaml:"max_frame_bytes" mapstructure:"max_frame_bytes"`
 }
 
 // RunConfig is the typed run configuration contract for sigil.

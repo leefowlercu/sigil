@@ -22,6 +22,7 @@ var (
 	stepAccountingRefPattern         = regexp.MustCompile(`^run-artifact://node/([^/]+)/step/([^/]+)/accounting\.json$`)
 	subcallAccountingRefPattern      = regexp.MustCompile(`^run-artifact://node/([^/]+)/step/([^/]+)/subcall-([1-9][0-9]*)-accounting\.json$`)
 	runAccountingArtifactRefPattern  = regexp.MustCompile(`^run-artifact://run/accounting\.json$`)
+	runSubmittedConfigRefPattern     = regexp.MustCompile(`^run-artifact://run/submitted-run-config\.json$`)
 )
 
 // ActionArtifactRef describes the canonical action artifact reference identity.
@@ -120,6 +121,9 @@ func ResolveArtifactRefPath(artifactRef string) ([]string, error) {
 	}
 	if runAccountingArtifactRefPattern.MatchString(trimmed) {
 		return []string{"run", "accounting.json"}, nil
+	}
+	if runSubmittedConfigRefPattern.MatchString(trimmed) {
+		return []string{"run", "submitted-run-config.json"}, nil
 	}
 
 	return nil, fmt.Errorf("artifact_ref %q is not a supported canonical artifact reference; %w", artifactRef, ErrInvalidEvent)

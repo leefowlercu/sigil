@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"sync"
 
 	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/config"
@@ -16,6 +17,10 @@ type RunInput struct {
 	RunConfigPath string
 	RunConfig     config.RunConfig
 	TemplateVars  map[string]string
+	QueuedSource  runtime.RunQueuedSource
+
+	ProcessMetadataSource  string
+	SubmittedRunConfigYAML *string
 }
 
 // RunResult defines canonical run-start success output contract.
@@ -26,6 +31,48 @@ type RunResult struct {
 	FinalAnswerRef string            `json:"final_answer_ref"`
 	EventsPath     string            `json:"events_path"`
 	Accounting     accounting.Rollup `json:"accounting"`
+}
+
+// RunCompletion captures one asynchronous run outcome.
+type RunCompletion struct {
+	Result RunResult
+	Err    error
+}
+
+// StartedRun exposes one accepted durable run plus asynchronous completion state.
+type StartedRun struct {
+	RunID                 string
+	EventsPath            string
+	AsOfSeq               int64
+	SubmittedRunConfigRef *string
+	done                  <-chan RunCompletion
+	cancel                context.CancelCauseFunc
+	launch                func()
+	launchOnce            sync.Once
+}
+
+// Done returns the asynchronous completion stream for one started run.
+func (s *StartedRun) Done() <-chan RunCompletion {
+	if s == nil {
+		return nil
+	}
+	return s.done
+}
+
+// Cancel requests graceful interruption for one started run.
+func (s *StartedRun) Cancel(cause error) {
+	if s == nil || s.cancel == nil {
+		return
+	}
+	s.cancel(cause)
+}
+
+// Launch begins background execution for one accepted run.
+func (s *StartedRun) Launch() {
+	if s == nil || s.launch == nil {
+		return
+	}
+	s.launchOnce.Do(s.launch)
 }
 
 // InferenceClient is the minimal inference interface required by runner.
@@ -85,6 +132,14 @@ func WithEventObserver(observer runtime.EventObserver) RunnerOption {
 		}
 		r.eventObservers = append(r.eventObservers, observer)
 	}
+}
+
+// AddEventObserver registers one lifecycle event observer on an existing runner.
+func (r *Runner) AddEventObserver(observer runtime.EventObserver) {
+	if r == nil || observer == nil {
+		return
+	}
+	r.eventObservers = append(r.eventObservers, observer)
 }
 
 // NewRunner constructs a runner with v1 defaults.

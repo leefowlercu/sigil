@@ -21,10 +21,14 @@ const (
 	StopRequestFileName = "stop-request.json"
 	// StopRequesterCLIRunStop is the canonical stop requester identifier.
 	StopRequesterCLIRunStop = "cli.run.stop"
+	// StopRequesterAppServerRunStop is the canonical app-server stop requester identifier.
+	StopRequesterAppServerRunStop = "app_server.run.stop"
 	// StopSignalSIGTERM is the canonical external graceful-stop signal.
 	StopSignalSIGTERM = "SIGTERM"
 	// RunSourceCLIRunStart identifies a run created by the CLI start command.
 	RunSourceCLIRunStart = "cli.run.start"
+	// RunSourceAppServerStart identifies a run created by the app-server start request.
+	RunSourceAppServerStart = "app_server.run.start"
 )
 
 var (
@@ -295,8 +299,14 @@ func validateProcessMetadata(metadata ProcessMetadata) error {
 	if metadata.StartedAt.IsZero() {
 		return fmt.Errorf("process metadata started_at is required")
 	}
-	if metadata.Source != RunSourceCLIRunStart {
-		return fmt.Errorf("process metadata must use source %q", RunSourceCLIRunStart)
+	switch metadata.Source {
+	case RunSourceCLIRunStart, RunSourceAppServerStart:
+	default:
+		return fmt.Errorf(
+			"process metadata must use source %q or %q",
+			RunSourceCLIRunStart,
+			RunSourceAppServerStart,
+		)
 	}
 	return nil
 }

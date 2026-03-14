@@ -8,7 +8,7 @@ import (
 
 func TestValidateStartInputsSetsSilenceUsageAfterValidationSuccess(t *testing.T) {
 	workDir := t.TempDir()
-	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), applicationConfigYAML("info", ""))
 
 	originalDir, err := os.Getwd()
 	if err != nil {
@@ -33,7 +33,7 @@ func TestValidateStartInputsSetsSilenceUsageAfterValidationSuccess(t *testing.T)
 
 func TestValidateStartInputsFailsWhenExplicitRunConfigPathIsMissing(t *testing.T) {
 	workDir := t.TempDir()
-	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), applicationConfigYAML("info", ""))
 
 	originalDir, err := os.Getwd()
 	if err != nil {
@@ -69,7 +69,7 @@ func TestValidateStartInputsDoesNotSilenceUsageOnValidationError(t *testing.T) {
 
 func TestValidateStartInputsRejectsInvalidVarEntry(t *testing.T) {
 	workDir := t.TempDir()
-	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), applicationConfigYAML("info", ""))
 	writeStartTestFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	originalDir, err := os.Getwd()
@@ -108,7 +108,7 @@ func TestParseTemplateVarsUsesLastValueForDuplicateKey(t *testing.T) {
 
 func TestValidateStartInputsPreservesMultilineVarValues(t *testing.T) {
 	workDir := t.TempDir()
-	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), "log_level: info\n")
+	writeStartTestFile(t, filepath.Join(workDir, "sigil.yaml"), applicationConfigYAML("info", ""))
 	writeStartTestFile(t, filepath.Join(workDir, "sigil-run.yaml"), "prompt_template: '{{.question}}'\ncontext_template: '{{.external_context}}'\nllm:\n  provider: openai\n  model: gpt-5.1\n")
 
 	originalDir, err := os.Getwd()
@@ -147,4 +147,15 @@ func writeStartTestFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write %s: %v", path, err)
 	}
+}
+
+func applicationConfigYAML(level string, dir string) string {
+	content := "logs:\n"
+	if level != "" {
+		content += "  level: " + level + "\n"
+	}
+	if dir != "" {
+		content += "  dir: " + dir + "\n"
+	}
+	return content
 }

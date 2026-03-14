@@ -10,6 +10,26 @@ const (
 	DefaultLogLevel = "info"
 	// DefaultLogDir is the baseline log directory.
 	DefaultLogDir = "./.sigil/logs"
+	// DefaultAppServerInstanceName is the default operator-facing app-server name.
+	DefaultAppServerInstanceName = "sigil-local"
+	// DefaultAppServerInstanceID is the default machine-readable app-server identity.
+	DefaultAppServerInstanceID = "sigil-local"
+	// DefaultAppServerRunDir is the default app-server run corpus directory.
+	DefaultAppServerRunDir = "./.sigil/runs"
+	// DefaultAppServerWebSocketListenAddr is the default WebSocket listen address.
+	DefaultAppServerWebSocketListenAddr = "127.0.0.1:8765"
+	// DefaultAppServerWebSocketPath is the default WebSocket path.
+	DefaultAppServerWebSocketPath = "/app-server"
+	// DefaultAppServerHealthReadyPath is the default readiness path.
+	DefaultAppServerHealthReadyPath = "/readyz"
+	// DefaultAppServerHealthLivePath is the default liveness path.
+	DefaultAppServerHealthLivePath = "/healthz"
+	// DefaultAppServerSubscriptionsPollIntervalMS is the default polling cadence.
+	DefaultAppServerSubscriptionsPollIntervalMS = 500
+	// DefaultAppServerLimitsMaxConnections is the default soft connection limit.
+	DefaultAppServerLimitsMaxConnections = 50
+	// DefaultAppServerLimitsMaxFrameBytes is the default inbound payload limit.
+	DefaultAppServerLimitsMaxFrameBytes = 1048576
 
 	// DefaultRunGateway is the default inference gateway.
 	DefaultRunGateway = "openrouter"
@@ -42,8 +62,31 @@ const (
 // NewDefaultConfig returns a fully populated baseline Config.
 func NewDefaultConfig() Config {
 	return Config{
-		LogLevel: DefaultLogLevel,
-		LogDir:   DefaultLogDir,
+		Logs: LogsConfig{
+			Level: DefaultLogLevel,
+			Dir:   DefaultLogDir,
+		},
+		AppServer: AppServerConfig{
+			InstanceName:   DefaultAppServerInstanceName,
+			InstanceID:     DefaultAppServerInstanceID,
+			RunDir:         DefaultAppServerRunDir,
+			AllowedOrigins: []string{},
+			WebSocket: AppServerWebSocketConfig{
+				ListenAddr: DefaultAppServerWebSocketListenAddr,
+				Path:       DefaultAppServerWebSocketPath,
+			},
+			Health: AppServerHealthConfig{
+				ReadyPath: DefaultAppServerHealthReadyPath,
+				LivePath:  DefaultAppServerHealthLivePath,
+			},
+			Subscriptions: AppServerSubscriptionsConfig{
+				PollIntervalMS: DefaultAppServerSubscriptionsPollIntervalMS,
+			},
+			Limits: AppServerLimitsConfig{
+				MaxConnections: DefaultAppServerLimitsMaxConnections,
+				MaxFrameBytes:  DefaultAppServerLimitsMaxFrameBytes,
+			},
+		},
 	}
 }
 

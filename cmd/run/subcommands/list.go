@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/leefowlercu/sigil/internal/clioutput"
-	"github.com/leefowlercu/sigil/internal/runtime"
+	"github.com/leefowlercu/sigil/internal/query"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,9 @@ func runListCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	summaries, err := runtime.ListRuns(runsBaseDir)
+	summaries, err := query.ListRuns(query.ListRunsRequest{
+		RunsBaseDir: runsBaseDir,
+	})
 	if err != nil {
 		runListLogger().Error("failed to list runs", "runs_base_dir", runsBaseDir, "error", err)
 		return fmt.Errorf("failed to list runs; %w", err)

@@ -7,6 +7,7 @@ Siĝil is a Go-based RLM harness that runs spec-governed workflows through a Cob
 - [Development Commands](#development-commands)
 - [Repository Layout](#repository-layout)
 - [Code Standards](#code-standards)
+- [Logging](#logging)
 - [Specifications](#specifications)
 - [Testing](#testing)
 - [Change Control](#change-control)
@@ -28,6 +29,12 @@ Use the layout guide to find the CLI, runtime, harness, acceptance, and example 
 Follow the local implementation standards for Go structure, Cobra command shape, typed Viper config, and logging. This keeps generated code aligned with the repo's required patterns instead of generic Go defaults.
 
 - [Code Standards Reference](.agents/rules/STANDARDS.md)
+
+## Logging
+
+Use the logging guide when a change emits or depends on application logs. It explains how `sigil` expects structured `slog` records to be routed, how to choose log levels, and which payloads must stay out of the log sink.
+
+- [Logging Reference](.agents/rules/LOGGING.md)
 
 ## Specifications
 

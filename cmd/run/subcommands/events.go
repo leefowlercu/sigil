@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/leefowlercu/sigil/internal/clioutput"
-	"github.com/leefowlercu/sigil/internal/runtime"
+	"github.com/leefowlercu/sigil/internal/query"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +54,10 @@ func runEventsCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	events, err := runtime.ReadRunEvents(runsBaseDir, eventsRunID)
+	events, err := query.ReadRunEvents(query.ReadRunEventsRequest{
+		RunsBaseDir: runsBaseDir,
+		RunID:       eventsRunID,
+	})
 	if err != nil {
 		runEventsLogger().Error("failed to read run events", "runs_base_dir", runsBaseDir, "run_id", eventsRunID, "error", err)
 		return fmt.Errorf("failed to read run events; %w", err)

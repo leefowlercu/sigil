@@ -9,6 +9,7 @@ import (
 
 	"github.com/leefowlercu/sigil/internal/accounting"
 	"github.com/leefowlercu/sigil/internal/inference"
+	"github.com/leefowlercu/sigil/internal/runtime"
 )
 
 // RunArtifactStore persists user/model turn artifacts and final-answer artifacts.
@@ -75,6 +76,13 @@ type finalAnswerArtifact struct {
 	FinalAnswer string                  `json:"final_answer"`
 	Evidence    []finalEvidenceArtifact `json:"evidence"`
 	Confidence  *string                 `json:"confidence,omitempty"`
+}
+
+type submittedRunConfigArtifact struct {
+	RunID         string            `json:"run_id"`
+	Source        string            `json:"source"`
+	RunConfigYAML string            `json:"run_config_yaml"`
+	TemplateVars  map[string]string `json:"template_vars,omitempty"`
 }
 
 // PersistUserTurn stores a compact user turn artifact and returns content_ref.
@@ -189,6 +197,27 @@ func (s *RunArtifactStore) PersistFinalAnswer(runID string, nodeID string, answe
 	return ref, nil
 }
 
+// PersistSubmittedRunConfig stores app-server submitted run config provenance and returns one canonical ref.
+func (s *RunArtifactStore) PersistSubmittedRunConfig(runID string, runConfigYAML string, templateVars map[string]string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("run artifact store is required")
+	}
+
+	ref := "run-artifact://run/submitted-run-config.json"
+	path := filepath.Join(s.runsBaseDir, runID, "artifacts", "run", "submitted-run-config.json")
+	payload := submittedRunConfigArtifact{
+		RunID:         runID,
+		Source:        string(runtime.RunQueuedSourceAppServerStart),
+		RunConfigYAML: runConfigYAML,
+		TemplateVars:  cloneStringMap(templateVars),
+	}
+	if err := writeArtifactFile(path, payload); err != nil {
+		return "", err
+	}
+
+	return ref, nil
+}
+
 func writeArtifactFile(path string, payload any) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
@@ -212,4 +241,16 @@ func cloneOptionalInt(value *int) *int {
 	}
 	copyValue := *value
 	return &copyValue
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/leefowlercu/sigil/internal/clioutput"
-	"github.com/leefowlercu/sigil/internal/runtime"
+	"github.com/leefowlercu/sigil/internal/query"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +54,10 @@ func runInspectCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	projection, err := runtime.LoadRunProjection(runsBaseDir, inspectRunID)
+	projection, err := query.ReadRun(query.ReadRunRequest{
+		RunsBaseDir: runsBaseDir,
+		RunID:       inspectRunID,
+	})
 	if err != nil {
 		runInspectLogger().Error("failed to inspect run", "runs_base_dir", runsBaseDir, "run_id", inspectRunID, "error", err)
 		return fmt.Errorf("failed to inspect run; %w", err)

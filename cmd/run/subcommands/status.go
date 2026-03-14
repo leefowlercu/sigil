@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/leefowlercu/sigil/internal/clioutput"
-	"github.com/leefowlercu/sigil/internal/runtime"
+	"github.com/leefowlercu/sigil/internal/query"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +54,10 @@ func runStatusCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	summary, err := runtime.LoadRunSummary(runsBaseDir, statusRunID)
+	summary, err := query.ReadRunSummary(query.ReadRunSummaryRequest{
+		RunsBaseDir: runsBaseDir,
+		RunID:       statusRunID,
+	})
 	if err != nil {
 		runStatusLogger().Error("failed to load run status", "runs_base_dir", runsBaseDir, "run_id", statusRunID, "error", err)
 		return fmt.Errorf("failed to load run status; %w", err)

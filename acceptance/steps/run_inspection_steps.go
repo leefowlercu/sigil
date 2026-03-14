@@ -110,7 +110,7 @@ func registerRunInspectionSteps(ctx *godog.ScenarioContext, world *harnessWorld)
 }
 
 func (w *harnessWorld) validApplicationAndRunConfigurationInputs() error {
-	if err := os.WriteFile(filepath.Clean("./sigil.yaml"), []byte("log_level: info\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Clean("./sigil.yaml"), []byte("logs:\n  level: info\n"), 0o644); err != nil {
 		return fmt.Errorf("failed to write sigil.yaml; %w", err)
 	}
 	runConfig := strings.Join([]string{

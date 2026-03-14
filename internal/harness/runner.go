@@ -36,44 +36,101 @@ type nodeExecutionResult struct {
 	finalRef string
 }
 
+type acceptedRun struct {
+	input                 RunInput
+	guardrailRunContext   context.Context
+	cancel                context.CancelCauseFunc
+	cancelDeadline        context.CancelFunc
+	lifecycle             *runtime.Lifecycle
+	eventsPath            string
+	guardrails            *deterministicGuardrails
+	submittedRunConfigRef *string
+}
+
 // Run executes one blocking harness invocation for `sigil run start`.
 func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
-	logger := harnessRunnerLogger()
-	runContext := ctx
-	if runContext == nil {
-		runContext = context.Background()
+	accepted, err := r.acceptRun(ctx, input)
+	if err != nil {
+		return RunResult{}, err
+	}
+	return r.executeAcceptedRun(accepted)
+}
+
+// StartAsync accepts one durable run and continues execution in the background.
+func (r *Runner) StartAsync(ctx context.Context, input RunInput) (*StartedRun, error) {
+	accepted, err := r.acceptRun(ctx, input)
+	if err != nil {
+		return nil, err
 	}
 
-	if r == nil {
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "runner is required", nil)
+	doneCh := make(chan RunCompletion, 1)
+	launchCh := make(chan struct{})
+	started := &StartedRun{
+		RunID:                 accepted.lifecycle.RunID(),
+		EventsPath:            accepted.eventsPath,
+		AsOfSeq:               1,
+		SubmittedRunConfigRef: cloneOptionalStringPointer(accepted.submittedRunConfigRef),
+		done:                  doneCh,
+		cancel:                accepted.cancel,
+		launch: func() {
+			close(launchCh)
+		},
 	}
-	if r.templateRenderer == nil {
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "template renderer is required", nil)
+
+	go func() {
+		select {
+		case <-launchCh:
+		case <-accepted.guardrailRunContext.Done():
+		}
+		result, runErr := r.executeAcceptedRun(accepted)
+		doneCh <- RunCompletion{Result: result, Err: runErr}
+		close(doneCh)
+	}()
+
+	return started, nil
+}
+
+func (r *Runner) acceptRun(ctx context.Context, input RunInput) (_ *acceptedRun, err error) {
+	logger := harnessRunnerLogger()
+	baseRunContext := ctx
+	if baseRunContext == nil {
+		baseRunContext = context.Background()
 	}
-	if r.promptResolver == nil {
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "system prompt resolver is required", nil)
+
+	if err := r.validateDependencies(); err != nil {
+		return nil, err
 	}
-	if r.replFactory == nil {
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "repl session factory is required", nil)
-	}
-	if r.inferenceFactory == nil {
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "inference factory is required", nil)
-	}
+
 	runStart := time.Now().UTC()
 	guardrails, err := newDeterministicGuardrails(input.RunConfig.Guardrails, runStart)
 	if err != nil {
 		logger.Error("failed to initialize deterministic guardrails", "error", err)
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to initialize deterministic guardrails", err)
+		return nil, WrapError(ErrorCodeInfrastructure, "failed to initialize deterministic guardrails", err)
 	}
+
+	runContext, cancel := context.WithCancelCause(baseRunContext)
 	guardrailRunContext := runContext
+	var cancelDeadline context.CancelFunc
 	if deadline := guardrails.Deadline(); !deadline.IsZero() {
-		var cancel context.CancelFunc
-		guardrailRunContext, cancel = context.WithDeadline(runContext, deadline)
-		defer cancel()
+		guardrailRunContext, cancelDeadline = context.WithDeadline(runContext, deadline)
 	}
+
+	queuedSource := resolveQueuedSource(input)
+	processMetadataSource := resolveProcessMetadataSource(input, queuedSource)
+
+	defer func() {
+		if err == nil {
+			return
+		}
+		if cancelDeadline != nil {
+			cancelDeadline()
+		}
+		cancel(nil)
+	}()
 
 	logger.Info("starting harness run",
 		"runs_base_dir", r.runsBaseDir,
+		"queued_source", queuedSource,
 		"llm_gateway", input.RunConfig.LLM.Gateway,
 		"llm_provider", input.RunConfig.LLM.Provider,
 		"llm_model", input.RunConfig.LLM.Model,
@@ -82,15 +139,15 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		"template_var_count", len(input.TemplateVars),
 	)
 
-	processMetadata, err := runtime.CurrentProcessMetadata(runtime.RunSourceCLIRunStart)
+	processMetadata, err := runtime.CurrentProcessMetadata(processMetadataSource)
 	if err != nil {
 		logger.Error("failed to capture current process metadata", "error", err)
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to capture current process metadata", err)
+		return nil, WrapError(ErrorCodeInfrastructure, "failed to capture current process metadata", err)
 	}
 
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
 		RunsBaseDir:     r.runsBaseDir,
-		QueuedSource:    runtime.RunQueuedSourceCLIRunStart,
+		QueuedSource:    queuedSource,
 		AppConfigPath:   cloneOptionalString(input.AppConfigPath),
 		RunConfigPath:   cloneOptionalString(input.RunConfigPath),
 		MaxDepth:        input.RunConfig.RLM.MaxDepth,
@@ -99,25 +156,93 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 	})
 	if err != nil {
 		logger.Error("failed to initialize run lifecycle", "error", err)
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to initialize run lifecycle", err)
+		return nil, WrapError(ErrorCodeInfrastructure, "failed to initialize run lifecycle", err)
 	}
-	defer lifecycle.Close()
+	defer func() {
+		if err == nil {
+			return
+		}
+		if removeErr := runtime.RemoveProcessMetadata(r.runsBaseDir, lifecycle.RunID()); removeErr != nil {
+			logger.Error("failed to remove process metadata after acceptance failure",
+				"run_id", lifecycle.RunID(),
+				"error", removeErr,
+			)
+		}
+		if closeErr := lifecycle.Close(); closeErr != nil {
+			logger.Error("failed to close lifecycle after acceptance failure",
+				"run_id", lifecycle.RunID(),
+				"error", closeErr,
+			)
+		}
+	}()
 
 	eventsPath, err := lifecycle.EventsFilePath()
 	if err != nil {
 		logger.Error("failed to resolve events path", "run_id", lifecycle.RunID(), "error", err)
-		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to resolve run events path", err)
+		return nil, WrapError(ErrorCodeInfrastructure, "failed to resolve run events path", err)
 	}
 	logger.Info("initialized run lifecycle",
 		"run_id", lifecycle.RunID(),
 		"events_path", eventsPath,
 	)
+
+	var submittedRunConfigRef *string
+	if input.SubmittedRunConfigYAML != nil {
+		runArtifacts, artifactErr := NewRunArtifactStore(r.runsBaseDir)
+		if artifactErr != nil {
+			logger.Error("failed to initialize run artifact store for submitted config provenance",
+				"run_id", lifecycle.RunID(),
+				"error", artifactErr,
+			)
+			return nil, WrapError(ErrorCodeInfrastructure, "failed to initialize submitted run config provenance store", artifactErr)
+		}
+
+		ref, artifactErr := runArtifacts.PersistSubmittedRunConfig(lifecycle.RunID(), *input.SubmittedRunConfigYAML, input.TemplateVars)
+		if artifactErr != nil {
+			logger.Error("failed to persist submitted run config artifact",
+				"run_id", lifecycle.RunID(),
+				"error", artifactErr,
+			)
+			return nil, WrapError(ErrorCodeInfrastructure, "failed to persist submitted run config artifact", artifactErr)
+		}
+		submittedRunConfigRef = &ref
+	}
+
+	return &acceptedRun{
+		input:                 input,
+		guardrailRunContext:   guardrailRunContext,
+		cancel:                cancel,
+		cancelDeadline:        cancelDeadline,
+		lifecycle:             lifecycle,
+		eventsPath:            eventsPath,
+		guardrails:            guardrails,
+		submittedRunConfigRef: submittedRunConfigRef,
+	}, nil
+}
+
+func (r *Runner) executeAcceptedRun(accepted *acceptedRun) (RunResult, error) {
+	logger := harnessRunnerLogger()
+	if accepted == nil || accepted.lifecycle == nil {
+		return RunResult{}, WrapError(ErrorCodeInfrastructure, "accepted run is required", nil)
+	}
+
+	lifecycle := accepted.lifecycle
+	input := accepted.input
+
 	defer func() {
+		if accepted.cancelDeadline != nil {
+			accepted.cancelDeadline()
+		}
 		if err := runtime.RemoveProcessMetadata(r.runsBaseDir, lifecycle.RunID()); err != nil {
 			logger.Error("failed to remove process metadata", "run_id", lifecycle.RunID(), "error", err)
 		}
+		if err := lifecycle.Close(); err != nil {
+			logger.Error("failed to close lifecycle event store", "run_id", lifecycle.RunID(), "error", err)
+		}
+		accepted.cancel(nil)
 	}()
-	if interruptErr := interruptionError(guardrailRunContext, ""); interruptErr != nil {
+
+	if interruptErr := interruptionError(accepted.guardrailRunContext, ""); interruptErr != nil {
 		logger.Warn("run interrupted before execution start", "run_id", lifecycle.RunID())
 		return RunResult{}, failRunningRunWithAccounting(lifecycle, nil, nil, input.RunConfig, nil, interruptErr)
 	}
@@ -126,7 +251,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		logger.Error("failed to start run lifecycle", "run_id", lifecycle.RunID(), "error", err)
 		return RunResult{}, WrapError(ErrorCodeInfrastructure, "failed to start run lifecycle", err)
 	}
-	if interruptErr := interruptionError(guardrailRunContext, ""); interruptErr != nil {
+	if interruptErr := interruptionError(accepted.guardrailRunContext, ""); interruptErr != nil {
 		logger.Warn("run interrupted immediately after execution start", "run_id", lifecycle.RunID())
 		return RunResult{}, failRunningRunWithAccounting(lifecycle, nil, nil, input.RunConfig, nil, interruptErr)
 	}
@@ -195,7 +320,7 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 
 	execCtx := executionContext{
 		runConfig:    input.RunConfig,
-		runContext:   guardrailRunContext,
+		runContext:   accepted.guardrailRunContext,
 		lifecycle:    lifecycle,
 		inference:    inferenceClient,
 		sessions:     sessions,
@@ -205,10 +330,10 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		ledger:       ledger,
 		systemPrompt: effectiveSystemPrompt,
 		nonRecursive: !input.RunConfig.RLM.Enabled,
-		guardrails:   guardrails,
+		guardrails:   accepted.guardrails,
 	}
 
-	rootResult, err := r.executeNode(guardrailRunContext, &execCtx, rootNode, effectivePrompt, effectiveContext)
+	rootResult, err := r.executeNode(accepted.guardrailRunContext, &execCtx, rootNode, effectivePrompt, effectiveContext)
 	if err != nil {
 		failedNodeID := rootNode.ID
 		logger.Error("root node execution failed",
@@ -242,9 +367,45 @@ func (r *Runner) Run(ctx context.Context, input RunInput) (RunResult, error) {
 		State:          string(lifecycle.State()),
 		FinalAnswer:    rootResult.answer,
 		FinalAnswerRef: rootResult.finalRef,
-		EventsPath:     eventsPath,
+		EventsPath:     accepted.eventsPath,
 		Accounting:     runAccounting,
 	}, nil
+}
+
+func (r *Runner) validateDependencies() error {
+	if r == nil {
+		return WrapError(ErrorCodeInfrastructure, "runner is required", nil)
+	}
+	if r.templateRenderer == nil {
+		return WrapError(ErrorCodeInfrastructure, "template renderer is required", nil)
+	}
+	if r.promptResolver == nil {
+		return WrapError(ErrorCodeInfrastructure, "system prompt resolver is required", nil)
+	}
+	if r.replFactory == nil {
+		return WrapError(ErrorCodeInfrastructure, "repl session factory is required", nil)
+	}
+	if r.inferenceFactory == nil {
+		return WrapError(ErrorCodeInfrastructure, "inference factory is required", nil)
+	}
+	return nil
+}
+
+func resolveQueuedSource(input RunInput) runtime.RunQueuedSource {
+	if strings.TrimSpace(string(input.QueuedSource)) == "" {
+		return runtime.RunQueuedSourceCLIRunStart
+	}
+	return input.QueuedSource
+}
+
+func resolveProcessMetadataSource(input RunInput, queuedSource runtime.RunQueuedSource) string {
+	if strings.TrimSpace(input.ProcessMetadataSource) != "" {
+		return input.ProcessMetadataSource
+	}
+	if queuedSource == runtime.RunQueuedSourceAppServerStart {
+		return runtime.RunSourceAppServerStart
+	}
+	return runtime.RunSourceCLIRunStart
 }
 
 func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, node runtime.Node, prompt string, baseContext string) (result nodeExecutionResult, runErr error) {

@@ -35,8 +35,10 @@ func TestInitCreatesLogFileAndSetsActivePath(t *testing.T) {
 	workDir := t.TempDir()
 
 	cfg := config.Config{
-		LogLevel: "info",
-		LogDir:   filepath.Join(workDir, "custom-logs"),
+		Logs: config.LogsConfig{
+			Level: "info",
+			Dir:   filepath.Join(workDir, "custom-logs"),
+		},
 	}
 
 	if err := Init(cfg); err != nil {
@@ -67,8 +69,10 @@ func TestInitWritesStructuredJSONLogRecords(t *testing.T) {
 	workDir := t.TempDir()
 
 	cfg := config.Config{
-		LogLevel: "info",
-		LogDir:   filepath.Join(workDir, "json-logs"),
+		Logs: config.LogsConfig{
+			Level: "info",
+			Dir:   filepath.Join(workDir, "json-logs"),
+		},
 	}
 	if err := Init(cfg); err != nil {
 		t.Fatalf("expected logging init success, got %v", err)
@@ -122,8 +126,10 @@ func TestInitFailsWhenDerivedPathCannotOpenFileSink(t *testing.T) {
 	}
 
 	cfg := config.Config{
-		LogLevel: "info",
-		LogDir:   blockedPath,
+		Logs: config.LogsConfig{
+			Level: "info",
+			Dir:   blockedPath,
+		},
 	}
 
 	if err := Init(cfg); err == nil {
@@ -140,8 +146,10 @@ func TestInitReplacesExistingSinkAndPath(t *testing.T) {
 	workDir := t.TempDir()
 
 	firstCfg := config.Config{
-		LogLevel: "info",
-		LogDir:   filepath.Join(workDir, "logs-one"),
+		Logs: config.LogsConfig{
+			Level: "info",
+			Dir:   filepath.Join(workDir, "logs-one"),
+		},
 	}
 	if err := Init(firstCfg); err != nil {
 		t.Fatalf("expected first init success, got %v", err)
@@ -153,8 +161,10 @@ func TestInitReplacesExistingSinkAndPath(t *testing.T) {
 	}
 
 	secondCfg := config.Config{
-		LogLevel: "info",
-		LogDir:   filepath.Join(workDir, "logs-two"),
+		Logs: config.LogsConfig{
+			Level: "info",
+			Dir:   filepath.Join(workDir, "logs-two"),
+		},
 	}
 	if err := Init(secondCfg); err != nil {
 		t.Fatalf("expected second init success, got %v", err)

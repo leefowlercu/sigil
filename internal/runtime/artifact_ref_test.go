@@ -61,3 +61,20 @@ func TestArtifactRefPrefixConstant(t *testing.T) {
 		t.Fatalf("expected canonical run-artifact prefix, got %q", ArtifactRefPrefix)
 	}
 }
+
+func TestResolveArtifactRefPathSupportsSubmittedRunConfigArtifact(t *testing.T) {
+	parts, err := ResolveArtifactRefPath("run-artifact://run/submitted-run-config.json")
+	if err != nil {
+		t.Fatalf("expected submitted run config ref resolution success, got %v", err)
+	}
+
+	expected := []string{"run", "submitted-run-config.json"}
+	if len(parts) != len(expected) {
+		t.Fatalf("expected %d path parts, got %d (%v)", len(expected), len(parts), parts)
+	}
+	for index, part := range expected {
+		if parts[index] != part {
+			t.Fatalf("expected path part %d %q, got %q", index, part, parts[index])
+		}
+	}
+}

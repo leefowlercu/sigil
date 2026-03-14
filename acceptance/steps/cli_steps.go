@@ -100,6 +100,7 @@ type harnessWorld struct {
 	helperStderr             bytes.Buffer
 	invalidProcessCmd        *exec.Cmd
 	runInspection            *runInspectionState
+	appServer                *appServerAcceptanceState
 }
 
 // InitializeScenario wires all acceptance steps for harness.feature.
@@ -107,25 +108,9 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	world := &harnessWorld{}
 
 	ctx.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
-		if world.inferenceMockServer != nil {
-			world.inferenceMockServer.Close()
-			world.inferenceMockServer = nil
-		}
-		if err := world.stopHelperProcess(); err != nil {
+		if err := world.cleanupScenarioResources(); err != nil {
 			return ctx, err
 		}
-		if err := world.stopInvalidProcess(); err != nil {
-			return ctx, err
-		}
-
-		if world.lifecycle != nil {
-			if err := world.lifecycle.Close(); err != nil {
-				return ctx, fmt.Errorf("failed to close lifecycle from previous scenario; %w", err)
-			}
-			world.lifecycle = nil
-		}
-
-		_ = logging.Close()
 
 		workDir, err := os.MkdirTemp("", "sigil-acceptance-*")
 		if err != nil {
@@ -190,40 +175,14 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 		world.helperStderr.Reset()
 		world.invalidProcessCmd = nil
 		world.runInspection = nil
+		world.appServer = nil
 
 		return ctx, nil
 	})
 
 	ctx.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
-		if world.inferenceMockServer != nil {
-			world.inferenceMockServer.Close()
-			world.inferenceMockServer = nil
-		}
-		if err := world.stopHelperProcess(); err != nil {
+		if err := world.cleanupScenarioResources(); err != nil {
 			return ctx, err
-		}
-		if err := world.stopInvalidProcess(); err != nil {
-			return ctx, err
-		}
-
-		if world.lifecycle != nil {
-			if err := world.lifecycle.Close(); err != nil {
-				return ctx, fmt.Errorf("failed to close lifecycle resources; %w", err)
-			}
-			world.lifecycle = nil
-		}
-
-		_ = logging.Close()
-
-		if world.originalWorkingDir != "" {
-			_ = os.Chdir(world.originalWorkingDir)
-		}
-		if world.workingDir != "" {
-			_ = os.RemoveAll(world.workingDir)
-		}
-		if world.helperDir != "" {
-			_ = os.RemoveAll(world.helperDir)
-			world.helperDir = ""
 		}
 
 		return ctx, nil
@@ -264,8 +223,8 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the default run config path is "([^"]*)"$`, world.theDefaultRunConfigPathIs)
 	ctx.Step(`^the application config format is "([^"]*)"$`, world.theApplicationConfigFormatIs)
 	ctx.Step(`^baseline application config keys are "([^"]*)" and "([^"]*)"$`, world.baselineApplicationConfigKeysAreAnd)
-	ctx.Step(`^effective application log_level is "([^"]*)"$`, world.effectiveApplicationLogLevelIs)
-	ctx.Step(`^effective application log_dir is "([^"]*)"$`, world.effectiveApplicationLogDirIs)
+	ctx.Step(`^effective application logs.level is "([^"]*)"$`, world.effectiveApplicationLogLevelIs)
+	ctx.Step(`^effective application logs.dir is "([^"]*)"$`, world.effectiveApplicationLogDirIs)
 	ctx.Step(`^the effective log file path is "([^"]*)"$`, world.theEffectiveLogFilePathIs)
 	ctx.Step(`^the effective log target path is "([^"]*)"$`, world.theEffectiveLogTargetPathIs)
 	ctx.Step(`^log records are structured JSON$`, world.logRecordsAreStructuredJSON)
@@ -376,6 +335,7 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^stop commands are executed for those invalid control cases$`, world.stopCommandsAreExecutedForThoseInvalidControlCases)
 	ctx.Step(`^each invalid control case exits non-zero$`, world.eachInvalidControlCaseExitsNonZero)
 	ctx.Step(`^a local CLI run has persisted run\.queued but not run\.running$`, world.aLocalCLIRunHasPersistedRunQueuedButNotRunRunning)
+	ctx.Step(`^run\.interrupted contains reason user_request interrupted_by "([^"]*)" and partial accounting$`, world.runInterruptedContainsReasonUserRequestInterruptedByAndPartialAccounting)
 	ctx.Step(`^run\.interrupted contains reason user_request interrupted_by cli\.run\.stop and partial accounting$`, world.runInterruptedContainsReasonUserRequestInterruptedByCLIRunStopAndPartialAccounting)
 	ctx.Step(`^interrupted stop handling does not append synthetic node\.failed or node\.step\.completed records$`, world.interruptedStopHandlingDoesNotAppendSyntheticNodeFailedOrNodeStepCompletedRecords)
 	ctx.Step(`^no default start config files exist$`, world.noDefaultStartConfigFilesExist)
@@ -385,6 +345,114 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	registerRLMHarnessSteps(ctx, world)
 	registerInferenceSteps(ctx, world)
 	registerRunInspectionSteps(ctx, world)
+	registerAppServerSteps(ctx, world)
+}
+
+func (w *harnessWorld) cleanupScenarioResources() error {
+	var cleanupErrs []error
+
+	if w.inferenceMockServer != nil {
+		w.inferenceMockServer.Close()
+		w.inferenceMockServer = nil
+	}
+	if w.appServer != nil {
+		if err := w.appServer.close(); err != nil {
+			cleanupErrs = append(cleanupErrs, err)
+		}
+		w.appServer = nil
+	}
+	if err := w.stopHelperProcess(); err != nil {
+		cleanupErrs = append(cleanupErrs, err)
+	}
+	if w.helperCmd != nil && w.helperCmd.ProcessState != nil {
+		w.helperCmd = nil
+	}
+	if err := w.stopInvalidProcess(); err != nil {
+		cleanupErrs = append(cleanupErrs, err)
+	}
+	if w.invalidProcessCmd != nil && w.invalidProcessCmd.ProcessState != nil {
+		w.invalidProcessCmd = nil
+	}
+	if w.lifecycle != nil {
+		if err := w.lifecycle.Close(); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("failed to close lifecycle resources; %w", err))
+		}
+		w.lifecycle = nil
+	}
+
+	_ = logging.Close()
+
+	if w.originalWorkingDir != "" {
+		if err := os.Chdir(w.originalWorkingDir); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("failed to restore working directory %q; %w", w.originalWorkingDir, err))
+		}
+		w.originalWorkingDir = ""
+	}
+	if w.workingDir != "" {
+		if err := removeAllWithRetry(w.workingDir, 500*time.Millisecond); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("failed to remove acceptance working directory %q; %w", w.workingDir, err))
+		}
+		w.workingDir = ""
+	}
+	if err := cleanupCurrentRunControlHelperDirs(w.helperDir); err != nil {
+		cleanupErrs = append(cleanupErrs, err)
+	}
+	w.helperDir = ""
+
+	return errors.Join(cleanupErrs...)
+}
+
+func cleanupCurrentRunControlHelperDirs(activeHelperDir string) error {
+	moduleRoot, err := sigilModuleRootDir()
+	if err != nil {
+		if strings.TrimSpace(activeHelperDir) == "" {
+			return fmt.Errorf("failed to resolve sigil module root for helper cleanup; %w", err)
+		}
+		return errors.Join(
+			fmt.Errorf("failed to resolve sigil module root for helper cleanup; %w", err),
+			cleanupRunControlHelperDirs("", activeHelperDir),
+		)
+	}
+	return cleanupRunControlHelperDirs(moduleRoot, activeHelperDir)
+}
+
+func cleanupRunControlHelperDirs(moduleRoot string, activeHelperDir string) error {
+	candidateDirs := map[string]struct{}{}
+	if strings.TrimSpace(activeHelperDir) != "" {
+		candidateDirs[activeHelperDir] = struct{}{}
+	}
+	if strings.TrimSpace(moduleRoot) != "" {
+		matches, err := filepath.Glob(filepath.Join(moduleRoot, ".acceptance-run-stop-helper-*"))
+		if err != nil {
+			return fmt.Errorf("failed to enumerate run-stop helper dirs under %q; %w", moduleRoot, err)
+		}
+		for _, match := range matches {
+			candidateDirs[match] = struct{}{}
+		}
+	}
+
+	var cleanupErrs []error
+	for dir := range candidateDirs {
+		if err := removeAllWithRetry(dir, 500*time.Millisecond); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("failed to remove run-stop helper dir %q; %w", dir, err))
+		}
+	}
+	return errors.Join(cleanupErrs...)
+}
+
+func removeAllWithRetry(path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		lastErr = os.RemoveAll(path)
+		if lastErr == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 func (w *harnessWorld) aCleanSigilWorkingDirectory() error {
@@ -393,8 +461,8 @@ func (w *harnessWorld) aCleanSigilWorkingDirectory() error {
 
 func (w *harnessWorld) sigilConfigEnvironmentVariablesAreCleared() error {
 	keys := []string{
-		"SIGIL_LOG_LEVEL",
-		"SIGIL_LOG_DIR",
+		"SIGIL_LOGS_LEVEL",
+		"SIGIL_LOGS_DIR",
 		"OPENROUTER_API_KEY",
 		"SIGIL_RUN_LLM_PROVIDER",
 		"SIGIL_RUN_LLM_MODEL",
@@ -698,13 +766,7 @@ func (w *harnessWorld) theApplicationConfigFormatIs(expectedFormat string) error
 }
 
 func (w *harnessWorld) baselineApplicationConfigKeysAreAnd(expectedKeyOne string, expectedKeyTwo string) error {
-	cfgType := reflect.TypeOf(config.Config{})
-	tags := make(map[string]struct{}, cfgType.NumField())
-	for index := 0; index < cfgType.NumField(); index++ {
-		field := cfgType.Field(index)
-		tag := field.Tag.Get("mapstructure")
-		tags[tag] = struct{}{}
-	}
+	tags := collectMapstructureTags(reflect.TypeOf(config.Config{}), "")
 
 	if _, ok := tags[expectedKeyOne]; !ok {
 		return fmt.Errorf("missing baseline config key %q", expectedKeyOne)
@@ -714,6 +776,41 @@ func (w *harnessWorld) baselineApplicationConfigKeysAreAnd(expectedKeyOne string
 	}
 
 	return nil
+}
+
+func collectMapstructureTags(typeInfo reflect.Type, prefix string) map[string]struct{} {
+	collected := map[string]struct{}{}
+	if typeInfo.Kind() == reflect.Pointer {
+		typeInfo = typeInfo.Elem()
+	}
+	if typeInfo.Kind() != reflect.Struct {
+		return collected
+	}
+
+	for index := 0; index < typeInfo.NumField(); index++ {
+		field := typeInfo.Field(index)
+		tag := strings.TrimSpace(field.Tag.Get("mapstructure"))
+		if tag == "" || tag == "-" {
+			continue
+		}
+		fullKey := tag
+		if prefix != "" {
+			fullKey = prefix + "." + tag
+		}
+		collected[fullKey] = struct{}{}
+
+		nested := field.Type
+		if nested.Kind() == reflect.Pointer {
+			nested = nested.Elem()
+		}
+		if nested.Kind() == reflect.Struct && nested.PkgPath() == typeInfo.PkgPath() {
+			for nestedKey := range collectMapstructureTags(nested, fullKey) {
+				collected[nestedKey] = struct{}{}
+			}
+		}
+	}
+
+	return collected
 }
 
 func (w *harnessWorld) effectiveApplicationLogLevelIs(expectedLevel string) error {
@@ -726,8 +823,8 @@ func (w *harnessWorld) effectiveApplicationLogLevelIs(expectedLevel string) erro
 		return err
 	}
 
-	if cfg.LogLevel != expectedLevel {
-		return fmt.Errorf("expected log_level %q, got %q", expectedLevel, cfg.LogLevel)
+	if cfg.Logs.Level != expectedLevel {
+		return fmt.Errorf("expected logs.level %q, got %q", expectedLevel, cfg.Logs.Level)
 	}
 
 	return nil
@@ -740,7 +837,7 @@ func (w *harnessWorld) effectiveApplicationLogDirIs(expectedDir string) error {
 
 	expectedPath, err := config.ExpandPath(expectedDir)
 	if err != nil {
-		return fmt.Errorf("failed to resolve expected log_dir %q; %w", expectedDir, err)
+		return fmt.Errorf("failed to resolve expected logs.dir %q; %w", expectedDir, err)
 	}
 
 	cfg, err := config.Get()
@@ -748,8 +845,8 @@ func (w *harnessWorld) effectiveApplicationLogDirIs(expectedDir string) error {
 		return err
 	}
 
-	if cfg.LogDir != expectedPath {
-		return fmt.Errorf("expected log_dir %q, got %q", expectedPath, cfg.LogDir)
+	if cfg.Logs.Dir != expectedPath {
+		return fmt.Errorf("expected logs.dir %q, got %q", expectedPath, cfg.Logs.Dir)
 	}
 
 	return nil
@@ -2108,7 +2205,7 @@ func (w *harnessWorld) stopUsageHelpIsPrinted() error {
 }
 
 func (w *harnessWorld) aLocalCLIRunIsActivelyExecuting() error {
-	return w.startRunControlHelper("active_interrupt")
+	return w.startRunControlHelperWithRequester("active_interrupt", sigilruntime.StopRequesterCLIRunStop)
 }
 
 func (w *harnessWorld) aUserRunsSigilRunStopForTheActiveRun() error {
@@ -2454,10 +2551,14 @@ func (w *harnessWorld) eachInvalidControlCaseExitsNonZero() error {
 }
 
 func (w *harnessWorld) aLocalCLIRunHasPersistedRunQueuedButNotRunRunning() error {
-	return w.startRunControlHelper("queued_interrupt")
+	return w.startRunControlHelperWithRequester("queued_interrupt", sigilruntime.StopRequesterCLIRunStop)
 }
 
 func (w *harnessWorld) runInterruptedContainsReasonUserRequestInterruptedByCLIRunStopAndPartialAccounting() error {
+	return w.runInterruptedContainsReasonUserRequestInterruptedByAndPartialAccounting(sigilruntime.StopRequesterCLIRunStop)
+}
+
+func (w *harnessWorld) runInterruptedContainsReasonUserRequestInterruptedByAndPartialAccounting(expectedInterruptedBy string) error {
 	eventsPath := w.activeRunEventsPath
 	if w.activeStopInvocation.Result != nil && strings.TrimSpace(w.activeStopInvocation.Result.EventsPath) != "" {
 		eventsPath = w.activeStopInvocation.Result.EventsPath
@@ -2481,8 +2582,8 @@ func (w *harnessWorld) runInterruptedContainsReasonUserRequestInterruptedByCLIRu
 		if payload.Reason != sigilruntime.RunInterruptedReasonUserRequest {
 			return fmt.Errorf("expected interruption reason %q, got %q", sigilruntime.RunInterruptedReasonUserRequest, payload.Reason)
 		}
-		if payload.InterruptedBy == nil || *payload.InterruptedBy != sigilruntime.StopRequesterCLIRunStop {
-			return fmt.Errorf("expected interrupted_by=%q, got %+v", sigilruntime.StopRequesterCLIRunStop, payload.InterruptedBy)
+		if payload.InterruptedBy == nil || *payload.InterruptedBy != expectedInterruptedBy {
+			return fmt.Errorf("expected interrupted_by=%q, got %+v", expectedInterruptedBy, payload.InterruptedBy)
 		}
 		if payload.Accounting.TreeTotal.TokenStatus != "partial" && payload.Accounting.TreeTotal.CostStatus != "partial" {
 			return fmt.Errorf("expected partial accounting in run.interrupted payload, got %+v", payload.Accounting.TreeTotal)
@@ -2750,6 +2851,10 @@ func parseAcceptanceStopResult(stdout string) (acceptanceStopResult, error) {
 }
 
 func (w *harnessWorld) startRunControlHelper(mode string) error {
+	return w.startRunControlHelperWithRequester(mode, sigilruntime.StopRequesterCLIRunStop)
+}
+
+func (w *harnessWorld) startRunControlHelperWithRequester(mode string, expectedRequestedBy string) error {
 	if err := w.stopHelperProcess(); err != nil {
 		return err
 	}
@@ -2777,6 +2882,7 @@ func (w *harnessWorld) startRunControlHelper(mode string) error {
 	cmd.Env = append(os.Environ(),
 		"SIGIL_ACCEPTANCE_WORKDIR="+w.workingDir,
 		"SIGIL_ACCEPTANCE_HELPER_MODE="+mode,
+		"SIGIL_ACCEPTANCE_EXPECTED_REQUESTED_BY="+expectedRequestedBy,
 	)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start run-control helper; %w", err)
@@ -2849,6 +2955,10 @@ func main() {
 	if mode == "" {
 		fatalf("SIGIL_ACCEPTANCE_HELPER_MODE is required")
 	}
+	expectedRequestedBy := os.Getenv("SIGIL_ACCEPTANCE_EXPECTED_REQUESTED_BY")
+	if expectedRequestedBy == "" {
+		expectedRequestedBy = runtime.StopRequesterCLIRunStop
+	}
 
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
 		RunsBaseDir:  runtime.DefaultRunsBaseDir,
@@ -2911,7 +3021,7 @@ func main() {
 	if !ok {
 		fatalf("stop-request metadata was not present before SIGTERM handling")
 	}
-	if request.RequestedBy != runtime.StopRequesterCLIRunStop {
+	if request.RequestedBy != expectedRequestedBy {
 		fatalf("unexpected requested_by %q", request.RequestedBy)
 	}
 	if request.Signal != runtime.StopSignalSIGTERM {
@@ -2921,7 +3031,7 @@ func main() {
 	switch mode {
 	case "active_interrupt", "queued_interrupt":
 		accountingRef := "run-artifact://run/accounting/interrupted.json"
-		requestedBy := runtime.StopRequesterCLIRunStop
+		requestedBy := expectedRequestedBy
 		if err := lifecycle.InterruptWith(runtime.RunInterruptedPayload{
 			Status:            "interrupted",
 			Reason:            runtime.RunInterruptedReasonUserRequest,

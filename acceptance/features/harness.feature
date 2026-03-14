@@ -11,23 +11,25 @@ Feature: Sigil baseline CLI and config contracts
     When application configuration is resolved
     Then the default application config path is "./sigil.yaml"
     And the application config format is "yaml"
-    And baseline application config keys are "log_level" and "log_dir"
+    And baseline application config keys are "logs.level" and "logs.dir"
 
-  Scenario: Applies defaults and SIGIL environment overrides for log_level and log_dir
+  Scenario: Applies defaults and SIGIL environment overrides for logs.level and logs.dir
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: debug
+      logs:
+        level: debug
       """
-    And environment override "SIGIL_LOG_LEVEL" is "warn"
-    And environment override "SIGIL_LOG_DIR" is "./env-logs"
+    And environment override "SIGIL_LOGS_LEVEL" is "warn"
+    And environment override "SIGIL_LOGS_DIR" is "./env-logs"
     When application configuration is merged
-    Then effective application log_level is "warn"
-    And effective application log_dir is "./env-logs"
+    Then effective application logs.level is "warn"
+    And effective application logs.dir is "./env-logs"
 
-  Scenario: Rejects unsupported log_level values
+  Scenario: Rejects unsupported logs.level values
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: trace
+      logs:
+        level: trace
       """
     When application configuration validation runs
     Then application configuration initialization fails
@@ -633,7 +635,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Uses default application and run configuration paths when no flags are provided
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
@@ -642,7 +645,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Overrides application configuration path with --config
     Given application config exists at "./custom-sigil.yaml" with:
       """
-      log_level: warn
+      logs:
+        level: warn
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start --config ./custom-sigil.yaml`
@@ -651,7 +655,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Overrides run configuration path with --run-config
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./custom-run.yaml"
     When a user runs `sigil run start --run-config ./custom-run.yaml`
@@ -660,7 +665,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Overrides both configuration paths when both flags are provided
     Given application config exists at "./custom-sigil.yaml" with:
       """
-      log_level: debug
+      logs:
+        level: debug
       """
     And run config file exists at "./custom-run.yaml"
     When a user runs `sigil run start --config ./custom-sigil.yaml --run-config ./custom-run.yaml`
@@ -669,7 +675,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Fails when required configuration paths are missing unreadable or not regular files
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And a directory exists at "./not-a-file"
     When a user runs `sigil run start --config ./not-a-file`
@@ -685,7 +692,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Accepts repeated --var key value entries
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -701,7 +709,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects invalid --var format or empty key
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start --var invalid`
@@ -711,7 +720,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Resolves duplicate --var keys deterministically using last value
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -727,7 +737,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Executes sigil run start as a blocking harness entrypoint
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
@@ -737,7 +748,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Emits run.queued with source cli.run.start and resolved config-path metadata
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
@@ -754,7 +766,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Resolves effective prompt and context from direct fields or rendered templates
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -770,7 +783,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Fails run start on template rendering errors under strict missing-key policy
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -814,7 +828,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Runs non-recursive multi-step profile when rlm.enabled is false
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -845,7 +860,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Prints human-readable run progress and terminal summary by default
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start`
@@ -863,7 +879,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Prints JSON run summary on successful completion when output json is requested
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run config file exists at "./sigil-run.yaml"
     When a user runs `sigil run start -o json`
@@ -877,7 +894,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Shows recursive child-node growth in text output
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -900,7 +918,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Shows fallback subcall mode in text output when recursion depth is exceeded
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -922,7 +941,8 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Exits non-zero with typed failure metadata on unrecoverable harness inference or template errors
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
+      logs:
+        level: info
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
@@ -939,8 +959,9 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Writes application logs to a derived sigil.log file path
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
-      log_dir: ./derived-log-dir
+      logs:
+        level: info
+        dir: ./derived-log-dir
       """
     When application logging is initialized
     Then the effective log file path is "./derived-log-dir/sigil.log"
@@ -948,14 +969,15 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Uses JSON structured log records for application logging
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
-      log_dir: ./json-log-dir
+      logs:
+        level: info
+        dir: ./json-log-dir
       """
     When application logging is initialized
     And application logging writes an info record with message "json-acceptance-record"
     Then log records are structured JSON
 
-  Scenario: Uses default log file path when default log_dir is in effect
+  Scenario: Uses default log file path when default logs.dir is in effect
     Given the sigil application starts without an explicit application config path
     When application logging is initialized
     Then the effective log target path is "./.sigil/logs/sigil.log"
@@ -963,19 +985,21 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Fails initialization when derived log file path cannot be opened as a file sink
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
-      log_dir: ./blocked-log-target
+      logs:
+        level: info
+        dir: ./blocked-log-target
       """
     And a file exists at "./blocked-log-target"
     When a user runs `sigil run`
     Then command exits non-zero
     And command error contains `failed to initialize application logging`
 
-  Scenario: Derives log file path from configured log_dir override
+  Scenario: Derives log file path from configured logs.dir override
     Given application config exists at "./sigil.yaml" with:
       """
-      log_level: info
-      log_dir: ./override-log-dir
+      logs:
+        level: info
+        dir: ./override-log-dir
       """
     When application logging is initialized
     Then the effective log target path is "./override-log-dir/sigil.log"

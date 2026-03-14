@@ -1,33 +1,25 @@
 package subcommands
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/leefowlercu/sigil/internal/clioutput"
+	"github.com/leefowlercu/sigil/internal/control"
 	"github.com/leefowlercu/sigil/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
 const (
-	stopPollInterval     = 25 * time.Millisecond
-	stopProcessExitGrace = 500 * time.Millisecond
+	stopPollInterval     = control.DefaultStopPollInterval
+	stopProcessExitGrace = control.DefaultStopProcessExitGrace
 )
 
 var stopRunID string
 
-type stopResult struct {
-	RunID         string `json:"run_id"`
-	StopRequested bool   `json:"stop_requested"`
-	State         string `json:"state"`
-	EventsPath    string `json:"events_path"`
-}
+type stopResult = control.StopRunResult
 
 // NewStopCmd builds the run stop command.
 func NewStopCmd() *cobra.Command {
@@ -82,91 +74,19 @@ func runStopCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	status, err := runtime.ResolveRunStatus(runsBaseDir, stopRunID)
+	result, err := control.StopRun(control.StopRunRequest{
+		RunsBaseDir:      runsBaseDir,
+		RunID:            stopRunID,
+		RequestedBy:      runtime.StopRequesterCLIRunStop,
+		Signal:           runtime.StopSignalSIGTERM,
+		PollInterval:     stopPollInterval,
+		ProcessExitGrace: stopProcessExitGrace,
+	})
 	if err != nil {
-		stopLogger().Error("failed to resolve run state", "run_id", stopRunID, "error", err)
-		return fmt.Errorf("failed to resolve run state; %w", err)
+		stopLogger().Error("run stop command failed", "run_id", stopRunID, "error", err)
+		return err
 	}
-
-	result := stopResult{
-		RunID:      status.RunID,
-		State:      string(status.State),
-		EventsPath: status.EventsPath,
-	}
-	if runtime.IsTerminalRunState(status.State) {
-		return writeStopResult(cmd, result)
-	}
-
-	processMetadata, err := runtime.ReadProcessMetadata(runsBaseDir, stopRunID)
-	if err != nil {
-		stopLogger().Error("failed to resolve process metadata", "run_id", stopRunID, "error", err)
-		return fmt.Errorf("failed to resolve live process metadata; %w", err)
-	}
-
-	if err := runtime.WriteStopRequestMetadata(runsBaseDir, runtime.StopRequestMetadata{
-		RunID:       stopRunID,
-		RequestedAt: time.Now().UTC(),
-		RequestedBy: runtime.StopRequesterCLIRunStop,
-		Signal:      runtime.StopSignalSIGTERM,
-	}); err != nil {
-		stopLogger().Error("failed to persist stop request metadata", "run_id", stopRunID, "error", err)
-		return fmt.Errorf("failed to persist stop request metadata; %w", err)
-	}
-	result.StopRequested = true
-
-	if err := runtime.ValidateLiveProcessMetadata(processMetadata); err != nil {
-		if errors.Is(err, runtime.ErrProcessNotRunning) {
-			return waitForTerminalStopState(cmd, runsBaseDir, result, processMetadata, time.Now().Add(stopProcessExitGrace))
-		}
-		stopLogger().Error("failed to validate process identity", "run_id", stopRunID, "pid", processMetadata.PID, "error", err)
-		return fmt.Errorf("failed to validate live process metadata; %w", err)
-	}
-
-	process, err := os.FindProcess(processMetadata.PID)
-	if err != nil {
-		stopLogger().Error("failed to resolve process handle", "run_id", stopRunID, "pid", processMetadata.PID, "error", err)
-		return fmt.Errorf("failed to resolve process handle; %w", err)
-	}
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		if !isExitedProcessError(err) {
-			stopLogger().Error("failed to signal process", "run_id", stopRunID, "pid", processMetadata.PID, "error", err)
-			return fmt.Errorf("failed to signal run process; %w", err)
-		}
-		return waitForTerminalStopState(cmd, runsBaseDir, result, processMetadata, time.Now().Add(stopProcessExitGrace))
-	}
-
-	return waitForTerminalStopState(cmd, runsBaseDir, result, processMetadata, time.Time{})
-}
-
-func waitForTerminalStopState(cmd *cobra.Command, runsBaseDir string, result stopResult, processMetadata runtime.ProcessMetadata, processExitDeadline time.Time) error {
-	for {
-		status, err := runtime.ResolveRunStatus(runsBaseDir, stopRunID)
-		if err != nil {
-			stopLogger().Error("failed to poll run state", "run_id", stopRunID, "error", err)
-			return fmt.Errorf("failed to poll run state; %w", err)
-		}
-		result.State = string(status.State)
-		result.EventsPath = status.EventsPath
-		if runtime.IsTerminalRunState(status.State) {
-			return writeStopResult(cmd, result)
-		}
-
-		running, err := runtime.IsOriginalProcessRunning(processMetadata)
-		if err != nil {
-			stopLogger().Error("failed to poll process liveness", "run_id", stopRunID, "pid", processMetadata.PID, "error", err)
-			return fmt.Errorf("failed to poll run process; %w", err)
-		}
-		if !running {
-			if processExitDeadline.IsZero() {
-				processExitDeadline = time.Now().Add(stopProcessExitGrace)
-			}
-			if time.Now().After(processExitDeadline) {
-				return fmt.Errorf("run process exited before terminal state was observed")
-			}
-		}
-
-		time.Sleep(stopPollInterval)
-	}
+	return writeStopResult(cmd, result)
 }
 
 func writeStopResult(cmd *cobra.Command, result stopResult) error {
@@ -189,11 +109,6 @@ func writeStopResult(cmd *cobra.Command, result stopResult) error {
 	)
 	return nil
 }
-
-func isExitedProcessError(err error) bool {
-	return errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH)
-}
-
 func stopLogger() *slog.Logger {
 	return slog.Default().With("component", "cmd.run.stop")
 }

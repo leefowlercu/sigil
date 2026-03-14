@@ -1,9 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -124,6 +126,33 @@ func InitRun() error {
 // InitRunFromPath initializes run configuration using the provided run config path.
 func InitRunFromPath(runConfigPath string) error {
 	return initRunFromPath(runConfigPath, false)
+}
+
+// DecodeRunConfigYAML decodes inline YAML into a validated typed RunConfig.
+func DecodeRunConfigYAML(content string) (RunConfig, error) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	registerRunDefaults(v)
+
+	if err := v.ReadConfig(bytes.NewBufferString(content)); err != nil {
+		return RunConfig{}, fmt.Errorf("failed to read inline run config; %w", err)
+	}
+
+	var cfg RunConfig
+	if err := v.Unmarshal(&cfg); err != nil {
+		return RunConfig{}, fmt.Errorf("failed to unmarshal run config; %w", err)
+	}
+	if err := decodeAccountingFallbackPricing(v, &cfg); err != nil {
+		return RunConfig{}, fmt.Errorf("failed to decode accounting fallback pricing; %w", err)
+	}
+	if err := decodeGuardrailBudgetFields(v, &cfg); err != nil {
+		return RunConfig{}, fmt.Errorf("failed to decode guardrail budget fields; %w", err)
+	}
+	if err := validateRunConfig(cfg); err != nil {
+		return RunConfig{}, fmt.Errorf("invalid run config; %w", err)
+	}
+
+	return cfg, nil
 }
 
 func initRunFromPath(runConfigPath string, allowMissing bool) (err error) {
@@ -299,8 +328,19 @@ func normalizeConfigFilePath(configPath string) (string, error) {
 
 func registerDefaults(v *viper.Viper) {
 	defaults := NewDefaultConfig()
-	v.SetDefault("log_level", defaults.LogLevel)
-	v.SetDefault("log_dir", defaults.LogDir)
+	v.SetDefault("logs.level", defaults.Logs.Level)
+	v.SetDefault("logs.dir", defaults.Logs.Dir)
+	v.SetDefault("app_server.instance_name", defaults.AppServer.InstanceName)
+	v.SetDefault("app_server.instance_id", defaults.AppServer.InstanceID)
+	v.SetDefault("app_server.run_dir", defaults.AppServer.RunDir)
+	v.SetDefault("app_server.allowed_origins", defaults.AppServer.AllowedOrigins)
+	v.SetDefault("app_server.websocket.listen_addr", defaults.AppServer.WebSocket.ListenAddr)
+	v.SetDefault("app_server.websocket.path", defaults.AppServer.WebSocket.Path)
+	v.SetDefault("app_server.health.ready_path", defaults.AppServer.Health.ReadyPath)
+	v.SetDefault("app_server.health.live_path", defaults.AppServer.Health.LivePath)
+	v.SetDefault("app_server.subscriptions.poll_interval_ms", defaults.AppServer.Subscriptions.PollIntervalMS)
+	v.SetDefault("app_server.limits.max_connections", defaults.AppServer.Limits.MaxConnections)
+	v.SetDefault("app_server.limits.max_frame_bytes", defaults.AppServer.Limits.MaxFrameBytes)
 }
 
 func registerRunDefaults(v *viper.Viper) {
@@ -354,8 +394,38 @@ func readConfig(v *viper.Viper, configFile string, allowMissing bool) error {
 }
 
 func validateConfig(cfg Config) error {
-	if _, ok := validLogLevel[cfg.LogLevel]; !ok {
-		return fmt.Errorf("unsupported log_level %q", cfg.LogLevel)
+	if _, ok := validLogLevel[cfg.Logs.Level]; !ok {
+		return fmt.Errorf("unsupported logs.level %q", cfg.Logs.Level)
+	}
+	if strings.TrimSpace(cfg.AppServer.InstanceName) == "" {
+		return errors.New("app_server.instance_name is required")
+	}
+	if strings.TrimSpace(cfg.AppServer.InstanceID) == "" {
+		return errors.New("app_server.instance_id is required")
+	}
+	if strings.TrimSpace(cfg.AppServer.WebSocket.ListenAddr) == "" {
+		return errors.New("app_server.websocket.listen_addr is required")
+	}
+	if err := validateHTTPPath("app_server.websocket.path", cfg.AppServer.WebSocket.Path); err != nil {
+		return err
+	}
+	if err := validateHTTPPath("app_server.health.ready_path", cfg.AppServer.Health.ReadyPath); err != nil {
+		return err
+	}
+	if err := validateHTTPPath("app_server.health.live_path", cfg.AppServer.Health.LivePath); err != nil {
+		return err
+	}
+	if cfg.AppServer.Subscriptions.PollIntervalMS < 1 {
+		return errors.New("app_server.subscriptions.poll_interval_ms must be >= 1")
+	}
+	if cfg.AppServer.Limits.MaxConnections < 1 {
+		return errors.New("app_server.limits.max_connections must be >= 1")
+	}
+	if cfg.AppServer.Limits.MaxFrameBytes < 1 {
+		return errors.New("app_server.limits.max_frame_bytes must be >= 1")
+	}
+	if err := validateAllowedOrigins(cfg.AppServer.AllowedOrigins); err != nil {
+		return err
 	}
 
 	return nil
@@ -478,12 +548,17 @@ func exactlyOneStringSet(left string, right string) bool {
 }
 
 func normalizeConfigPaths(cfg *Config) error {
-	logDir, err := ExpandPath(cfg.LogDir)
+	logDir, err := ExpandPath(cfg.Logs.Dir)
 	if err != nil {
-		return fmt.Errorf("invalid log_dir; %w", err)
+		return fmt.Errorf("invalid logs.dir; %w", err)
+	}
+	runDir, err := ExpandPath(cfg.AppServer.RunDir)
+	if err != nil {
+		return fmt.Errorf("invalid app_server.run_dir; %w", err)
 	}
 
-	cfg.LogDir = logDir
+	cfg.Logs.Dir = logDir
+	cfg.AppServer.RunDir = runDir
 	return nil
 }
 
@@ -721,4 +796,32 @@ func decodeOptionalInt64Field(raw map[string]any, key string) (int64, bool, erro
 	default:
 		return 0, false, fmt.Errorf("%s must be an integer, got %T", key, value)
 	}
+}
+
+func validateHTTPPath(field string, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		return fmt.Errorf("%s must start with /", field)
+	}
+	return nil
+}
+
+func validateAllowedOrigins(origins []string) error {
+	for _, origin := range origins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed == "" {
+			return errors.New("app_server.allowed_origins entries must be non-empty")
+		}
+		parsed, err := url.Parse(trimmed)
+		if err != nil {
+			return fmt.Errorf("app_server.allowed_origins entry %q is invalid; %w", trimmed, err)
+		}
+		if parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("app_server.allowed_origins entry %q must include scheme and host", trimmed)
+		}
+	}
+	return nil
 }

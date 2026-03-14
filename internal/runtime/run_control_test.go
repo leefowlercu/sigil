@@ -163,6 +163,31 @@ func TestProcessMetadataRoundTripAndRemove(t *testing.T) {
 	}
 }
 
+func TestReadProcessMetadataAcceptsAppServerSource(t *testing.T) {
+	runsBaseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	recordedAt := time.Unix(1_700_000_050, 0).UTC()
+	startedAt := time.Unix(1_700_000_040, 0).UTC()
+	metadata := ProcessMetadata{
+		RunID:      testRunID(t),
+		PID:        4242,
+		RecordedAt: recordedAt,
+		StartedAt:  startedAt,
+		Source:     RunSourceAppServerStart,
+	}
+
+	if err := WriteProcessMetadata(runsBaseDir, metadata); err != nil {
+		t.Fatalf("expected app-server process metadata write success, got %v", err)
+	}
+
+	decoded, err := ReadProcessMetadata(runsBaseDir, metadata.RunID)
+	if err != nil {
+		t.Fatalf("expected app-server process metadata read success, got %v", err)
+	}
+	if decoded.Source != RunSourceAppServerStart {
+		t.Fatalf("expected process metadata source %q, got %q", RunSourceAppServerStart, decoded.Source)
+	}
+}
+
 func TestReadProcessMetadataRejectsMismatchedRunIdentity(t *testing.T) {
 	runsBaseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	expectedRunID := testRunID(t)
