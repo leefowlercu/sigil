@@ -988,6 +988,102 @@ func TestInitRunFromPathRejectsInvalidAccountingFallbackPricingValues(t *testing
 	}
 }
 
+func TestExampleConfigFilesRemainValid(t *testing.T) {
+	clearActiveConfig()
+	clearActiveRunConfig()
+	unsetEnv(
+		t,
+		"SIGIL_LOGS_LEVEL",
+		"SIGIL_LOGS_DIR",
+		"SIGIL_APP_SERVER_INSTANCE_NAME",
+		"SIGIL_APP_SERVER_INSTANCE_ID",
+		"SIGIL_APP_SERVER_RUN_DIR",
+		"SIGIL_APP_SERVER_ALLOWED_ORIGINS",
+		"SIGIL_APP_SERVER_WEBSOCKET_LISTEN_ADDR",
+		"SIGIL_APP_SERVER_WEBSOCKET_PATH",
+		"SIGIL_APP_SERVER_HEALTH_READY_PATH",
+		"SIGIL_APP_SERVER_HEALTH_LIVE_PATH",
+		"SIGIL_APP_SERVER_SUBSCRIPTIONS_POLL_INTERVAL_MS",
+		"SIGIL_APP_SERVER_LIMITS_MAX_CONNECTIONS",
+		"SIGIL_APP_SERVER_LIMITS_MAX_FRAME_BYTES",
+		"SIGIL_RUN_SYSTEM_PROMPT_APPEND",
+		"SIGIL_RUN_PROMPT",
+		"SIGIL_RUN_PROMPT_TEMPLATE",
+		"SIGIL_RUN_CONTEXT",
+		"SIGIL_RUN_CONTEXT_TEMPLATE",
+		"SIGIL_RUN_LLM_PROVIDER",
+		"SIGIL_RUN_LLM_MODEL",
+		"SIGIL_RUN_LLM_GATEWAY",
+		"SIGIL_RUN_LLM_REASONING_ENABLED",
+		"SIGIL_RUN_LLM_REASONING_EFFORT",
+		"SIGIL_RUN_LLM_OPENROUTER_BASE_URL",
+		"SIGIL_RUN_LLM_OPENROUTER_REQUEST_TIMEOUT_MS",
+		"SIGIL_RUN_LLM_OPENROUTER_API_KEY_ENV",
+		"SIGIL_RUN_RLM_ENABLED",
+		"SIGIL_RUN_RLM_MAX_DEPTH",
+		"SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_STEPS_PER_RUN",
+		"SIGIL_RUN_GUARDRAILS_MAX_RUN_DURATION_MS",
+		"SIGIL_RUN_GUARDRAILS_MAX_CONSECUTIVE_STEP_FAILURES",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_TOKENS",
+		"SIGIL_RUN_GUARDRAILS_MAX_TOTAL_COST_USD",
+		"SIGIL_RUN_ACCOUNTING_PRICING_VERSION",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_3_CODEX_INPUT_MICROUSD_PER_MILLION_TOKENS",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_3_CODEX_OUTPUT_MICROUSD_PER_MILLION_TOKENS",
+		"SIGIL_RUN_ACCOUNTING_FALLBACK_PRICING_OPENAI_GPT_5_3_CODEX_REASONING_MICROUSD_PER_MILLION_TOKENS",
+	)
+
+	repoRoot := mustAbsPath(t, filepath.Join("..", ".."))
+	applicationExamplePath := filepath.Join(repoRoot, "sigil.yaml.example")
+	runExamplePath := filepath.Join(repoRoot, "sigil-run.yaml.example")
+	workDir := t.TempDir()
+	chdir(t, workDir)
+
+	applicationExampleContent, err := os.ReadFile(applicationExamplePath)
+	if err != nil {
+		t.Fatalf("failed to read application example config: %v", err)
+	}
+
+	applicationConfigPath := filepath.Join(workDir, "sigil.yaml")
+	if err := os.WriteFile(applicationConfigPath, applicationExampleContent, 0o644); err != nil {
+		t.Fatalf("failed to write temporary application config: %v", err)
+	}
+
+	if err := InitFromPath(applicationConfigPath); err != nil {
+		t.Fatalf("expected application example config to validate, got %v", err)
+	}
+
+	runExampleContent, err := os.ReadFile(runExamplePath)
+	if err != nil {
+		t.Fatalf("failed to read run example config: %v", err)
+	}
+
+	runConfigPath := filepath.Join(workDir, "sigil-run.yaml")
+	if err := os.WriteFile(runConfigPath, runExampleContent, 0o644); err != nil {
+		t.Fatalf("failed to write temporary run config: %v", err)
+	}
+
+	if err := InitRunFromPath(runConfigPath); err != nil {
+		t.Fatalf("expected run example config to validate, got %v", err)
+	}
+
+	applicationConfig := MustGet()
+	if applicationConfig.AppServer.WebSocket.Path != "/app-server" {
+		t.Fatalf("expected websocket path %q, got %q", "/app-server", applicationConfig.AppServer.WebSocket.Path)
+	}
+
+	runConfig := MustGetRun()
+	if runConfig.LLM.Provider != "openai" {
+		t.Fatalf("expected llm.provider %q, got %q", "openai", runConfig.LLM.Provider)
+	}
+	if runConfig.LLM.Model != "gpt-5.3-codex" {
+		t.Fatalf("expected llm.model %q, got %q", "gpt-5.3-codex", runConfig.LLM.Model)
+	}
+	if runConfig.Guardrails.MaxTotalCostUSD == nil || *runConfig.Guardrails.MaxTotalCostUSD != "5" {
+		t.Fatalf("expected guardrails.max_total_cost_usd canonicalized to %q, got %+v", "5", runConfig.Guardrails.MaxTotalCostUSD)
+	}
+}
+
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 
@@ -1051,4 +1147,15 @@ func mustExpandPath(t *testing.T, path string) string {
 	}
 
 	return expanded
+}
+
+func mustAbsPath(t *testing.T, path string) string {
+	t.Helper()
+
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("failed to resolve absolute path for %q: %v", path, err)
+	}
+
+	return absolutePath
 }

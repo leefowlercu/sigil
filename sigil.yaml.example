@@ -1,0 +1,33 @@
+# Copy this file to sigil.yaml and adjust the values for your local environment.
+# Environment variables prefixed with SIGIL_ override file values.
+
+logs:
+  level: info
+  dir: ./.sigil/logs
+
+app_server:
+  # Human-readable instance metadata surfaced by the app-server transport.
+  instance_name: sigil-local
+  instance_id: sigil-local
+
+  # Run corpus used for persisted runs and replayable events.
+  run_dir: ./.sigil/runs
+
+  # Add browser origins when a web UI connects to the app-server transport.
+  allowed_origins:
+    - http://localhost:3000
+
+  websocket:
+    listen_addr: 127.0.0.1:8765
+    path: /app-server
+
+  health:
+    ready_path: /readyz
+    live_path: /healthz
+
+  subscriptions:
+    poll_interval_ms: 500
+
+  limits:
+    max_connections: 50
+    max_frame_bytes: 1048576
