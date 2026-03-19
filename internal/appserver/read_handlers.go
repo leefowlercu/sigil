@@ -402,6 +402,7 @@ func appServerQueryError(err error) *protocol.ErrorObject {
 func mapRunSummary(value runtime.RunSummary) protocol.RunSummaryView {
 	return protocol.RunSummaryView{
 		RunID:          value.RunID,
+		Name:           value.Name,
 		State:          value.State,
 		Source:         value.Source,
 		QueuedAt:       cloneTimePointer(value.QueuedAt),
@@ -437,6 +438,7 @@ func mapRunProjection(value runtime.RunProjection) protocol.RunProjectionView {
 
 	return protocol.RunProjectionView{
 		RunID:             value.RunID,
+		Name:              value.Name,
 		State:             value.State,
 		RunDir:            value.RunDir,
 		EventsPath:        value.EventsPath,

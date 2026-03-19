@@ -279,6 +279,7 @@ Feature: Sigil app-server transport and protocol tooling
       """
     And the app-server requests run/start with inline YAML:
       """
+      name: test-run
       prompt: hello from app-server
       context: acceptance context
       llm:

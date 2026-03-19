@@ -300,6 +300,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Loads default run configuration file from current working directory
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: default prompt
       context: default context
       llm:
@@ -314,6 +315,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies SIGIL_RUN environment variable overrides using dot-to-underscore key mapping
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: file prompt
       context: file context
       llm:
@@ -329,6 +331,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects run configuration when llm.provider or llm.model is missing after merge
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -340,6 +343,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Requires exactly one of prompt and prompt_template
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       prompt_template: prompt-template
       context: context
@@ -353,6 +357,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Requires exactly one of context and context_template
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       context_template: context-template
@@ -366,6 +371,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Defaults llm.gateway to openrouter when omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -379,6 +385,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Allows omitted llm.openrouter block when gateway is openrouter
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -394,6 +401,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects unsupported llm.gateway values
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -407,6 +415,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies OpenRouter defaults when openrouter fields are omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -423,6 +432,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies RLM defaults when rlm fields are omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -436,6 +446,7 @@ Feature: Sigil baseline CLI and config contracts
 
   Scenario: Accepts required values provided entirely by environment variables
     Given no default run config files exist
+    And environment override "SIGIL_RUN_NAME" is "test-run"
     And environment override "SIGIL_RUN_PROMPT" is "env prompt"
     And environment override "SIGIL_RUN_CONTEXT" is "env context"
     And environment override "SIGIL_RUN_LLM_PROVIDER" is "openai"
@@ -448,6 +459,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Accepts llm.provider only when value is openai or anthropic
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -458,6 +470,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -468,6 +481,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -480,6 +494,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Validates llm.model against allowed list for provider openai
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -490,6 +505,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -502,6 +518,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Validates llm.model against allowed list for provider anthropic
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -512,6 +529,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -524,6 +542,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects run configuration when llm.model is not allowed for selected llm.provider
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -536,6 +555,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies default reasoning config values when llm.reasoning block is omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -550,6 +570,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Accepts llm.reasoning.effort only when value is minimal low medium or high
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -562,6 +583,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -574,6 +596,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -586,6 +609,7 @@ Feature: Sigil baseline CLI and config contracts
     Then run configuration initialization succeeds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -600,6 +624,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Allows reasoning effort to be present and ignored when llm.reasoning.enabled is false
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -617,6 +642,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies SIGIL_RUN environment overrides for llm.reasoning.enabled and llm.reasoning.effort
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -697,6 +723,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt_template: prompt {{.name}}
       context_template: context {{.name}}
       llm:
@@ -725,6 +752,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt_template: prompt {{.name}}
       context_template: context {{.name}}
       llm:
@@ -771,6 +799,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt_template: prompt {{.name}}
       context_template: context {{.name}}
       llm:
@@ -788,6 +817,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt_template: prompt {{.missing}}
       context: context
       llm:
@@ -833,6 +863,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -899,6 +930,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: root prompt
       context: root context
       llm:
@@ -923,6 +955,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: root prompt
       context: root context
       llm:
@@ -946,6 +979,7 @@ Feature: Sigil baseline CLI and config contracts
       """
     And run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt_template: prompt {{.missing}}
       context: context
       llm:
@@ -1327,6 +1361,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Resolves OpenAI base system prompt when llm.provider is openai
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -1339,6 +1374,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Resolves Anthropic base system prompt when llm.provider is anthropic
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -1681,6 +1717,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Routes subcalls through active node llm provider and model configuration
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -1986,6 +2023,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Defines deterministic guardrails section in run config schema including optional accounting budgets
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2005,6 +2043,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies deterministic guardrail defaults when guardrails fields are omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2023,6 +2062,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies SIGIL_RUN environment overrides for deterministic guardrail fields
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2053,6 +2093,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects run configuration when deterministic guardrail values are invalid
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2097,6 +2138,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Defines run guardrails config section for deterministic step time failure and accounting budget thresholds
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2116,6 +2158,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies default deterministic guardrail values when guardrails config is omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2134,6 +2177,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects invalid deterministic guardrail configuration values
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2214,6 +2258,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Defines accounting section in run config schema
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2236,6 +2281,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies default accounting pricing version when accounting section is omitted
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2249,6 +2295,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Applies SIGIL_RUN environment overrides for accounting fallback pricing
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:
@@ -2268,6 +2315,7 @@ Feature: Sigil baseline CLI and config contracts
   Scenario: Rejects run configuration when accounting fallback pricing values are non-positive
     Given run configuration exists at "./sigil-run.yaml" with:
       """
+      name: test-run
       prompt: prompt
       context: context
       llm:

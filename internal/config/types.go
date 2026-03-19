@@ -51,6 +51,7 @@ type AppServerLimitsConfig struct {
 
 // RunConfig is the typed run configuration contract for sigil.
 type RunConfig struct {
+	Name               string              `yaml:"name" mapstructure:"name"`
 	SystemPromptAppend string              `yaml:"system_prompt_append" mapstructure:"system_prompt_append"`
 	Prompt             string              `yaml:"prompt" mapstructure:"prompt"`
 	PromptTemplate     string              `yaml:"prompt_template" mapstructure:"prompt_template"`

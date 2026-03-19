@@ -146,6 +146,7 @@ func (r *Runner) acceptRun(ctx context.Context, input RunInput) (_ *acceptedRun,
 	}
 
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:            input.RunConfig.Name,
 		RunsBaseDir:     r.runsBaseDir,
 		QueuedSource:    queuedSource,
 		AppConfigPath:   cloneOptionalString(input.AppConfigPath),

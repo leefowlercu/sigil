@@ -280,6 +280,7 @@ func TestInitRunUsesEnvironmentWhenDefaultRunConfigFileIsMissing(t *testing.T) {
 	clearActiveRunConfig()
 	unsetEnv(
 		t,
+		"SIGIL_RUN_NAME",
 		"SIGIL_RUN_PROMPT",
 		"SIGIL_RUN_CONTEXT",
 		"SIGIL_RUN_LLM_PROVIDER",
@@ -287,6 +288,7 @@ func TestInitRunUsesEnvironmentWhenDefaultRunConfigFileIsMissing(t *testing.T) {
 	)
 	chdir(t, t.TempDir())
 
+	t.Setenv("SIGIL_RUN_NAME", "env-test-run")
 	t.Setenv("SIGIL_RUN_PROMPT", "env prompt")
 	t.Setenv("SIGIL_RUN_CONTEXT", "env context")
 	t.Setenv("SIGIL_RUN_LLM_PROVIDER", "openai")
@@ -334,7 +336,7 @@ func TestInitRunFromPathAppliesEnvironmentOverridesOverFile(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: file prompt\ncontext: file context\nllm:\n  provider: anthropic\n  model: claude-sonnet-4\n",
+		"name: test-run\nprompt: file prompt\ncontext: file context\nllm:\n  provider: anthropic\n  model: claude-sonnet-4\n",
 	)
 
 	t.Setenv("SIGIL_RUN_LLM_PROVIDER", "openai")
@@ -365,11 +367,11 @@ func TestInitRunFromPathRejectsMissingProviderOrModel(t *testing.T) {
 	}{
 		{
 			name:    "missing provider",
-			content: "prompt: prompt\ncontext: context\nllm:\n  model: gpt-5.1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  model: gpt-5.1\n",
 		},
 		{
 			name:    "missing model",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n",
 		},
 	}
 
@@ -459,7 +461,7 @@ func TestInitRunFromPathAppliesGatewayOpenRouterAndRLMDefaults(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n",
 	)
 
 	if err := InitRunFromPath(configPath); err != nil {
@@ -523,7 +525,7 @@ func TestInitRunFromPathRejectsUnsupportedGateway(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  gateway: unsupported\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  gateway: unsupported\n",
 	)
 
 	if err := InitRunFromPath(configPath); err == nil {
@@ -540,7 +542,7 @@ func TestInitRunFromPathValidatesProviderAllowList(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: unsupported\n  model: gpt-5.1\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: unsupported\n  model: gpt-5.1\n",
 	)
 
 	if err := InitRunFromPath(configPath); err == nil {
@@ -560,22 +562,22 @@ func TestInitRunFromPathValidatesProviderModelAllowListMapping(t *testing.T) {
 	}{
 		{
 			name:    "openai allowed",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n",
 			wantErr: false,
 		},
 		{
 			name:    "anthropic allowed",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: anthropic\n  model: claude-sonnet-4\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: anthropic\n  model: claude-sonnet-4\n",
 			wantErr: false,
 		},
 		{
 			name:    "openai with anthropic model",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: claude-sonnet-4\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: claude-sonnet-4\n",
 			wantErr: true,
 		},
 		{
 			name:    "anthropic with openai model",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: anthropic\n  model: gpt-5.1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: anthropic\n  model: gpt-5.1\n",
 			wantErr: true,
 		},
 	}
@@ -609,27 +611,27 @@ func TestInitRunFromPathValidatesReasoningEffortValues(t *testing.T) {
 	}{
 		{
 			name:    "minimal",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: minimal\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: minimal\n",
 			wantErr: false,
 		},
 		{
 			name:    "low",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: low\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: low\n",
 			wantErr: false,
 		},
 		{
 			name:    "medium",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: medium\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: medium\n",
 			wantErr: false,
 		},
 		{
 			name:    "high",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: high\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: high\n",
 			wantErr: false,
 		},
 		{
 			name:    "invalid",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: extreme\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    effort: extreme\n",
 			wantErr: true,
 		},
 	}
@@ -660,7 +662,7 @@ func TestInitRunFromPathAllowsReasoningEffortWhenReasoningDisabled(t *testing.T)
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    enabled: false\n    effort: high\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n  reasoning:\n    enabled: false\n    effort: high\n",
 	)
 
 	if err := InitRunFromPath(configPath); err != nil {
@@ -686,7 +688,7 @@ func TestInitRunFromPathClearsActiveRunConfigOnValidationFailure(t *testing.T) {
 	writeRunTestFile(
 		t,
 		validPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\n",
 	)
 
 	if err := InitRunFromPath(validPath); err != nil {
@@ -697,7 +699,7 @@ func TestInitRunFromPathClearsActiveRunConfigOnValidationFailure(t *testing.T) {
 	writeRunTestFile(
 		t,
 		invalidPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: claude-sonnet-4\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: claude-sonnet-4\n",
 	)
 
 	if err := InitRunFromPath(invalidPath); err == nil {
@@ -737,7 +739,7 @@ func TestInitRunFromPathAppliesGuardrailEnvironmentOverrides(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n  max_total_tokens: 99\n  max_total_cost_usd: \"0.25\"\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n  max_total_tokens: 99\n  max_total_cost_usd: \"0.25\"\n",
 	)
 
 	t.Setenv("SIGIL_RUN_GUARDRAILS_MAX_STEPS_PER_NODE", "64")
@@ -783,31 +785,31 @@ func TestInitRunFromPathRejectsInvalidGuardrailValues(t *testing.T) {
 	}{
 		{
 			name:    "max steps per node non-positive",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 0\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 0\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n",
 		},
 		{
 			name:    "max total steps per run non-positive",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 0\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 0\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n",
 		},
 		{
 			name:    "max run duration non-positive",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 0\n  max_consecutive_step_failures: 1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 0\n  max_consecutive_step_failures: 1\n",
 		},
 		{
 			name:    "max consecutive failures non-positive",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 0\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 0\n",
 		},
 		{
 			name:    "max total tokens non-positive",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_tokens: 0\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_tokens: 0\n",
 		},
 		{
 			name:    "max total cost usd malformed",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_cost_usd: \"1.2345678\"\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_cost_usd: \"1.2345678\"\n",
 		},
 		{
 			name:    "max total cost usd numeric instead of string",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_cost_usd: 1.25\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 1\n  max_total_steps_per_run: 1\n  max_run_duration_ms: 1\n  max_consecutive_step_failures: 1\n  max_total_cost_usd: 1.25\n",
 		},
 	}
 
@@ -832,7 +834,7 @@ func TestInitRunFromPathCanonicalizesGuardrailCostBudgetFromFile(t *testing.T) {
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n  max_total_tokens: 321\n  max_total_cost_usd: \"00012.340000\"\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 20\n  max_run_duration_ms: 30000\n  max_consecutive_step_failures: 2\n  max_total_tokens: 321\n  max_total_cost_usd: \"00012.340000\"\n",
 	)
 
 	if err := InitRunFromPath(configPath); err != nil {
@@ -857,7 +859,7 @@ func TestInitRunFromPathAllowsRunTotalStepBudgetBelowPerNodeBudget(t *testing.T)
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 5\n  max_run_duration_ms: 1000\n  max_consecutive_step_failures: 2\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\nguardrails:\n  max_steps_per_node: 10\n  max_total_steps_per_run: 5\n  max_run_duration_ms: 1000\n  max_consecutive_step_failures: 2\n",
 	)
 
 	if err := InitRunFromPath(configPath); err != nil {
@@ -889,7 +891,7 @@ func TestInitRunFromPathAppliesAccountingFallbackPricingEnvironmentOverrides(t *
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  pricing_version: file-v1\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  pricing_version: file-v1\n",
 	)
 
 	t.Setenv("SIGIL_RUN_ACCOUNTING_PRICING_VERSION", "env-v2")
@@ -930,7 +932,7 @@ func TestInitRunFromPathDecodesAccountingFallbackPricingFromFileKeysWithDots(t *
 	writeRunTestFile(
 		t,
 		configPath,
-		"prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  pricing_version: custom-v1\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 111\n        output_microusd_per_million_tokens: 222\n        reasoning_microusd_per_million_tokens: 333\n",
+		"name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  pricing_version: custom-v1\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 111\n        output_microusd_per_million_tokens: 222\n        reasoning_microusd_per_million_tokens: 333\n",
 	)
 
 	if err := InitRunFromPath(configPath); err != nil {
@@ -960,15 +962,15 @@ func TestInitRunFromPathRejectsInvalidAccountingFallbackPricingValues(t *testing
 	}{
 		{
 			name:    "zero input rate",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 0\n        output_microusd_per_million_tokens: 1\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 0\n        output_microusd_per_million_tokens: 1\n",
 		},
 		{
 			name:    "negative reasoning rate",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 1\n        output_microusd_per_million_tokens: 2\n        reasoning_microusd_per_million_tokens: -3\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 1\n        output_microusd_per_million_tokens: 2\n        reasoning_microusd_per_million_tokens: -3\n",
 		},
 		{
 			name:    "fractional input rate",
-			content: "prompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 1.5\n        output_microusd_per_million_tokens: 2\n",
+			content: "name: test-run\nprompt: prompt\ncontext: context\nllm:\n  provider: openai\n  model: gpt-5.1\naccounting:\n  fallback_pricing:\n    openai:\n      gpt-5.1:\n        input_microusd_per_million_tokens: 1.5\n        output_microusd_per_million_tokens: 2\n",
 		},
 	}
 

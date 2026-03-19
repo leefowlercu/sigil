@@ -1,3 +1,5 @@
+name: mrcr-2needle
+
 prompt_template: |
   {{.question}}
 

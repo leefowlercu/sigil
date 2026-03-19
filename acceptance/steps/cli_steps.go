@@ -516,7 +516,7 @@ func (w *harnessWorld) applicationConfigExistsAtWith(path string, body *godog.Do
 }
 
 func (w *harnessWorld) runConfigFileExistsAt(path string) error {
-	content := "prompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n"
+	content := "name: test-run\nprompt: test\ncontext: test\nllm:\n  provider: openai\n  model: gpt-5.1\n"
 	return os.WriteFile(filepath.Clean(path), []byte(content), 0o644)
 }
 
@@ -2470,6 +2470,7 @@ func (w *harnessWorld) sigilRunStopTargetsUnknownCorruptStaleAndMissingProcessRu
 	w.invalidCaseRunIDs["corrupt"] = corruptID.String()
 
 	staleLifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  sigilruntime.DefaultRunsBaseDir,
 		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     1,
@@ -2503,6 +2504,7 @@ func (w *harnessWorld) sigilRunStopTargetsUnknownCorruptStaleAndMissingProcessRu
 	}
 
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  sigilruntime.DefaultRunsBaseDir,
 		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     1,
@@ -2640,6 +2642,7 @@ func (w *harnessWorld) resetLifecycleToState(targetState sigilruntime.RunState) 
 	}
 
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:        "test-run",
 		RunsBaseDir: sigilruntime.DefaultRunsBaseDir,
 		MaxDepth:    3,
 	})
@@ -2961,6 +2964,7 @@ func main() {
 	}
 
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runtime.DefaultRunsBaseDir,
 		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     1,
@@ -3237,6 +3241,7 @@ func isKilledExecError(err error) bool {
 
 func (w *harnessWorld) createTerminalRun(targetState sigilruntime.RunState) (string, error) {
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  sigilruntime.DefaultRunsBaseDir,
 		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     1,
@@ -3298,6 +3303,7 @@ func validateCanonicalEventTypeFixtures() error {
 			"causation_id":   "", // set below
 			"correlation_id": runID,
 			"payload": map[string]any{
+				"name":   "test-run",
 				"source": string(sigilruntime.RunQueuedSourceInternalResume),
 			},
 		},

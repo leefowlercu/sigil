@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +68,8 @@ var (
 		"medium":  {},
 		"high":    {},
 	}
+
+	validRunNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 )
 
 // Init initializes configuration using the default config source.
@@ -345,6 +348,7 @@ func registerDefaults(v *viper.Viper) {
 
 func registerRunDefaults(v *viper.Viper) {
 	defaults := NewDefaultRunConfig()
+	v.SetDefault("name", defaults.Name)
 	v.SetDefault("system_prompt_append", defaults.SystemPromptAppend)
 	v.SetDefault("prompt", defaults.Prompt)
 	v.SetDefault("prompt_template", defaults.PromptTemplate)
@@ -432,6 +436,20 @@ func validateConfig(cfg Config) error {
 }
 
 func validateRunConfig(cfg RunConfig) error {
+	name := strings.TrimSpace(cfg.Name)
+	if name == "" {
+		return errors.New("name is required")
+	}
+	if len(name) < 3 {
+		return errors.New("name must be at least 3 characters")
+	}
+	if len(name) > 40 {
+		return errors.New("name must be at most 40 characters")
+	}
+	if !validRunNamePattern.MatchString(name) {
+		return fmt.Errorf("name %q must be lowercase alphanumeric and hyphen-delimited", name)
+	}
+
 	if !exactlyOneStringSet(cfg.Prompt, cfg.PromptTemplate) {
 		return errors.New("exactly one of prompt and prompt_template must be set")
 	}

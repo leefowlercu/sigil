@@ -315,7 +315,7 @@ func TestServeStdioRunStartReturnsQueuedSnapshot(t *testing.T) {
 	},
 		initializeRequest(protocol.DefaultProtocolVersion()),
 		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
-		`{"jsonrpc":"2.0","id":"2","method":"run/start","params":{"runConfigYaml":"prompt: hello\ncontext: world\nllm:\n  provider: openai\n  model: gpt-5.1\n"}}`,
+		`{"jsonrpc":"2.0","id":"2","method":"run/start","params":{"runConfigYaml":"name: test-run\nprompt: hello\ncontext: world\nllm:\n  provider: openai\n  model: gpt-5.1\n"}}`,
 	)
 
 	if len(responses) != 2 {
@@ -346,6 +346,7 @@ func TestServeStdioRunStartReturnsQueuedSnapshot(t *testing.T) {
 func TestServeStdioRunSubscribeFreshAttachStreamsAppendedEvents(t *testing.T) {
 	runsDir := t.TempDir()
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsDir,
 		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     2,
@@ -419,7 +420,7 @@ func TestServeStdioRunSubscribeUsesInProcessObserverForOwnedRun(t *testing.T) {
 		t.Fatalf("expected initialize response, got %v", err)
 	}
 	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
-	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"run/start","params":{"runConfigYaml":"prompt: hello\ncontext: world\nllm:\n  provider: openai\n  model: gpt-5.1\n"}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"run/start","params":{"runConfigYaml":"name: test-run\nprompt: hello\ncontext: world\nllm:\n  provider: openai\n  model: gpt-5.1\n"}}`)
 
 	startResponse, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
 		id, _ := message["id"].(string)
@@ -524,6 +525,7 @@ func TestServeStdioRunSubscribeResumeReplaysEventsAfterCursor(t *testing.T) {
 func TestServeStdioRunUnsubscribeStopsFurtherNotifications(t *testing.T) {
 	runsDir := t.TempDir()
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsDir,
 		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     2,
@@ -577,6 +579,7 @@ func TestServeStdioRunUnsubscribeStopsFurtherNotifications(t *testing.T) {
 func TestServeStdioDuplicateRunSubscribeReplacesEarlierSubscription(t *testing.T) {
 	runsDir := t.TempDir()
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsDir,
 		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     2,
@@ -685,7 +688,7 @@ func TestServeStdioRunStopUsesInProcessFastPathForOwnedRun(t *testing.T) {
 		t.Fatalf("expected initialize response, got %v", err)
 	}
 	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
-	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"run/start","params":{"runConfigYaml":"prompt: hello\ncontext: world\nllm:\n  provider: openai\n  model: gpt-5.1\n"}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"run/start","params":{"runConfigYaml":"name: test-run\nprompt: hello\ncontext: world\nllm:\n  provider: openai\n  model: gpt-5.1\n"}}`)
 
 	startResponse, err := server.readMessage(t, 2*time.Second)
 	if err != nil {
@@ -1047,6 +1050,7 @@ func createRichRunFixture(t *testing.T) richRunFixture {
 
 	runsDir := t.TempDir()
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsDir,
 		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     3,

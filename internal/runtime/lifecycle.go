@@ -65,6 +65,7 @@ func NewLifecycleWithOptions(opts LifecycleOptions) (*Lifecycle, error) {
 	}
 
 	queuedPayload := RunQueuedPayload{
+		Name:          lifecycle.options.Name,
 		Source:        lifecycle.options.QueuedSource,
 		AppConfigPath: cloneStringPointer(lifecycle.options.AppConfigPath),
 		RunConfigPath: cloneStringPointer(lifecycle.options.RunConfigPath),

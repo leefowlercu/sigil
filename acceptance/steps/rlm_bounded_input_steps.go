@@ -1180,6 +1180,7 @@ func (w *harnessWorld) executeBoundedHarnessRun(runConfig config.RunConfig, resp
 
 func boundedRunConfig(prompt string, contextValue string) config.RunConfig {
 	cfg := config.NewDefaultRunConfig()
+	cfg.Name = "test-run"
 	cfg.Prompt = prompt
 	cfg.Context = contextValue
 	cfg.PromptTemplate = ""

@@ -26,6 +26,7 @@ const (
 // RunSummary provides one compact operator-facing run summary.
 type RunSummary struct {
 	RunID          string     `json:"run_id"`
+	Name           string     `json:"name"`
 	State          string     `json:"state"`
 	Source         string     `json:"source,omitempty"`
 	QueuedAt       *time.Time `json:"queued_at,omitempty"`
@@ -58,6 +59,7 @@ type RunNodeProjection struct {
 // RunProjection provides a detailed derived run inspection payload.
 type RunProjection struct {
 	RunID             string               `json:"run_id"`
+	Name              string               `json:"name"`
 	State             string               `json:"state"`
 	RunDir            string               `json:"run_dir"`
 	EventsPath        string               `json:"events_path"`
@@ -179,6 +181,7 @@ func deriveRunProjectionFromResolvedBaseDir(baseDir string, runID string, events
 	for _, event := range events {
 		switch payload := event.Payload.(type) {
 		case RunQueuedPayload:
+			projection.Name = payload.Name
 			projection.Source = string(payload.Source)
 			projection.AppConfigPath = cloneStringPointer(payload.AppConfigPath)
 			projection.RunConfigPath = cloneStringPointer(payload.RunConfigPath)
@@ -324,6 +327,7 @@ func ListRuns(baseDir string) ([]RunSummary, error) {
 func summarizeProjection(projection RunProjection) RunSummary {
 	return RunSummary{
 		RunID:          projection.RunID,
+		Name:           projection.Name,
 		State:          projection.State,
 		Source:         projection.Source,
 		QueuedAt:       cloneTimePointer(projection.QueuedAt),

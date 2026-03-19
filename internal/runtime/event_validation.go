@@ -249,11 +249,13 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 	switch eventType {
 	case EventTypeRunQueued:
 		allowed := map[string]struct{}{
+			"name":            {},
 			"source":          {},
 			"app_config_path": {},
 			"run_config_path": {},
 		}
 		required := map[string]struct{}{
+			"name":   {},
 			"source": {},
 		}
 		var payload RunQueuedPayload

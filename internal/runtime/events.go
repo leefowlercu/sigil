@@ -123,6 +123,7 @@ type EventObserver func(EventEnvelope)
 
 // RunQueuedPayload is the strict payload for run.queued.
 type RunQueuedPayload struct {
+	Name          string          `json:"name"`
 	Source        RunQueuedSource `json:"source"`
 	AppConfigPath *string         `json:"app_config_path,omitempty"`
 	RunConfigPath *string         `json:"run_config_path,omitempty"`
@@ -254,6 +255,7 @@ type RunInterruptedPayload struct {
 
 // LifecycleOptions configures lifecycle defaults and durable event-store behavior.
 type LifecycleOptions struct {
+	Name            string
 	RunsBaseDir     string
 	QueuedSource    RunQueuedSource
 	AppConfigPath   *string

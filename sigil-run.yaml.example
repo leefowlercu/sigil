@@ -2,6 +2,9 @@
 #   sigil run start --run-config ./sigil-run.yaml
 # Environment variables prefixed with SIGIL_RUN_ override file values.
 
+# Required. 3-40 chars, lowercase alphanumeric, hyphen-delimited.
+name: my-example-run
+
 system_prompt_append: |
   Answer only with the final result requested by the prompt.
 

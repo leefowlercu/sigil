@@ -289,6 +289,7 @@ func (w *harnessWorld) ensureRuntime(maxDepth int, factory sigilrepl.SessionFact
 	}
 
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:        "test-run",
 		RunsBaseDir: w.runsBaseDir(),
 		MaxDepth:    maxDepth,
 	})
@@ -2216,6 +2217,7 @@ func (w *harnessWorld) executeGuardrailFixture(fixture string, nonRecursive bool
 
 func guardrailRunConfig(fixture string, nonRecursive bool) config.RunConfig {
 	cfg := config.NewDefaultRunConfig()
+	cfg.Name = "test-run"
 	cfg.Prompt = "guardrail prompt"
 	cfg.Context = "guardrail context"
 	cfg.LLM.Provider = "openai"
@@ -2479,7 +2481,8 @@ func (w *harnessWorld) prepareGuardrailCLIEntrypointFixture(fixture string) erro
 func guardrailRunConfigYAML(fixture string, nonRecursive bool) string {
 	cfg := guardrailRunConfig(fixture, nonRecursive)
 	return fmt.Sprintf(
-		"prompt: %s\ncontext: %s\nllm:\n  provider: %s\n  model: %s\nrlm:\n  enabled: %t\n  max_depth: %d\nguardrails:\n  max_steps_per_node: %d\n  max_total_steps_per_run: %d\n  max_run_duration_ms: %d\n  max_consecutive_step_failures: %d\n",
+		"name: %s\nprompt: %s\ncontext: %s\nllm:\n  provider: %s\n  model: %s\nrlm:\n  enabled: %t\n  max_depth: %d\nguardrails:\n  max_steps_per_node: %d\n  max_total_steps_per_run: %d\n  max_run_duration_ms: %d\n  max_consecutive_step_failures: %d\n",
+		cfg.Name,
 		cfg.Prompt,
 		cfg.Context,
 		cfg.LLM.Provider,

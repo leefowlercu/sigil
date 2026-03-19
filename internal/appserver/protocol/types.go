@@ -118,6 +118,7 @@ type StopRequestMetadataView struct {
 // RunSummaryView defines one app-server run summary payload.
 type RunSummaryView struct {
 	RunID          string     `json:"runId"`
+	Name           string     `json:"name"`
 	State          string     `json:"state"`
 	Source         string     `json:"source,omitempty"`
 	QueuedAt       *time.Time `json:"queuedAt,omitempty"`
@@ -150,6 +151,7 @@ type RunNodeProjectionView struct {
 // RunProjectionView defines one app-server detailed run projection payload.
 type RunProjectionView struct {
 	RunID             string                   `json:"runId"`
+	Name              string                   `json:"name"`
 	State             string                   `json:"state"`
 	RunDir            string                   `json:"runDir"`
 	EventsPath        string                   `json:"eventsPath"`

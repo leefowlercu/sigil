@@ -633,6 +633,7 @@ func (w *harnessWorld) aQueuedLiveAppServerFixtureExistsInTheConfiguredRunDirect
 	}
 
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  cfg.AppServer.RunDir,
 		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     2,
@@ -1295,6 +1296,7 @@ func isWebSocketReadTimeout(err error) bool {
 
 func (w *harnessWorld) createRichAppServerRun(runsBaseDir string) (*appServerReadFixtures, error) {
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsBaseDir,
 		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     3,

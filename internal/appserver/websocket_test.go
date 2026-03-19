@@ -133,6 +133,7 @@ func TestServeWebSocketEmitsHeartbeatOnIdleConnection(t *testing.T) {
 func TestServeWebSocketReconnectResumeSubscribeWithoutGaps(t *testing.T) {
 	runsDir := t.TempDir()
 	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsDir,
 		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     2,

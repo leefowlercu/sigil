@@ -114,6 +114,7 @@ func (w *harnessWorld) validApplicationAndRunConfigurationInputs() error {
 		return fmt.Errorf("failed to write sigil.yaml; %w", err)
 	}
 	runConfig := strings.Join([]string{
+		"name: test-run",
 		"prompt: test prompt",
 		"context: test context",
 		"llm:",
@@ -867,6 +868,7 @@ func (w *harnessWorld) ensureProjectionFixtures() error {
 
 func (w *harnessWorld) createCompletedRun(runsBaseDir string, finalAnswerRef *string, accountingRef *string) (string, error) {
 	lifecycle, err := sigilruntime.NewLifecycleWithOptions(sigilruntime.LifecycleOptions{
+		Name:         "test-run",
 		RunsBaseDir:  runsBaseDir,
 		QueuedSource: sigilruntime.RunQueuedSourceCLIRunStart,
 		MaxDepth:     3,
