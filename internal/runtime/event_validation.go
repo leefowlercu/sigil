@@ -477,9 +477,13 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		return payload, nil
 	case EventTypeNodeTurnUser, EventTypeNodeTurnModel:
 		allowed := map[string]struct{}{
-			"step_id":     {},
-			"role":        {},
-			"content_ref": {},
+			"step_id":          {},
+			"role":             {},
+			"content_ref":      {},
+			"input_tokens":     {},
+			"output_tokens":    {},
+			"total_tokens":     {},
+			"reasoning_tokens": {},
 		}
 		required := map[string]struct{}{
 			"step_id":     {},

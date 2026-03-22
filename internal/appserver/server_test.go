@@ -1149,10 +1149,10 @@ func createRichRunFixture(t *testing.T) richRunFixture {
 		"run_id": fixture.RunID,
 	})
 
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleUser, stepStarted.StepID, userTurnRef); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleUser, stepStarted.StepID, userTurnRef, nil); err != nil {
 		t.Fatalf("expected append node.turn.user success, got %v", err)
 	}
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleModel, stepStarted.StepID, modelTurnRef); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleModel, stepStarted.StepID, modelTurnRef, nil); err != nil {
 		t.Fatalf("expected append node.turn.model success, got %v", err)
 	}
 	if err := lifecycle.CompleteNodeWithAccounting(childNode.ID, nil, testRollup(), &childNodeAccountingRef); err != nil {

@@ -813,10 +813,10 @@ func (w *harnessWorld) transcriptContributionsArePersistedForThatStep() error {
 		return fmt.Errorf("expected active step before recording transcript contributions")
 	}
 	nodeID := state.activeNode.ID
-	if err := w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleUser, state.activeStepID, "run-artifact://turn/user"); err != nil {
+	if err := w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleUser, state.activeStepID, "run-artifact://turn/user", nil); err != nil {
 		return err
 	}
-	return w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleModel, state.activeStepID, "run-artifact://turn/model")
+	return w.lifecycle.AppendNodeTurn(nodeID, sigilruntime.TurnRoleModel, state.activeStepID, "run-artifact://turn/model", nil)
 }
 
 func (w *harnessWorld) eachTurnContributionIsRecordedWithRoleUserOrModel() error {

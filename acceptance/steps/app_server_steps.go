@@ -1414,10 +1414,10 @@ func (w *harnessWorld) createRichAppServerRun(runsBaseDir string) (*appServerRea
 		return nil, err
 	}
 
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, sigilruntime.TurnRoleUser, stepStarted.StepID, userTurnRef); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, sigilruntime.TurnRoleUser, stepStarted.StepID, userTurnRef, nil); err != nil {
 		return nil, fmt.Errorf("failed to append node.turn.user; %w", err)
 	}
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, sigilruntime.TurnRoleModel, stepStarted.StepID, modelTurnRef); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, sigilruntime.TurnRoleModel, stepStarted.StepID, modelTurnRef, nil); err != nil {
 		return nil, fmt.Errorf("failed to append node.turn.model; %w", err)
 	}
 	if err := lifecycle.CompleteNodeWithAccounting(childNode.ID, nil, acceptanceUnavailableRollup(), &childNodeAccountingRef); err != nil {

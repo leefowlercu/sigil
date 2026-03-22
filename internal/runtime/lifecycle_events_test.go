@@ -229,10 +229,10 @@ func TestLifecycleAppendsStepTurnAndActionEvents(t *testing.T) {
 		t.Fatalf("expected step started append success, got %v", err)
 	}
 
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleUser, stepStarted.StepID, "run-artifact://turn/user"); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleUser, stepStarted.StepID, "run-artifact://turn/user", nil); err != nil {
 		t.Fatalf("expected user turn append success, got %v", err)
 	}
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleModel, stepStarted.StepID, "run-artifact://turn/model"); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, TurnRoleModel, stepStarted.StepID, "run-artifact://turn/model", nil); err != nil {
 		t.Fatalf("expected model turn append success, got %v", err)
 	}
 	if err := lifecycle.AppendNodeSubcallExecuted(rootNode.ID, NodeSubcallExecutedPayload{

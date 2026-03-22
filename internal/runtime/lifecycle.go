@@ -492,8 +492,9 @@ func (l *Lifecycle) AppendNodeStepStarted(nodeID string) (NodeStepStartedPayload
 	return payload, nil
 }
 
-// AppendNodeTurn appends node.turn.user or node.turn.model events.
-func (l *Lifecycle) AppendNodeTurn(nodeID string, role TurnRole, stepID string, contentRef string) error {
+// AppendNodeTurn appends node.turn.user or node.turn.model events. Pass a
+// non-nil tokens value to include per-turn token accounting (model turns only).
+func (l *Lifecycle) AppendNodeTurn(nodeID string, role TurnRole, stepID string, contentRef string, tokens *TurnTokenUsage) error {
 	if l.state != RunStateRunning {
 		return fmt.Errorf("cannot append node.turn while run state is %q; %w", l.state, ErrRunNotRunning)
 	}
@@ -509,6 +510,12 @@ func (l *Lifecycle) AppendNodeTurn(nodeID string, role TurnRole, stepID string, 
 		StepID:     stepID,
 		Role:       role,
 		ContentRef: contentRef,
+	}
+	if tokens != nil {
+		payload.InputTokens = tokens.InputTokens
+		payload.OutputTokens = tokens.OutputTokens
+		payload.TotalTokens = tokens.TotalTokens
+		payload.ReasoningTokens = tokens.ReasoningTokens
 	}
 	if _, err := l.eventStore.AppendNext(eventType, &nodeID, payload); err != nil {
 		return fmt.Errorf("failed to persist %s event; %w", eventType, err)

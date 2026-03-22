@@ -500,10 +500,10 @@ func createRichRunFixture(t *testing.T) richRunFixture {
 		"accounting": map[string]any{"token_status": "complete"},
 	})
 
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleUser, stepStarted.StepID, fixture.UserTurnRef); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleUser, stepStarted.StepID, fixture.UserTurnRef, nil); err != nil {
 		t.Fatalf("expected append node.turn.user success, got %v", err)
 	}
-	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleModel, stepStarted.StepID, fixture.ModelTurnRef); err != nil {
+	if err := lifecycle.AppendNodeTurn(rootNode.ID, runtime.TurnRoleModel, stepStarted.StepID, fixture.ModelTurnRef, nil); err != nil {
 		t.Fatalf("expected append node.turn.model success, got %v", err)
 	}
 	if err := lifecycle.CompleteNodeWithAccounting(childNode.ID, nil, testRollup(), &childNodeAccountingRef); err != nil {

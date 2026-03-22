@@ -539,7 +539,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to persist user turn artifact", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist user turn artifact", err)
 		}
-		if err := execCtx.lifecycle.AppendNodeTurn(node.ID, runtime.TurnRoleUser, stepStarted.StepID, userTurnRef); err != nil {
+		if err := execCtx.lifecycle.AppendNodeTurn(node.ID, runtime.TurnRoleUser, stepStarted.StepID, userTurnRef, nil); err != nil {
 			logger.Error("failed to append node.turn.user", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.turn.user", err)
 		}
@@ -592,7 +592,13 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to persist model turn artifact", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist model turn artifact", err)
 		}
-		if err := execCtx.lifecycle.AppendNodeTurn(node.ID, runtime.TurnRoleModel, stepStarted.StepID, modelTurnRef); err != nil {
+		modelTokens := &runtime.TurnTokenUsage{
+			InputTokens:     &inferenceResult.Usage.InputTokens,
+			OutputTokens:    &inferenceResult.Usage.OutputTokens,
+			TotalTokens:     &inferenceResult.Usage.TotalTokens,
+			ReasoningTokens: inferenceResult.Usage.ReasoningTokens,
+		}
+		if err := execCtx.lifecycle.AppendNodeTurn(node.ID, runtime.TurnRoleModel, stepStarted.StepID, modelTurnRef, modelTokens); err != nil {
 			logger.Error("failed to append node.turn.model", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.turn.model", err)
 		}

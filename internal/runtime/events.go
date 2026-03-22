@@ -178,11 +178,24 @@ type NodeStepCompletedPayload struct {
 	AccountingRef string            `json:"accounting_ref"`
 }
 
+// TurnTokenUsage carries optional per-turn token accounting. Present on model
+// turns (populated from the inference response); nil on user turns.
+type TurnTokenUsage struct {
+	InputTokens     *int64 `json:"input_tokens,omitempty"`
+	OutputTokens    *int64 `json:"output_tokens,omitempty"`
+	TotalTokens     *int64 `json:"total_tokens,omitempty"`
+	ReasoningTokens *int64 `json:"reasoning_tokens,omitempty"`
+}
+
 // NodeTurnPayload is the strict payload for node.turn.user and node.turn.model.
 type NodeTurnPayload struct {
-	StepID     string   `json:"step_id"`
-	Role       TurnRole `json:"role"`
-	ContentRef string   `json:"content_ref"`
+	StepID          string   `json:"step_id"`
+	Role            TurnRole `json:"role"`
+	ContentRef      string   `json:"content_ref"`
+	InputTokens     *int64   `json:"input_tokens,omitempty"`
+	OutputTokens    *int64   `json:"output_tokens,omitempty"`
+	TotalTokens     *int64   `json:"total_tokens,omitempty"`
+	ReasoningTokens *int64   `json:"reasoning_tokens,omitempty"`
 }
 
 // NodeSubcallExecutedPayload is the strict payload for node.subcall.executed.
