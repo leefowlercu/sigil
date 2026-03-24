@@ -52,6 +52,7 @@ type Server struct {
 	now           func() time.Time
 	runnerFactory func() *harness.Runner
 	ownedRuns     *ownedRunManager
+	summaryIndex  *RunSummaryIndex
 }
 
 // New constructs a Server from active application configuration.
@@ -80,7 +81,16 @@ func NewWithOptions(cfg config.Config, options ServerOptions) *Server {
 	if options.Now != nil {
 		server.now = options.Now
 	}
-	server.ownedRuns = newOwnedRunManager(server.runnerFactory)
+	server.summaryIndex = newRunSummaryIndex(
+		cfg.AppServer.RunDir,
+		time.Duration(cfg.AppServer.Subscriptions.PollIntervalMS)*time.Millisecond,
+		slog.Default(),
+	)
+	server.ownedRuns = newOwnedRunManager(server.runnerFactory, func(runID string) {
+		if server.summaryIndex != nil {
+			server.summaryIndex.MarkDirty(runID)
+		}
+	})
 
 	server.registerRunReadHandlers()
 	server.registerRunLiveHandlers()
@@ -101,6 +111,9 @@ func (s *Server) ServeStdio(ctx context.Context, reader io.Reader, writer io.Wri
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := s.ensureRunSummaryIndex(ctx); err != nil {
+		return err
 	}
 
 	connectionCtx, cancel := context.WithCancel(ctx)
@@ -145,16 +158,27 @@ func (s *Server) ServeStdio(ctx context.Context, reader io.Reader, writer io.Wri
 	return nil
 }
 
+func (s *Server) ensureRunSummaryIndex(ctx context.Context) error {
+	if s == nil || s.summaryIndex == nil {
+		return nil
+	}
+	if err := s.summaryIndex.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start run summary index; %w", err)
+	}
+	return nil
+}
+
 type connectionHandler struct {
-	server         *Server
-	logger         *slog.Logger
-	connectionCtx  context.Context
-	writer         outboundWriter
-	onWriteFailure func(error)
-	markOutbound   func()
-	mu             sync.RWMutex
-	state          sessions.State
-	subscriptions  map[string]*connectionSubscription
+	server           *Server
+	logger           *slog.Logger
+	connectionCtx    context.Context
+	writer           outboundWriter
+	onWriteFailure   func(error)
+	markOutbound     func()
+	mu               sync.RWMutex
+	state            sessions.State
+	subscriptions    map[string]*connectionSubscription
+	runsSubscription *connectionRunsSubscription
 }
 
 func (c *connectionHandler) handleLine(ctx context.Context, line []byte) ([]byte, error) {
@@ -289,7 +313,7 @@ func (c *connectionHandler) handleInitialize(id json.RawMessage, rawParams json.
 		InstanceID:      c.server.config.AppServer.InstanceID,
 		InstanceName:    c.server.config.AppServer.InstanceName,
 		ProtocolVersion: version,
-		MethodFamilies:  []string{"run", "server"},
+		MethodFamilies:  []string{"run", "runs", "server"},
 		Capabilities: protocol.ServerCapabilities{
 			Config: protocol.ConfigCapability{
 				DefaultVersion:    protocol.DefaultProtocolVersion(),

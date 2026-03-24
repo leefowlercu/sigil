@@ -136,15 +136,7 @@ Feature: Sigil app-server transport and protocol tooling
     When the queued live app-server fixture starts execution
     Then the websocket app-server client receives 2 unique "run/eventAppended" notification seq values greater than 1
 
-  Scenario: Generates deterministic TypeScript bindings from typed app-server protocol definitions
-    When TypeScript app-server bindings are generated twice deterministically
-    Then command output contains `AppServerMethodMap`
-
-  Scenario: Generates deterministic JSON Schema bundles from typed app-server protocol definitions
-    When JSON Schema app-server bundles are generated twice deterministically
-    Then command output contains `"methods"`
-
-  Scenario: Serves paged run list after initialize handshake on stdio
+  Scenario: Serves fresh runs subscribe snapshot after initialize handshake on stdio
     Given application config exists at "sigil.yaml" with:
       """
       app_server:
@@ -160,7 +152,174 @@ Feature: Sigil app-server transport and protocol tooling
       """
       {"jsonrpc":"2.0","method":"initialized","params":{}}
       """
-    And the app-server requests run/list with limit 1
+    And the app-server requests runs/subscribe
+    Then the app-server response JSON pointer "/result/payload/items" has length 2
+    And the app-server response JSON pointer "/result/payload/items/0/runId" equals fixture "primaryRunId"
+    And the app-server response JSON pointer "/result/payload/items/1/runId" equals fixture "secondaryRunId"
+
+  Scenario: Delivers live runs changed upserts for new or changed runs after initialize handshake on stdio
+    Given application config exists at "sigil.yaml" with:
+      """
+      app_server:
+        run_dir: ./custom-runs
+        subscriptions:
+          poll_interval_ms: 25
+      """
+    And a queued live app-server fixture exists in the configured run directory
+    And the app-server stdio transport is running
+    When the app-server receives JSON-RPC line:
+      """
+      {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the app-server receives JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the app-server requests runs/subscribe
+    Then the app-server response JSON pointer "/result/payload/items" has length 1
+    And the app-server response JSON pointer "/result/payload/items/0/runId" equals fixture "liveRunId"
+    And the app-server response JSON pointer "/result/payload/items/0/state" equals "queued"
+    When the queued live app-server fixture starts execution
+    Then the stdio app-server client receives 1 "runs/changed" upsert notifications for fixture run "liveRunId" with state "running"
+    When the queued live app-server fixture completes execution
+    Then the stdio app-server client receives 1 "runs/changed" upsert notifications for fixture run "liveRunId" with state "completed"
+
+  Scenario: Delivers live runs changed removals when a persisted run disappears after subscribe
+    Given application config exists at "sigil.yaml" with:
+      """
+      app_server:
+        run_dir: ./custom-runs
+        subscriptions:
+          poll_interval_ms: 25
+      """
+    And persisted app-server run fixtures exist in the configured run directory
+    And the app-server stdio transport is running
+    When the app-server receives JSON-RPC line:
+      """
+      {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the app-server receives JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the app-server requests runs/subscribe
+    When the persisted app-server fixture run "primaryRunId" directory is removed
+    Then the stdio app-server client receives 1 "runs/changed" remove notifications for fixture run "primaryRunId"
+
+  Scenario: Unsubscribes runs subscribe idempotently after initialize handshake on stdio
+    Given application config exists at "sigil.yaml" with:
+      """
+      app_server:
+        run_dir: ./custom-runs
+      """
+    And persisted app-server run fixtures exist in the configured run directory
+    And the app-server stdio transport is running
+    When the app-server receives JSON-RPC line:
+      """
+      {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the app-server receives JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the app-server requests runs/subscribe
+    And the app-server requests runs/unsubscribe
+    Then the app-server response JSON pointer "/result/payload/unsubscribed" equals boolean true
+    When the app-server requests runs/unsubscribe
+    Then the app-server response JSON pointer "/result/payload/unsubscribed" equals boolean false
+
+  Scenario: Replaces duplicate runs subscribe requests without duplicate live delivery after initialize handshake on stdio
+    Given application config exists at "sigil.yaml" with:
+      """
+      app_server:
+        run_dir: ./custom-runs
+        subscriptions:
+          poll_interval_ms: 25
+      """
+    And a queued live app-server fixture exists in the configured run directory
+    And the app-server stdio transport is running
+    When the app-server receives JSON-RPC line:
+      """
+      {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the app-server receives JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the app-server requests runs/subscribe
+    And the app-server requests runs/subscribe
+    When the queued live app-server fixture starts execution
+    Then the stdio app-server client receives 1 "runs/changed" upsert notifications for fixture run "liveRunId" with state "running"
+
+  Scenario: Reconnects and resubscribes runs subscribe after missed heartbeat on WebSocket with fresh authoritative snapshot
+    Given application config exists at "sigil.yaml" with:
+      """
+      app_server:
+        run_dir: ./custom-runs
+        subscriptions:
+          poll_interval_ms: 25
+      """
+    And a queued live app-server fixture exists in the configured run directory
+    And the app-server websocket transport is running
+    And the websocket app-server client routes through a controllable proxy
+    When the websocket app-server client connects without an origin header
+    And the websocket app-server client sends JSON-RPC message:
+      """
+      {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the websocket app-server client sends JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the websocket app-server client requests runs/subscribe
+    Then the app-server response JSON pointer "/result/payload/items" has length 1
+    And the app-server response JSON pointer "/result/payload/items/0/runId" equals fixture "liveRunId"
+    And the app-server response JSON pointer "/result/payload/items/0/state" equals "queued"
+    And the websocket app-server client receives JSON-RPC notification method "server/heartbeat"
+    When the websocket app-server proxy stops forwarding server frames
+    Then the websocket app-server client detects a missed heartbeat window
+    When the websocket app-server proxy resumes forwarding server frames
+    And the websocket app-server client reconnects
+    And the websocket app-server client sends JSON-RPC message:
+      """
+      {"jsonrpc":"2.0","id":"3","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the websocket app-server client sends JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the websocket app-server client requests runs/subscribe
+    Then the app-server response JSON pointer "/result/payload/items" has length 1
+    And the app-server response JSON pointer "/result/payload/items/0/runId" equals fixture "liveRunId"
+    And the app-server response JSON pointer "/result/payload/items/0/state" equals "queued"
+    When the queued live app-server fixture starts execution
+    Then the websocket app-server client receives 1 "runs/changed" upsert notifications for fixture run "liveRunId" with state "running"
+
+  Scenario: Generates deterministic TypeScript bindings from typed app-server protocol definitions
+    When TypeScript app-server bindings are generated twice deterministically
+    Then command output contains `AppServerMethodMap`
+
+  Scenario: Generates deterministic JSON Schema bundles from typed app-server protocol definitions
+    When JSON Schema app-server bundles are generated twice deterministically
+    Then command output contains `"methods"`
+
+  Scenario: Serves paged runs list after initialize handshake on stdio
+    Given application config exists at "sigil.yaml" with:
+      """
+      app_server:
+        run_dir: ./custom-runs
+      """
+    And persisted app-server run fixtures exist in the configured run directory
+    And the app-server stdio transport is running
+    When the app-server receives JSON-RPC line:
+      """
+      {"jsonrpc":"2.0","id":"1","method":"initialize","params":{"protocolVersions":["sigil.appserver.v1alpha1"],"client":{"name":"acceptance","version":"1.0.0"}}}
+      """
+    And the app-server receives JSON-RPC notification:
+      """
+      {"jsonrpc":"2.0","method":"initialized","params":{}}
+      """
+    And the app-server requests runs/list with limit 1
     Then the app-server response JSON pointer "/result/payload/items" has length 1
     And the app-server response JSON pointer "/result/payload/items/0/runId" equals fixture "primaryRunId"
     And the app-server response JSON pointer "/result/payload/nextCursor" equals fixture "primaryRunId"

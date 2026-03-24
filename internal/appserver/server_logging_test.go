@@ -109,7 +109,7 @@ func TestServeStdioLogsRunStepsListReadSummary(t *testing.T) {
 	}
 }
 
-func TestServeStdioLogsRunListCursorValidationFailures(t *testing.T) {
+func TestServeStdioLogsRunsListCursorValidationFailures(t *testing.T) {
 	sink := captureTestLogs(t)
 	fixture := createRichRunFixture(t)
 
@@ -120,19 +120,19 @@ func TestServeStdioLogsRunListCursorValidationFailures(t *testing.T) {
 	responses := serveJSONLinesWithConfig(t, cfg,
 		initializeRequest(protocol.DefaultProtocolVersion()),
 		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":"2","method":"run/list","params":{"cursor":"%s"}}`, missingCursor),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":"2","method":"runs/list","params":{"cursor":"%s"}}`, missingCursor),
 	)
 
 	if len(responses) != 2 {
 		t.Fatalf("expected two responses, got %d", len(responses))
 	}
 	if responses[1].Error == nil {
-		t.Fatal("expected run/list cursor error response")
+		t.Fatal("expected runs/list cursor error response")
 	}
 
 	record := waitForTestLogRecord(t, sink, func(entry map[string]any) bool {
 		return entry["msg"] == "app-server read request failed" &&
-			entry["rpc_method"] == "run/list" &&
+			entry["rpc_method"] == "runs/list" &&
 			entry["domain_code"] == "invalid_cursor"
 	})
 	if record["cursor"] != missingCursor {

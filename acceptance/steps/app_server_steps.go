@@ -30,6 +30,7 @@ type appServerAcceptanceState struct {
 	stdinWriter      *io.PipeWriter
 	stdoutReader     *bufio.Reader
 	stdoutPipe       *io.PipeReader
+	stdioMessages    chan appServerReadResult
 	websocketURL     string
 	websocketOrigin  string
 	readyURL         string
@@ -43,6 +44,11 @@ type appServerAcceptanceState struct {
 	nextRequestID    int
 	fixtures         *appServerReadFixtures
 	liveLifecycle    *sigilruntime.Lifecycle
+}
+
+type appServerReadResult struct {
+	line string
+	err  error
 }
 
 type appServerReadFixtures struct {
@@ -75,13 +81,15 @@ func registerAppServerSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^persisted app-server run fixtures exist in the configured run directory$`, world.persistedAppServerRunFixturesExistInTheConfiguredRunDirectory)
 	ctx.Step(`^a queued live app-server fixture exists in the configured run directory$`, world.aQueuedLiveAppServerFixtureExistsInTheConfiguredRunDirectory)
 	ctx.Step(`^a local CLI run is actively executing for app-server stop control$`, world.aLocalCLIRunIsActivelyExecutingForAppServerStopControl)
-	ctx.Step(`^the app-server requests run/list with limit (\d+)$`, world.theAppServerRequestsRunListWithLimit)
+	ctx.Step(`^the app-server requests runs/list with limit (\d+)$`, world.theAppServerRequestsRunsListWithLimit)
 	ctx.Step(`^the app-server requests "([^"]*)" for fixture run "([^"]*)"$`, world.theAppServerRequestsForFixtureRun)
 	ctx.Step(`^the app-server requests run/start with inline YAML:$`, world.theAppServerRequestsRunStartWithInlineYAML)
 	ctx.Step(`^the app-server requests run/subscribe for fixture run "([^"]*)"$`, world.theAppServerRequestsRunSubscribeForFixtureRun)
 	ctx.Step(`^the app-server requests run/subscribe for fixture run "([^"]*)" after seq (\d+)$`, world.theAppServerRequestsRunSubscribeForFixtureRunAfterSeq)
 	ctx.Step(`^the app-server requests run/stop for the active run$`, world.theAppServerRequestsRunStopForTheActiveRun)
 	ctx.Step(`^the app-server requests run/unsubscribe for fixture run "([^"]*)"$`, world.theAppServerRequestsRunUnsubscribeForFixtureRun)
+	ctx.Step(`^the app-server requests runs/subscribe$`, world.theAppServerRequestsRunsSubscribe)
+	ctx.Step(`^the app-server requests runs/unsubscribe$`, world.theAppServerRequestsRunsUnsubscribe)
 	ctx.Step(`^the app-server requests run/node/read for fixture run "([^"]*)" node "([^"]*)"$`, world.theAppServerRequestsRunNodeReadForFixtureRunNode)
 	ctx.Step(`^the app-server requests run/step/read for fixture run "([^"]*)" node "([^"]*)" step "([^"]*)"$`, world.theAppServerRequestsRunStepReadForFixtureRunNodeStep)
 	ctx.Step(`^the app-server requests run/artifact/read for fixture run "([^"]*)" artifact "([^"]*)"$`, world.theAppServerRequestsRunArtifactReadForFixtureRunArtifact)
@@ -98,15 +106,21 @@ func registerAppServerSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^the websocket app-server client sends JSON-RPC notification:$`, world.theWebSocketAppServerClientSendsJSONRPCNotification)
 	ctx.Step(`^the stdio app-server client receives JSON-RPC notification method "([^"]*)"$`, world.theStdioAppServerClientReceivesJSONRPCNotificationMethod)
 	ctx.Step(`^the stdio app-server client receives (\d+) unique "([^"]*)" notification seq values$`, world.theStdioAppServerClientReceivesUniqueNotificationSeqValues)
+	ctx.Step(`^the stdio app-server client receives (\d+) "([^"]*)" upsert notifications for fixture run "([^"]*)" with state "([^"]*)"$`, world.theStdioAppServerClientReceivesRunSummaryUpsertNotificationsForFixtureRunWithState)
+	ctx.Step(`^the stdio app-server client receives (\d+) "([^"]*)" remove notifications for fixture run "([^"]*)"$`, world.theStdioAppServerClientReceivesRunSummaryRemoveNotificationsForFixtureRun)
 	ctx.Step(`^the websocket app-server proxy stops forwarding server frames$`, world.theWebSocketAppServerProxyStopsForwardingServerFrames)
 	ctx.Step(`^the websocket app-server proxy resumes forwarding server frames$`, world.theWebSocketAppServerProxyResumesForwardingServerFrames)
 	ctx.Step(`^the websocket app-server client detects a missed heartbeat window$`, world.theWebSocketAppServerClientDetectsAMissedHeartbeatWindow)
 	ctx.Step(`^the websocket app-server client reconnects$`, world.theWebSocketAppServerClientReconnects)
 	ctx.Step(`^the websocket app-server client requests run/subscribe for fixture run "([^"]*)"$`, world.theWebSocketAppServerClientRequestsRunSubscribeForFixtureRun)
 	ctx.Step(`^the websocket app-server client requests run/subscribe for fixture run "([^"]*)" after seq (\d+)$`, world.theWebSocketAppServerClientRequestsRunSubscribeForFixtureRunAfterSeq)
+	ctx.Step(`^the websocket app-server client requests runs/subscribe$`, world.theWebSocketAppServerClientRequestsRunsSubscribe)
 	ctx.Step(`^the websocket app-server client receives (\d+) unique "([^"]*)" notification seq values greater than (\d+)$`, world.theWebSocketAppServerClientReceivesUniqueNotificationSeqValuesGreaterThan)
+	ctx.Step(`^the websocket app-server client receives (\d+) "([^"]*)" upsert notifications for fixture run "([^"]*)" with state "([^"]*)"$`, world.theWebSocketAppServerClientReceivesRunSummaryUpsertNotificationsForFixtureRunWithState)
 	ctx.Step(`^the websocket app-server client receives JSON-RPC notification method "([^"]*)"$`, world.theWebSocketAppServerClientReceivesJSONRPCNotificationMethod)
 	ctx.Step(`^the queued live app-server fixture starts execution$`, world.theQueuedLiveAppServerFixtureStartsExecution)
+	ctx.Step(`^the queued live app-server fixture completes execution$`, world.theQueuedLiveAppServerFixtureCompletesExecution)
+	ctx.Step(`^the persisted app-server fixture run "([^"]*)" directory is removed$`, world.thePersistedAppServerFixtureRunDirectoryIsRemoved)
 	ctx.Step(`^the active run stop-request metadata requested_by is "([^"]*)"$`, world.theActiveRunStopRequestMetadataRequestedByIs)
 	ctx.Step(`^the app-server ready and live endpoints return success$`, world.theAppServerReadyAndLiveEndpointsReturnSuccess)
 	ctx.Step(`^TypeScript app-server bindings are generated twice deterministically$`, world.typeScriptAppServerBindingsAreGeneratedTwiceDeterministically)
@@ -136,6 +150,7 @@ func (w *harnessWorld) theAppServerStdioTransportIsRunning() error {
 		stdinWriter:   inputWriter,
 		stdoutReader:  bufio.NewReader(outputReader),
 		stdoutPipe:    outputReader,
+		stdioMessages: make(chan appServerReadResult, 16),
 		done:          make(chan error, 1),
 		nextRequestID: 2,
 		fixtures:      fixtures,
@@ -147,6 +162,7 @@ func (w *harnessWorld) theAppServerStdioTransportIsRunning() error {
 		state.done <- rootCmd.Execute()
 		_ = outputWriter.Close()
 	}()
+	go state.pumpStdioResponses()
 
 	w.appServer = state
 	return nil
@@ -365,6 +381,22 @@ func (w *harnessWorld) theStdioAppServerClientReceivesUniqueNotificationSeqValue
 	return nil
 }
 
+func (w *harnessWorld) theStdioAppServerClientReceivesRunSummaryUpsertNotificationsForFixtureRunWithState(expectedCount int, method string, runKey string, expectedState string) error {
+	runID, err := w.appServerFixtureValue(runKey)
+	if err != nil {
+		return err
+	}
+	return w.collectStdioRunSummaryUpsertNotifications(method, runID, expectedState, expectedCount)
+}
+
+func (w *harnessWorld) theStdioAppServerClientReceivesRunSummaryRemoveNotificationsForFixtureRun(expectedCount int, method string, runKey string) error {
+	runID, err := w.appServerFixtureValue(runKey)
+	if err != nil {
+		return err
+	}
+	return w.collectStdioRunSummaryRemoveNotifications(method, runID, expectedCount)
+}
+
 func (w *harnessWorld) theWebSocketAppServerClientReceivesJSONRPCNotificationMethod(expectedMethod string) error {
 	if err := w.captureWebSocketMessage(5 * time.Second); err != nil {
 		return err
@@ -443,6 +475,10 @@ func (w *harnessWorld) theWebSocketAppServerClientRequestsRunSubscribeForFixture
 	})
 }
 
+func (w *harnessWorld) theWebSocketAppServerClientRequestsRunsSubscribe() error {
+	return w.sendWebSocketAppServerRPCRequest("runs/subscribe", map[string]any{})
+}
+
 func (w *harnessWorld) theWebSocketAppServerClientReceivesUniqueNotificationSeqValuesGreaterThan(expectedCount int, method string, minimumSeq int) error {
 	if w.appServer == nil || w.appServer.websocketConn == nil {
 		return fmt.Errorf("websocket app-server client is not connected")
@@ -516,11 +552,45 @@ func (w *harnessWorld) theWebSocketAppServerClientReceivesUniqueNotificationSeqV
 	return nil
 }
 
+func (w *harnessWorld) theWebSocketAppServerClientReceivesRunSummaryUpsertNotificationsForFixtureRunWithState(expectedCount int, method string, runKey string, expectedState string) error {
+	runID, err := w.appServerFixtureValue(runKey)
+	if err != nil {
+		return err
+	}
+	return w.collectWebSocketRunSummaryUpsertNotifications(method, runID, expectedState, expectedCount)
+}
+
 func (w *harnessWorld) theQueuedLiveAppServerFixtureStartsExecution() error {
 	if w.appServer == nil || w.appServer.liveLifecycle == nil {
 		return fmt.Errorf("queued live app-server fixture is not available")
 	}
 	return w.appServer.liveLifecycle.StartExecution()
+}
+
+func (w *harnessWorld) theQueuedLiveAppServerFixtureCompletesExecution() error {
+	if w.appServer == nil || w.appServer.liveLifecycle == nil {
+		return fmt.Errorf("queued live app-server fixture is not available")
+	}
+	return w.appServer.liveLifecycle.Complete()
+}
+
+func (w *harnessWorld) thePersistedAppServerFixtureRunDirectoryIsRemoved(runKey string) error {
+	runID, err := w.appServerFixtureValue(runKey)
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Get()
+	if err != nil {
+		return fmt.Errorf("failed to load app-server config; %w", err)
+	}
+	runsBaseDir := cfg.AppServer.RunDir
+	if strings.TrimSpace(runsBaseDir) == "" {
+		return fmt.Errorf("app-server run directory is unavailable")
+	}
+	if !filepath.IsAbs(runsBaseDir) {
+		runsBaseDir = filepath.Join(w.workingDir, runsBaseDir)
+	}
+	return os.RemoveAll(filepath.Join(runsBaseDir, runID))
 }
 
 func (w *harnessWorld) theAppServerReadyAndLiveEndpointsReturnSuccess() error {
@@ -654,8 +724,8 @@ func (w *harnessWorld) aLocalCLIRunIsActivelyExecutingForAppServerStopControl() 
 	return w.startRunControlHelperWithRequester("active_interrupt", sigilruntime.StopRequesterAppServerRunStop)
 }
 
-func (w *harnessWorld) theAppServerRequestsRunListWithLimit(limit int) error {
-	return w.sendAppServerRPCRequest("run/list", map[string]any{
+func (w *harnessWorld) theAppServerRequestsRunsListWithLimit(limit int) error {
+	return w.sendAppServerRPCRequest("runs/list", map[string]any{
 		"limit": limit,
 	})
 }
@@ -697,6 +767,10 @@ func (w *harnessWorld) theAppServerRequestsRunSubscribeForFixtureRunAfterSeq(run
 	})
 }
 
+func (w *harnessWorld) theAppServerRequestsRunsSubscribe() error {
+	return w.sendAppServerRPCRequest("runs/subscribe", map[string]any{})
+}
+
 func (w *harnessWorld) theAppServerRequestsRunUnsubscribeForFixtureRun(runKey string) error {
 	runID, err := w.appServerFixtureValue(runKey)
 	if err != nil {
@@ -705,6 +779,10 @@ func (w *harnessWorld) theAppServerRequestsRunUnsubscribeForFixtureRun(runKey st
 	return w.sendAppServerRPCRequest("run/unsubscribe", map[string]any{
 		"runId": runID,
 	})
+}
+
+func (w *harnessWorld) theAppServerRequestsRunsUnsubscribe() error {
+	return w.sendAppServerRPCRequest("runs/unsubscribe", map[string]any{})
 }
 
 func (w *harnessWorld) theAppServerRequestsRunStopForTheActiveRun() error {
@@ -1287,6 +1365,226 @@ func responseIDMatches(rawID any, expected string) bool {
 	}
 }
 
+func (w *harnessWorld) collectStdioRunSummaryUpsertNotifications(method string, runID string, expectedState string, expectedCount int) error {
+	if w.appServer == nil {
+		return fmt.Errorf("app-server stdio transport is not running")
+	}
+
+	matchedCount := 0
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && matchedCount < expectedCount {
+		line, err := w.appServer.readResponseWithin(time.Until(deadline))
+		if err != nil {
+			return err
+		}
+
+		decoded, err := decodeAppServerEnvelope(line)
+		if err != nil {
+			return err
+		}
+		w.appServer.lastNotification = decoded
+
+		matches, err := runSummaryUpsertNotificationMatches(decoded, method, runID, expectedState)
+		if err != nil {
+			return err
+		}
+		if matches {
+			matchedCount++
+		}
+	}
+	if matchedCount != expectedCount {
+		return fmt.Errorf("expected %d %s notifications for run %q with state %q, got %d", expectedCount, method, runID, expectedState, matchedCount)
+	}
+
+	quietDeadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(quietDeadline) {
+		line, err := w.appServer.readResponseWithin(time.Until(quietDeadline))
+		if err != nil {
+			if strings.Contains(err.Error(), "timed out waiting for app-server response") {
+				break
+			}
+			return err
+		}
+
+		decoded, err := decodeAppServerEnvelope(line)
+		if err != nil {
+			return err
+		}
+		w.appServer.lastNotification = decoded
+
+		matches, err := runSummaryUpsertNotificationMatches(decoded, method, runID, expectedState)
+		if err != nil {
+			return err
+		}
+		if matches {
+			matchedCount++
+		}
+	}
+	if matchedCount != expectedCount {
+		return fmt.Errorf("expected exactly %d %s notifications for run %q with state %q, got %d", expectedCount, method, runID, expectedState, matchedCount)
+	}
+	return nil
+}
+
+func (w *harnessWorld) collectStdioRunSummaryRemoveNotifications(method string, runID string, expectedCount int) error {
+	if w.appServer == nil {
+		return fmt.Errorf("app-server stdio transport is not running")
+	}
+
+	matchedCount := 0
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && matchedCount < expectedCount {
+		line, err := w.appServer.readResponseWithin(time.Until(deadline))
+		if err != nil {
+			return err
+		}
+
+		decoded, err := decodeAppServerEnvelope(line)
+		if err != nil {
+			return err
+		}
+		w.appServer.lastNotification = decoded
+
+		matches, err := runSummaryRemoveNotificationMatches(decoded, method, runID)
+		if err != nil {
+			return err
+		}
+		if matches {
+			matchedCount++
+		}
+	}
+	if matchedCount != expectedCount {
+		return fmt.Errorf("expected %d %s remove notifications for run %q, got %d", expectedCount, method, runID, matchedCount)
+	}
+
+	quietDeadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(quietDeadline) {
+		line, err := w.appServer.readResponseWithin(time.Until(quietDeadline))
+		if err != nil {
+			if strings.Contains(err.Error(), "timed out waiting for app-server response") {
+				break
+			}
+			return err
+		}
+
+		decoded, err := decodeAppServerEnvelope(line)
+		if err != nil {
+			return err
+		}
+		w.appServer.lastNotification = decoded
+
+		matches, err := runSummaryRemoveNotificationMatches(decoded, method, runID)
+		if err != nil {
+			return err
+		}
+		if matches {
+			matchedCount++
+		}
+	}
+	if matchedCount != expectedCount {
+		return fmt.Errorf("expected exactly %d %s remove notifications for run %q, got %d", expectedCount, method, runID, matchedCount)
+	}
+	return nil
+}
+
+func (w *harnessWorld) collectWebSocketRunSummaryUpsertNotifications(method string, runID string, expectedState string, expectedCount int) error {
+	if w.appServer == nil || w.appServer.websocketConn == nil {
+		return fmt.Errorf("websocket app-server client is not connected")
+	}
+
+	matchedCount := 0
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && matchedCount < expectedCount {
+		envelope, err := w.readWebSocketEnvelope(time.Until(deadline))
+		if err != nil {
+			return err
+		}
+
+		matches, err := runSummaryUpsertNotificationMatches(envelope, method, runID, expectedState)
+		if err != nil {
+			return err
+		}
+		if matches {
+			matchedCount++
+		}
+	}
+	if matchedCount != expectedCount {
+		return fmt.Errorf("expected %d %s notifications for run %q with state %q, got %d", expectedCount, method, runID, expectedState, matchedCount)
+	}
+
+	quietDeadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(quietDeadline) {
+		envelope, err := w.readWebSocketEnvelope(time.Until(quietDeadline))
+		if err != nil {
+			if isWebSocketReadTimeout(err) {
+				break
+			}
+			return err
+		}
+
+		matches, err := runSummaryUpsertNotificationMatches(envelope, method, runID, expectedState)
+		if err != nil {
+			return err
+		}
+		if matches {
+			matchedCount++
+		}
+	}
+	if matchedCount != expectedCount {
+		return fmt.Errorf("expected exactly %d %s notifications for run %q with state %q, got %d", expectedCount, method, runID, expectedState, matchedCount)
+	}
+	return nil
+}
+
+func runSummaryUpsertNotificationMatches(decoded map[string]any, method string, runID string, expectedState string) (bool, error) {
+	notificationMethod, _ := decoded["method"].(string)
+	if notificationMethod != method {
+		return false, nil
+	}
+
+	params, ok := decoded["params"].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("expected app-server notification params payload, got %T", decoded["params"])
+	}
+	payload, ok := params["payload"].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("expected app-server notification payload, got %T", params["payload"])
+	}
+	if kind, _ := payload["kind"].(string); notificationMethod == "runs/changed" && kind != "upsert" {
+		return false, nil
+	}
+	runPayload, ok := payload["run"].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("expected app-server notification run payload, got %T", payload["run"])
+	}
+
+	actualRunID, _ := runPayload["runId"].(string)
+	actualState, _ := runPayload["state"].(string)
+	return actualRunID == runID && actualState == expectedState, nil
+}
+
+func runSummaryRemoveNotificationMatches(decoded map[string]any, method string, runID string) (bool, error) {
+	notificationMethod, _ := decoded["method"].(string)
+	if notificationMethod != method {
+		return false, nil
+	}
+
+	params, ok := decoded["params"].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("expected app-server notification params payload, got %T", decoded["params"])
+	}
+	payload, ok := params["payload"].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("expected app-server notification payload, got %T", params["payload"])
+	}
+	if kind, _ := payload["kind"].(string); notificationMethod == "runs/changed" && kind != "remove" {
+		return false, nil
+	}
+
+	actualRunID, _ := payload["runId"].(string)
+	return actualRunID == runID, nil
+}
+
 func isWebSocketReadTimeout(err error) bool {
 	if err == nil {
 		return false
@@ -1497,27 +1795,35 @@ func (s *appServerAcceptanceState) readResponse() (string, error) {
 }
 
 func (s *appServerAcceptanceState) readResponseWithin(timeout time.Duration) (string, error) {
-	resultCh := make(chan struct {
-		line string
-		err  error
-	}, 1)
-
-	go func() {
-		line, err := s.stdoutReader.ReadString('\n')
-		resultCh <- struct {
-			line string
-			err  error
-		}{line: line, err: err}
-	}()
-
 	select {
-	case result := <-resultCh:
+	case result, ok := <-s.stdioMessages:
+		if !ok {
+			return "", fmt.Errorf("app-server response stream closed")
+		}
 		if result.err != nil {
 			return "", fmt.Errorf("failed to read app-server response; %w", result.err)
 		}
-		return strings.TrimSpace(result.line), nil
+		return result.line, nil
 	case <-time.After(timeout):
 		return "", fmt.Errorf("timed out waiting for app-server response")
+	}
+}
+
+func (s *appServerAcceptanceState) pumpStdioResponses() {
+	if s == nil || s.stdoutReader == nil || s.stdioMessages == nil {
+		return
+	}
+	defer close(s.stdioMessages)
+
+	for {
+		line, err := s.stdoutReader.ReadString('\n')
+		s.stdioMessages <- appServerReadResult{
+			line: strings.TrimSpace(line),
+			err:  err,
+		}
+		if err != nil {
+			return
+		}
 	}
 }
 

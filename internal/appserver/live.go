@@ -35,6 +35,7 @@ type outboundWriter interface {
 type ownedRunManager struct {
 	runnerFactory func() *harness.Runner
 	logger        *slog.Logger
+	summaryDirty  func(runID string)
 
 	mu             sync.Mutex
 	runs           map[string]*harness.StartedRun
@@ -51,6 +52,14 @@ type connectionSubscription struct {
 	deliverySource string
 }
 
+type connectionRunsSubscription struct {
+	key            string
+	cancel         context.CancelFunc
+	done           chan struct{}
+	changes        <-chan runSummaryChange
+	deliverySource string
+}
+
 func withConnectionHandler(ctx context.Context, connection *connectionHandler) context.Context {
 	return context.WithValue(ctx, connectionContextKey{}, connection)
 }
@@ -60,10 +69,11 @@ func connectionFromContext(ctx context.Context) *connectionHandler {
 	return connection
 }
 
-func newOwnedRunManager(runnerFactory func() *harness.Runner) *ownedRunManager {
+func newOwnedRunManager(runnerFactory func() *harness.Runner, summaryDirty func(runID string)) *ownedRunManager {
 	return &ownedRunManager{
 		runnerFactory: runnerFactory,
 		logger:        slog.Default().With("component", "appserver.runs"),
+		summaryDirty:  summaryDirty,
 		runs:          map[string]*harness.StartedRun{},
 		runObservers:  map[string]map[int]chan runtime.EventEnvelope{},
 	}
@@ -215,6 +225,22 @@ func (m *ownedRunManager) observeEvent(event runtime.EventEnvelope) {
 			)
 		}
 	}
+	if m.summaryDirty != nil && summaryRelevantEventType(event.Type) {
+		m.summaryDirty(event.RunID)
+	}
+}
+
+func summaryRelevantEventType(eventType runtime.EventType) bool {
+	switch eventType {
+	case runtime.EventTypeRunQueued,
+		runtime.EventTypeRunRunning,
+		runtime.EventTypeRunCompleted,
+		runtime.EventTypeRunFailed,
+		runtime.EventTypeRunInterrupted:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) registerRunLiveHandlers() {
@@ -222,6 +248,8 @@ func (s *Server) registerRunLiveHandlers() {
 	s.dispatcher.Register("run/subscribe", s.handleRunSubscribe)
 	s.dispatcher.Register("run/stop", s.handleRunStop)
 	s.dispatcher.Register("run/unsubscribe", s.handleRunUnsubscribe)
+	s.dispatcher.Register("runs/subscribe", s.handleRunsSubscribe)
+	s.dispatcher.Register("runs/unsubscribe", s.handleRunsUnsubscribe)
 }
 
 func (s *Server) handleRunStart(_ context.Context, rawParams json.RawMessage) (interface{}, *protocol.ErrorObject) {
@@ -397,6 +425,62 @@ func (s *Server) handleRunUnsubscribe(ctx context.Context, rawParams json.RawMes
 	}, nil
 }
 
+func (s *Server) handleRunsSubscribe(ctx context.Context, rawParams json.RawMessage) (interface{}, *protocol.ErrorObject) {
+	connection := connectionFromContext(ctx)
+	if connection == nil {
+		return nil, protocol.NewError(protocol.CodeInternalError, "subscription context is unavailable", "subscription_unavailable", true, nil)
+	}
+	if s.summaryIndex == nil {
+		return nil, protocol.NewError(protocol.CodeInternalError, "subscription context is unavailable", "subscription_unavailable", true, nil)
+	}
+
+	if _, errObject := decodeParams[protocol.RunsSubscribeParams](rawParams); errObject != nil {
+		return nil, errObject
+	}
+
+	connection.removeRunsSubscription()
+	items, revision, changes := s.summaryIndex.Subscribe(connection.runsSubscriptionKey())
+	deliverySource, replaceErr := connection.replaceRunsSubscription(changes)
+	if replaceErr != nil {
+		s.summaryIndex.Unsubscribe(connection.runsSubscriptionKey())
+		return nil, protocol.NewError(protocol.CodeInternalError, "failed to subscribe to runs", "subscription_unavailable", true, nil)
+	}
+
+	appServerLogger().Info("attached app-server runs subscription",
+		"item_count", len(items),
+		"revision", revision,
+		"delivery_source", deliverySource,
+	)
+
+	return protocol.RunsSubscribeResult{
+		Payload: protocol.RunsSubscribePayload{
+			Items:    mapRunSummaries(items),
+			Revision: revision,
+		},
+	}, nil
+}
+
+func (s *Server) handleRunsUnsubscribe(ctx context.Context, rawParams json.RawMessage) (interface{}, *protocol.ErrorObject) {
+	connection := connectionFromContext(ctx)
+	if connection == nil {
+		return nil, protocol.NewError(protocol.CodeInternalError, "subscription context is unavailable", "subscription_unavailable", true, nil)
+	}
+
+	if _, errObject := decodeParams[protocol.RunsUnsubscribeParams](rawParams); errObject != nil {
+		return nil, errObject
+	}
+
+	unsubscribed := connection.removeRunsSubscription()
+	appServerLogger().Info("removed app-server runs subscription",
+		"unsubscribed", unsubscribed,
+	)
+	return protocol.RunsUnsubscribeResult{
+		Payload: protocol.RunsUnsubscribePayload{
+			Unsubscribed: unsubscribed,
+		},
+	}, nil
+}
+
 func (s *Server) handleRunStop(_ context.Context, rawParams json.RawMessage) (interface{}, *protocol.ErrorObject) {
 	params, errObject := decodeParams[protocol.RunStopParams](rawParams)
 	if errObject != nil {
@@ -486,6 +570,40 @@ func (c *connectionHandler) replaceRunSubscription(runID string, lastDeliveredSe
 	return deliverySource, nil
 }
 
+func (c *connectionHandler) replaceRunsSubscription(changes <-chan runSummaryChange) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("runs subscription requires a connection")
+	}
+	if c.writer == nil {
+		return "", fmt.Errorf("connection writer is not configured")
+	}
+	if changes == nil {
+		return "", fmt.Errorf("runs subscription change stream is unavailable")
+	}
+
+	subCtx, cancel := context.WithCancel(c.connectionCtx)
+	subscription := &connectionRunsSubscription{
+		key:            c.runsSubscriptionKey(),
+		cancel:         cancel,
+		done:           make(chan struct{}),
+		changes:        changes,
+		deliverySource: runSummaryDeliverySource,
+	}
+
+	c.mu.Lock()
+	existing := c.runsSubscription
+	c.runsSubscription = subscription
+	c.mu.Unlock()
+
+	if existing != nil {
+		existing.cancel()
+		<-existing.done
+	}
+
+	go c.runsSubscriptionLoop(subCtx, subscription)
+	return subscription.deliverySource, nil
+}
+
 func (c *connectionHandler) removeRunSubscription(runID string) bool {
 	if c == nil || strings.TrimSpace(runID) == "" {
 		return false
@@ -506,12 +624,35 @@ func (c *connectionHandler) removeRunSubscription(runID string) bool {
 	return true
 }
 
+func (c *connectionHandler) removeRunsSubscription() bool {
+	if c == nil {
+		return false
+	}
+
+	c.mu.Lock()
+	subscription := c.runsSubscription
+	c.runsSubscription = nil
+	c.mu.Unlock()
+
+	if subscription == nil {
+		return false
+	}
+	if c.server != nil && c.server.summaryIndex != nil {
+		c.server.summaryIndex.Unsubscribe(subscription.key)
+	}
+	subscription.cancel()
+	<-subscription.done
+	return true
+}
+
 func (c *connectionHandler) closeSubscriptions() {
 	if c == nil {
 		return
 	}
 
 	c.mu.Lock()
+	runsSubscription := c.runsSubscription
+	c.runsSubscription = nil
 	subscriptions := make([]*connectionSubscription, 0, len(c.subscriptions))
 	for runID, subscription := range c.subscriptions {
 		if subscription == nil {
@@ -522,6 +663,13 @@ func (c *connectionHandler) closeSubscriptions() {
 	}
 	c.mu.Unlock()
 
+	if runsSubscription != nil {
+		if c.server != nil && c.server.summaryIndex != nil {
+			c.server.summaryIndex.Unsubscribe(runsSubscription.key)
+		}
+		runsSubscription.cancel()
+		<-runsSubscription.done
+	}
 	for _, subscription := range subscriptions {
 		subscription.cancel()
 		<-subscription.done
@@ -582,6 +730,49 @@ func (c *connectionHandler) runSubscriptionLoop(
 			deliveredSeq = event.Seq
 			logger.Debug("delivered in-process live run event", "seq", event.Seq)
 		case <-ticker.C:
+		}
+	}
+}
+
+func (c *connectionHandler) runsSubscriptionLoop(
+	ctx context.Context,
+	subscription *connectionRunsSubscription,
+) {
+	defer func() {
+		if c.server != nil && c.server.summaryIndex != nil {
+			c.server.summaryIndex.Unsubscribe(subscription.key)
+		}
+		c.mu.Lock()
+		if c.runsSubscription == subscription {
+			c.runsSubscription = nil
+		}
+		c.mu.Unlock()
+		close(subscription.done)
+	}()
+
+	logger := c.logger.With(
+		"delivery_source", subscription.deliverySource,
+	)
+	logger.Info("started runs subscription")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("stopped runs subscription")
+			return
+		case change, ok := <-subscription.changes:
+			if !ok {
+				logger.Info("stopped runs subscription", "reason", "summary_index_closed")
+				return
+			}
+			if err := c.sendRunsChangedNotification(change); err != nil {
+				logger.Warn("failed to deliver runs changed notification",
+					"revision", change.Revision,
+					"change_kind", change.Kind,
+					"error", err,
+				)
+				return
+			}
 		}
 	}
 }
@@ -688,6 +879,28 @@ func (c *connectionHandler) sendRunEventNotifications(event runtime.EventEnvelop
 	}
 }
 
+func (c *connectionHandler) sendRunsChangedNotification(change runSummaryChange) error {
+	params := protocol.RunsChangedParams{
+		Revision: change.Revision,
+		Payload: protocol.RunsChangedPayload{
+			Kind: protocol.RunsChangedKind(change.Kind),
+		},
+	}
+
+	switch change.Kind {
+	case runSummaryChangeKindUpsert:
+		runView := mapRunSummary(change.Run)
+		params.Payload.Run = &runView
+	case runSummaryChangeKindRemove:
+		runID := change.RunID
+		params.Payload.RunID = &runID
+	case runSummaryChangeKindReset:
+		// Reset only needs the revision and kind marker.
+	}
+
+	return c.sendNotification("runs/changed", params)
+}
+
 func (c *connectionHandler) sendNotification(method string, params interface{}) error {
 	if c == nil || c.writer == nil {
 		return fmt.Errorf("connection writer is not configured")
@@ -707,6 +920,10 @@ func (c *connectionHandler) sendNotification(method string, params interface{}) 
 		c.markOutbound()
 	}
 	return nil
+}
+
+func (c *connectionHandler) runsSubscriptionKey() string {
+	return fmt.Sprintf("connection:%p", c)
 }
 
 func mapRunLiveQueryError(err error) *protocol.ErrorObject {

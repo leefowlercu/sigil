@@ -17,7 +17,7 @@ func (s *Server) registerRunReadHandlers() {
 		return
 	}
 
-	s.dispatcher.Register("run/list", s.handleRunList)
+	s.dispatcher.Register("runs/list", s.handleRunsList)
 	s.dispatcher.Register("run/read", s.handleRunRead)
 	s.dispatcher.Register("run/events/read", s.handleRunEventsRead)
 	s.dispatcher.Register("run/tree/read", s.handleRunTreeRead)
@@ -27,40 +27,36 @@ func (s *Server) registerRunReadHandlers() {
 	s.dispatcher.Register("run/artifact/read", s.handleRunArtifactRead)
 }
 
-func (s *Server) handleRunList(_ context.Context, rawParams json.RawMessage) (interface{}, *protocol.ErrorObject) {
-	params, errObject := decodeParams[protocol.RunListParams](rawParams)
+func (s *Server) handleRunsList(_ context.Context, rawParams json.RawMessage) (interface{}, *protocol.ErrorObject) {
+	params, errObject := decodeParams[protocol.RunsListParams](rawParams)
 	if errObject != nil {
 		return nil, errObject
 	}
+	if s.summaryIndex == nil {
+		return nil, protocol.NewError(protocol.CodeInternalError, "query failed", "query_failed", true, nil)
+	}
 	readCtx := readLogContext{
-		method:      "run/list",
+		method:      "runs/list",
 		querySource: "run_list_page",
 		cursor:      params.Cursor,
 		limit:       &params.Limit,
 	}
 
-	result, err := query.ListRunsPage(query.ListRunsPageRequest{
-		RunsBaseDir: s.config.AppServer.RunDir,
-		Limit:       params.Limit,
-		Cursor:      params.Cursor,
-	})
+	result, err := s.summaryIndex.ListPage(params.Limit, params.Cursor)
 	if err != nil {
 		errObject := appServerQueryError(err)
 		logReadRequestFailure(readCtx, err, errObject)
 		return nil, errObject
 	}
 
-	items := make([]protocol.RunSummaryView, 0, len(result.Items))
-	for _, item := range result.Items {
-		items = append(items, mapRunSummary(item))
-	}
+	items := mapRunSummaries(result.Items)
 	logReadRequestSuccess(readCtx,
 		"item_count", len(items),
 		"has_next_cursor", result.NextCursor != nil,
 	)
 
-	return protocol.RunListResult{
-		Payload: protocol.RunListPayload{
+	return protocol.RunsListResult{
+		Payload: protocol.RunsListPayload{
 			Items:      items,
 			NextCursor: cloneStringPointer(result.NextCursor),
 		},
@@ -415,6 +411,14 @@ func mapRunSummary(value runtime.RunSummary) protocol.RunSummaryView {
 		AccountingRef:  cloneStringPointer(value.AccountingRef),
 		Error:          value.Error,
 	}
+}
+
+func mapRunSummaries(values []runtime.RunSummary) []protocol.RunSummaryView {
+	mapped := make([]protocol.RunSummaryView, 0, len(values))
+	for _, value := range values {
+		mapped = append(mapped, mapRunSummary(value))
+	}
+	return mapped
 }
 
 func mapRunProjection(value runtime.RunProjection) protocol.RunProjectionView {

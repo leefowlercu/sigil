@@ -43,6 +43,12 @@ func (s *Server) ServeWebSocket(ctx context.Context, options WebSocketServeOptio
 	if err := validateWebSocketServeOptions(options); err != nil {
 		return err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := s.ensureRunSummaryIndex(ctx); err != nil {
+		return err
+	}
 
 	listener := options.Listener
 	if listener == nil {

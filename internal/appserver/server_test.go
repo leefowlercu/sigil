@@ -131,6 +131,9 @@ func TestServeStdioInitializeAdvertisesRunReadCapabilities(t *testing.T) {
 	if !containsString(initialize.MethodFamilies, "run") {
 		t.Fatalf("expected method families to include run, got %+v", initialize.MethodFamilies)
 	}
+	if !containsString(initialize.MethodFamilies, "runs") {
+		t.Fatalf("expected method families to include runs, got %+v", initialize.MethodFamilies)
+	}
 	if !initialize.Capabilities.Views.RunTree {
 		t.Fatal("expected runTree capability=true")
 	}
@@ -151,7 +154,7 @@ func TestServeStdioServesRunReadMethodsAfterHandshake(t *testing.T) {
 	responses := serveJSONLinesWithConfig(t, cfg,
 		initializeRequest(protocol.DefaultProtocolVersion()),
 		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
-		`{"jsonrpc":"2.0","id":"2","method":"run/list","params":{"limit":1}}`,
+		`{"jsonrpc":"2.0","id":"2","method":"runs/list","params":{"limit":1}}`,
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":"3","method":"run/read","params":{"runId":"%s"}}`, fixture.RunID),
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":"4","method":"run/step/read","params":{"runId":"%s","nodeId":"%s","stepId":"%s"}}`, fixture.RunID, fixture.RootNodeID, fixture.StepID),
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":"5","method":"run/artifact/read","params":{"runId":"%s","artifactRef":"%s"}}`, fixture.RunID, fixture.ActionRef),
@@ -166,12 +169,12 @@ func TestServeStdioServesRunReadMethodsAfterHandshake(t *testing.T) {
 		}
 	}
 
-	var listResult protocol.RunListResult
+	var listResult protocol.RunsListResult
 	if err := json.Unmarshal(responses[1].Result, &listResult); err != nil {
-		t.Fatalf("expected run/list result to decode, got %v", err)
+		t.Fatalf("expected runs/list result to decode, got %v", err)
 	}
 	if len(listResult.Payload.Items) != 1 || listResult.Payload.Items[0].RunID != fixture.RunID {
-		t.Fatalf("expected run/list to return fixture run %q, got %+v", fixture.RunID, listResult.Payload.Items)
+		t.Fatalf("expected runs/list to return fixture run %q, got %+v", fixture.RunID, listResult.Payload.Items)
 	}
 
 	var readResult protocol.RunReadResult
@@ -568,6 +571,20 @@ func TestServeStdioRunUnsubscribeStopsFurtherNotifications(t *testing.T) {
 		t.Fatalf("expected unsubscribed=true, got %+v", unsubscribeResponse)
 	}
 
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"4","method":"runs/unsubscribe","params":{}}`)
+	secondUnsubscribeResponse, err := server.readMessage(t, 2*time.Second)
+	if err != nil {
+		t.Fatalf("expected second runs/unsubscribe response, got %v", err)
+	}
+	secondResultField, ok := secondUnsubscribeResponse["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected second runs/unsubscribe result payload, got %+v", secondUnsubscribeResponse)
+	}
+	secondPayloadField, ok := secondResultField["payload"].(map[string]any)
+	if !ok || secondPayloadField["unsubscribed"] != false {
+		t.Fatalf("expected unsubscribed=false on repeated unsubscribe, got %+v", secondUnsubscribeResponse)
+	}
+
 	if err := lifecycle.StartExecution(); err != nil {
 		t.Fatalf("expected start execution success, got %v", err)
 	}
@@ -630,6 +647,294 @@ func TestServeStdioDuplicateRunSubscribeReplacesEarlierSubscription(t *testing.T
 	}
 	if seqs[0] == seqs[1] {
 		t.Fatalf("expected unique run/eventAppended seq values, got %+v", seqs)
+	}
+}
+
+func TestServeStdioRunsSubscribeReturnsFreshSnapshot(t *testing.T) {
+	fixture := createRichRunFixture(t)
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = fixture.RunsDir
+
+	responses := serveJSONLinesWithConfig(t, cfg,
+		initializeRequest(protocol.DefaultProtocolVersion()),
+		`{"jsonrpc":"2.0","method":"initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`,
+	)
+
+	if len(responses) != 2 {
+		t.Fatalf("expected two responses, got %d", len(responses))
+	}
+	if responses[1].Error != nil {
+		t.Fatalf("expected runs/subscribe success, got %+v", responses[1].Error)
+	}
+
+	var result protocol.RunsSubscribeResult
+	if err := json.Unmarshal(responses[1].Result, &result); err != nil {
+		t.Fatalf("expected runs/subscribe result to decode, got %v", err)
+	}
+	if len(result.Payload.Items) != 1 {
+		t.Fatalf("expected one summary item, got %d", len(result.Payload.Items))
+	}
+	if result.Payload.Revision < 1 {
+		t.Fatalf("expected runs/subscribe revision >= 1, got %d", result.Payload.Revision)
+	}
+	if result.Payload.Items[0].RunID != fixture.RunID {
+		t.Fatalf("expected runs/subscribe runId %q, got %q", fixture.RunID, result.Payload.Items[0].RunID)
+	}
+	if result.Payload.Items[0].State != string(runtime.RunStateCompleted) {
+		t.Fatalf("expected completed summary state, got %q", result.Payload.Items[0].State)
+	}
+}
+
+func TestServeStdioRunsSubscribeDoesNotRedeliverUnchangedSummaries(t *testing.T) {
+	runsDir := t.TempDir()
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
+		RunsBaseDir:  runsDir,
+		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     2,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	defer func() {
+		_ = lifecycle.Close()
+	}()
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = runsDir
+	cfg.AppServer.Subscriptions.PollIntervalMS = 25
+
+	server := startInteractiveStdioServer(t, cfg, ServerOptions{})
+	defer server.close(t)
+
+	server.sendLine(t, initializeRequest(protocol.DefaultProtocolVersion()))
+	if _, err := server.readMessage(t, 2*time.Second); err != nil {
+		t.Fatalf("expected initialize response, got %v", err)
+	}
+	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`)
+
+	subscribeResponse, err := server.readMessage(t, 2*time.Second)
+	if err != nil {
+		t.Fatalf("expected runs/subscribe response, got %v", err)
+	}
+	resultField, ok := subscribeResponse["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected runs/subscribe result payload, got %+v", subscribeResponse)
+	}
+	payloadField, ok := resultField["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected runs/subscribe payload, got %+v", subscribeResponse)
+	}
+	items, ok := payloadField["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one runs/subscribe item, got %+v", subscribeResponse)
+	}
+
+	if _, err := server.readMessage(t, 200*time.Millisecond); err == nil {
+		t.Fatal("expected no runs/changed notifications before any run summary changes")
+	}
+}
+
+func TestServeStdioRunsSubscribeStreamsChangedUpsertsWithoutRunSubscribe(t *testing.T) {
+	runsDir := t.TempDir()
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
+		RunsBaseDir:  runsDir,
+		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     2,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	defer func() {
+		_ = lifecycle.Close()
+	}()
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = runsDir
+	cfg.AppServer.Subscriptions.PollIntervalMS = 25
+
+	server := startInteractiveStdioServer(t, cfg, ServerOptions{})
+	defer server.close(t)
+
+	server.sendLine(t, initializeRequest(protocol.DefaultProtocolVersion()))
+	if _, err := server.readMessage(t, 2*time.Second); err != nil {
+		t.Fatalf("expected initialize response, got %v", err)
+	}
+	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`)
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "2"
+	}); err != nil {
+		t.Fatalf("expected runs/subscribe response, got %v", err)
+	}
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		return isRunSummaryUpsertNotification(message, "runs/changed", lifecycle.RunID(), string(runtime.RunStateRunning))
+	}); err != nil {
+		t.Fatalf("expected running runs/changed notification, got %v", err)
+	}
+
+	if err := lifecycle.Complete(); err != nil {
+		t.Fatalf("expected complete success, got %v", err)
+	}
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		return isRunSummaryUpsertNotification(message, "runs/changed", lifecycle.RunID(), string(runtime.RunStateCompleted))
+	}); err != nil {
+		t.Fatalf("expected completed runs/changed notification, got %v", err)
+	}
+}
+
+func TestServeStdioRunsSubscribeStreamsRemoveNotificationsWhenRunDirDisappears(t *testing.T) {
+	fixture := createRichRunFixture(t)
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = fixture.RunsDir
+	cfg.AppServer.Subscriptions.PollIntervalMS = 25
+
+	server := startInteractiveStdioServer(t, cfg, ServerOptions{})
+	defer server.close(t)
+
+	server.sendLine(t, initializeRequest(protocol.DefaultProtocolVersion()))
+	if _, err := server.readMessage(t, 2*time.Second); err != nil {
+		t.Fatalf("expected initialize response, got %v", err)
+	}
+	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`)
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "2"
+	}); err != nil {
+		t.Fatalf("expected runs/subscribe response, got %v", err)
+	}
+
+	if err := os.RemoveAll(filepath.Join(fixture.RunsDir, fixture.RunID)); err != nil {
+		t.Fatalf("expected run directory removal success, got %v", err)
+	}
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		return isRunSummaryRemoveNotification(message, "runs/changed", fixture.RunID)
+	}); err != nil {
+		t.Fatalf("expected runs/changed remove notification, got %v", err)
+	}
+}
+
+func TestServeStdioRunsUnsubscribeStopsFurtherSummaryNotifications(t *testing.T) {
+	runsDir := t.TempDir()
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
+		RunsBaseDir:  runsDir,
+		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     2,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	defer func() {
+		_ = lifecycle.Close()
+	}()
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = runsDir
+	cfg.AppServer.Subscriptions.PollIntervalMS = 25
+
+	server := startInteractiveStdioServer(t, cfg, ServerOptions{})
+	defer server.close(t)
+
+	server.sendLine(t, initializeRequest(protocol.DefaultProtocolVersion()))
+	if _, err := server.readMessage(t, 2*time.Second); err != nil {
+		t.Fatalf("expected initialize response, got %v", err)
+	}
+	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`)
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "2"
+	}); err != nil {
+		t.Fatalf("expected runs/subscribe response, got %v", err)
+	}
+
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"3","method":"runs/unsubscribe","params":{}}`)
+	unsubscribeResponse, err := server.readMessage(t, 2*time.Second)
+	if err != nil {
+		t.Fatalf("expected runs/unsubscribe response, got %v", err)
+	}
+	resultField, ok := unsubscribeResponse["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected runs/unsubscribe result payload, got %+v", unsubscribeResponse)
+	}
+	payloadField, ok := resultField["payload"].(map[string]any)
+	if !ok || payloadField["unsubscribed"] != true {
+		t.Fatalf("expected unsubscribed=true, got %+v", unsubscribeResponse)
+	}
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+	if _, err := server.readMessage(t, 300*time.Millisecond); err == nil {
+		t.Fatal("expected no runs/changed notifications after runs/unsubscribe")
+	}
+}
+
+func TestServeStdioDuplicateRunsSubscribeReplacesEarlierSubscription(t *testing.T) {
+	runsDir := t.TempDir()
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
+		RunsBaseDir:  runsDir,
+		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     2,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	defer func() {
+		_ = lifecycle.Close()
+	}()
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = runsDir
+	cfg.AppServer.Subscriptions.PollIntervalMS = 25
+
+	server := startInteractiveStdioServer(t, cfg, ServerOptions{})
+	defer server.close(t)
+
+	server.sendLine(t, initializeRequest(protocol.DefaultProtocolVersion()))
+	if _, err := server.readMessage(t, 2*time.Second); err != nil {
+		t.Fatalf("expected initialize response, got %v", err)
+	}
+	server.sendLine(t, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`)
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "2"
+	}); err != nil {
+		t.Fatalf("expected first runs/subscribe response, got %v", err)
+	}
+
+	server.sendLine(t, `{"jsonrpc":"2.0","id":"3","method":"runs/subscribe","params":{}}`)
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "3"
+	}); err != nil {
+		t.Fatalf("expected replacement runs/subscribe response, got %v", err)
+	}
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+	if _, err := waitForMessage(t, server, 2*time.Second, func(message map[string]any) bool {
+		return isRunSummaryUpsertNotification(message, "runs/changed", lifecycle.RunID(), string(runtime.RunStateRunning))
+	}); err != nil {
+		t.Fatalf("expected running runs/changed notification, got %v", err)
+	}
+	if _, err := server.readMessage(t, 300*time.Millisecond); err == nil {
+		t.Fatal("expected no duplicate runs/changed notifications after replacement subscribe")
 	}
 }
 
@@ -957,6 +1262,55 @@ func collectNotificationMethods(t *testing.T, server *interactiveStdioServer, co
 		methods = append(methods, method)
 	}
 	return methods
+}
+
+func isRunSummaryUpsertNotification(message map[string]any, method string, runID string, expectedState string) bool {
+	notificationMethod, _ := message["method"].(string)
+	if notificationMethod != method {
+		return false
+	}
+
+	params, ok := message["params"].(map[string]any)
+	if !ok {
+		return false
+	}
+	payload, ok := params["payload"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if kind, _ := payload["kind"].(string); notificationMethod == "runs/changed" && kind != "upsert" {
+		return false
+	}
+	runPayload, ok := payload["run"].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	actualRunID, _ := runPayload["runId"].(string)
+	actualState, _ := runPayload["state"].(string)
+	return actualRunID == runID && actualState == expectedState
+}
+
+func isRunSummaryRemoveNotification(message map[string]any, method string, runID string) bool {
+	notificationMethod, _ := message["method"].(string)
+	if notificationMethod != method {
+		return false
+	}
+
+	params, ok := message["params"].(map[string]any)
+	if !ok {
+		return false
+	}
+	payload, ok := params["payload"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if kind, _ := payload["kind"].(string); notificationMethod == "runs/changed" && kind != "remove" {
+		return false
+	}
+
+	actualRunID, _ := payload["runId"].(string)
+	return actualRunID == runID
 }
 
 func waitForMessage(

@@ -51,6 +51,13 @@ type ListRunsPageRequest struct {
 	Cursor      *string
 }
 
+// PaginateRunSummariesRequest defines one in-memory run-summary paging request.
+type PaginateRunSummariesRequest struct {
+	Summaries []runtime.RunSummary
+	Limit     int
+	Cursor    *string
+}
+
 // ListRunsPageResult defines one paged run-list query response.
 type ListRunsPageResult struct {
 	Items      []runtime.RunSummary `json:"items"`
@@ -274,6 +281,17 @@ func ListRunsPage(request ListRunsPageRequest) (ListRunsPageResult, error) {
 		return ListRunsPageResult{}, err
 	}
 
+	return PaginateRunSummaries(PaginateRunSummariesRequest{
+		Summaries: summaries,
+		Limit:     request.Limit,
+		Cursor:    request.Cursor,
+	})
+}
+
+// PaginateRunSummaries pages one caller-supplied run summary slice with the same
+// cursor semantics as the shared run-list query.
+func PaginateRunSummaries(request PaginateRunSummariesRequest) (ListRunsPageResult, error) {
+	summaries := cloneRunSummaries(request.Summaries)
 	limit := request.Limit
 	switch {
 	case limit == 0:

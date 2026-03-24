@@ -312,14 +312,7 @@ func ListRuns(baseDir string) ([]RunSummary, error) {
 		summaries = append(summaries, summarizeProjection(projection))
 	}
 
-	sort.SliceStable(summaries, func(i int, j int) bool {
-		left := summarySortTime(summaries[i])
-		right := summarySortTime(summaries[j])
-		if left.Equal(right) {
-			return summaries[i].RunID > summaries[j].RunID
-		}
-		return left.After(right)
-	})
+	SortRunSummaries(summaries)
 
 	return summaries, nil
 }
@@ -352,6 +345,18 @@ func summarySortTime(summary RunSummary) time.Time {
 	default:
 		return time.Time{}
 	}
+}
+
+// SortRunSummaries orders run summaries newest-first with a stable run-id tie-breaker.
+func SortRunSummaries(summaries []RunSummary) {
+	sort.SliceStable(summaries, func(i int, j int) bool {
+		left := summarySortTime(summaries[i])
+		right := summarySortTime(summaries[j])
+		if left.Equal(right) {
+			return summaries[i].RunID > summaries[j].RunID
+		}
+		return left.After(right)
+	})
 }
 
 func loadProcessMetadataStatus(baseDir string, runID string) (string, *ProcessMetadata, error) {

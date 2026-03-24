@@ -215,6 +215,126 @@ func TestServeWebSocketReconnectResumeSubscribeWithoutGaps(t *testing.T) {
 	}
 }
 
+func TestServeWebSocketReconnectResubscribesRunsWithFreshSnapshot(t *testing.T) {
+	runsDir := t.TempDir()
+	lifecycle, err := runtime.NewLifecycleWithOptions(runtime.LifecycleOptions{
+		Name:         "test-run",
+		RunsBaseDir:  runsDir,
+		QueuedSource: runtime.RunQueuedSourceCLIRunStart,
+		MaxDepth:     2,
+	})
+	if err != nil {
+		t.Fatalf("expected lifecycle creation success, got %v", err)
+	}
+	defer func() {
+		_ = lifecycle.Close()
+	}()
+
+	cfg := config.NewDefaultConfig()
+	cfg.AppServer.RunDir = runsDir
+	cfg.AppServer.Subscriptions.PollIntervalMS = 25
+
+	_, address, cleanup := startWebSocketTestServerWithConfig(t, cfg, WebSocketServeOptions{
+		HeartbeatInterval: 50 * time.Millisecond,
+	})
+	defer cleanup()
+
+	connection := dialWebSocket(t, address, cfg.AppServer.WebSocket.Path, "")
+	writeWebSocketMessage(t, connection, initializeRequest(protocol.DefaultProtocolVersion()))
+	initializeResponse := readRPCResponse(t, connection)
+	if initializeResponse.Error != nil {
+		t.Fatalf("expected initialize success, got %+v", initializeResponse.Error)
+	}
+	writeWebSocketMessage(t, connection, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	writeWebSocketMessage(t, connection, `{"jsonrpc":"2.0","id":"2","method":"runs/subscribe","params":{}}`)
+
+	subscribeResponse, err := waitForWebSocketEnvelope(t, connection, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "2"
+	})
+	if err != nil {
+		t.Fatalf("expected websocket runs/subscribe response, got %v", err)
+	}
+	subscribeResult, ok := subscribeResponse["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected websocket runs/subscribe result, got %+v", subscribeResponse)
+	}
+	subscribePayload, ok := subscribeResult["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected websocket runs/subscribe payload, got %+v", subscribeResponse)
+	}
+	items, ok := subscribePayload["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one websocket runs/subscribe item, got %+v", subscribeResponse)
+	}
+	if revision, ok := subscribePayload["revision"].(json.Number); !ok || revision.String() == "0" {
+		t.Fatalf("expected websocket runs/subscribe revision >= 1, got %+v", subscribePayload["revision"])
+	}
+	firstItem, ok := items[0].(map[string]any)
+	if !ok || firstItem["runId"] != lifecycle.RunID() || firstItem["state"] != string(runtime.RunStateQueued) {
+		t.Fatalf("expected queued websocket runs/subscribe item for %q, got %+v", lifecycle.RunID(), items[0])
+	}
+
+	heartbeat, err := waitForWebSocketEnvelope(t, connection, 2*time.Second, func(message map[string]any) bool {
+		method, _ := message["method"].(string)
+		return method == "server/heartbeat"
+	})
+	if err != nil {
+		t.Fatalf("expected websocket heartbeat before reconnect, got %v", err)
+	}
+	if heartbeat["method"] != "server/heartbeat" {
+		t.Fatalf("expected websocket heartbeat before reconnect, got %+v", heartbeat)
+	}
+	_ = connection.Close()
+
+	reconnected := dialWebSocket(t, address, cfg.AppServer.WebSocket.Path, "")
+	defer reconnected.Close()
+
+	writeWebSocketMessage(t, reconnected, initializeRequest(protocol.DefaultProtocolVersion()))
+	reinitializeResponse := readRPCResponse(t, reconnected)
+	if reinitializeResponse.Error != nil {
+		t.Fatalf("expected reconnect initialize success, got %+v", reinitializeResponse.Error)
+	}
+	writeWebSocketMessage(t, reconnected, `{"jsonrpc":"2.0","method":"initialized","params":{}}`)
+	writeWebSocketMessage(t, reconnected, `{"jsonrpc":"2.0","id":"3","method":"runs/subscribe","params":{}}`)
+
+	resubscribeResponse, err := waitForWebSocketEnvelope(t, reconnected, 2*time.Second, func(message map[string]any) bool {
+		id, _ := message["id"].(string)
+		return id == "3"
+	})
+	if err != nil {
+		t.Fatalf("expected websocket resubscribe response, got %v", err)
+	}
+	resubscribeResult, ok := resubscribeResponse["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected websocket resubscribe result, got %+v", resubscribeResponse)
+	}
+	resubscribePayload, ok := resubscribeResult["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected websocket resubscribe payload, got %+v", resubscribeResponse)
+	}
+	resubscribeItems, ok := resubscribePayload["items"].([]any)
+	if !ok || len(resubscribeItems) != 1 {
+		t.Fatalf("expected one websocket resubscribe item, got %+v", resubscribeResponse)
+	}
+	if revision, ok := resubscribePayload["revision"].(json.Number); !ok || revision.String() == "0" {
+		t.Fatalf("expected websocket resubscribe revision >= 1, got %+v", resubscribePayload["revision"])
+	}
+	secondItem, ok := resubscribeItems[0].(map[string]any)
+	if !ok || secondItem["runId"] != lifecycle.RunID() || secondItem["state"] != string(runtime.RunStateQueued) {
+		t.Fatalf("expected queued websocket resubscribe item for %q, got %+v", lifecycle.RunID(), resubscribeItems[0])
+	}
+
+	if err := lifecycle.StartExecution(); err != nil {
+		t.Fatalf("expected start execution success, got %v", err)
+	}
+	if _, err := waitForWebSocketEnvelope(t, reconnected, 2*time.Second, func(message map[string]any) bool {
+		return isRunSummaryUpsertNotification(message, "runs/changed", lifecycle.RunID(), string(runtime.RunStateRunning))
+	}); err != nil {
+		t.Fatalf("expected websocket runs/changed notification, got %v", err)
+	}
+}
+
 func TestServeWebSocketRejectsNonLoopbackListenAddr(t *testing.T) {
 	cfg := config.NewDefaultConfig()
 	server := New(cfg)
@@ -345,6 +465,36 @@ func collectWebSocketNotificationSeqs(
 	}
 
 	return seqs
+}
+
+func waitForWebSocketEnvelope(
+	t *testing.T,
+	connection *websocket.Conn,
+	timeout time.Duration,
+	match func(map[string]any) bool,
+) (map[string]any, error) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := connection.SetReadDeadline(time.Now().Add(time.Until(deadline))); err != nil {
+			t.Fatalf("expected websocket read deadline success, got %v", err)
+		}
+		_, payload, err := connection.ReadMessage()
+		if err != nil {
+			return nil, err
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(payload)))
+		decoder.UseNumber()
+		decoded := map[string]any{}
+		if err := decoder.Decode(&decoded); err != nil {
+			t.Fatalf("expected websocket envelope decode success, got %v", err)
+		}
+		if match(decoded) {
+			return decoded, nil
+		}
+	}
+	return nil, context.DeadlineExceeded
 }
 
 func dialWebSocket(t *testing.T, address string, path string, origin string) *websocket.Conn {

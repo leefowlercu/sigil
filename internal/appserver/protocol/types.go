@@ -285,21 +285,21 @@ type ArtifactIdentityView struct {
 	SubcallIndex *int    `json:"subcallIndex,omitempty"`
 }
 
-// RunListParams defines the run/list request payload.
-type RunListParams struct {
+// RunsListParams defines the runs/list request payload.
+type RunsListParams struct {
 	Limit  int     `json:"limit,omitempty"`
 	Cursor *string `json:"cursor,omitempty"`
 }
 
-// RunListPayload defines the run/list response body.
-type RunListPayload struct {
+// RunsListPayload defines the runs/list response body.
+type RunsListPayload struct {
 	Items      []RunSummaryView `json:"items"`
 	NextCursor *string          `json:"nextCursor,omitempty"`
 }
 
-// RunListResult defines the run/list success payload.
-type RunListResult struct {
-	Payload RunListPayload `json:"payload"`
+// RunsListResult defines the runs/list success payload.
+type RunsListResult struct {
+	Payload RunsListPayload `json:"payload"`
 }
 
 // RunReadParams defines the run/read request payload.
@@ -476,6 +476,20 @@ type RunSubscribeResult struct {
 	Payload         RunSubscribePayload `json:"payload"`
 }
 
+// RunsSubscribeParams defines the runs/subscribe request payload.
+type RunsSubscribeParams struct{}
+
+// RunsSubscribePayload defines the runs/subscribe response body.
+type RunsSubscribePayload struct {
+	Items    []RunSummaryView `json:"items"`
+	Revision int64            `json:"revision"`
+}
+
+// RunsSubscribeResult defines the runs/subscribe success payload.
+type RunsSubscribeResult struct {
+	Payload RunsSubscribePayload `json:"payload"`
+}
+
 // RunUnsubscribeParams defines the run/unsubscribe request payload.
 type RunUnsubscribeParams struct {
 	RunID string `json:"runId"`
@@ -490,6 +504,19 @@ type RunUnsubscribePayload struct {
 type RunUnsubscribeResult struct {
 	RunID   string                `json:"runId"`
 	Payload RunUnsubscribePayload `json:"payload"`
+}
+
+// RunsUnsubscribeParams defines the runs/unsubscribe request payload.
+type RunsUnsubscribeParams struct{}
+
+// RunsUnsubscribePayload defines the runs/unsubscribe response body.
+type RunsUnsubscribePayload struct {
+	Unsubscribed bool `json:"unsubscribed"`
+}
+
+// RunsUnsubscribeResult defines the runs/unsubscribe success payload.
+type RunsUnsubscribeResult struct {
+	Payload RunsUnsubscribePayload `json:"payload"`
 }
 
 // RunStopParams defines the run/stop request payload.
@@ -560,6 +587,31 @@ type RunCompletedParams struct {
 	Payload RunCompletedPayload `json:"payload"`
 }
 
+// RunsChangedKind defines the payload kind for one runs/changed notification.
+type RunsChangedKind string
+
+const (
+	// RunsChangedKindUpsert carries one changed or newly observed run summary.
+	RunsChangedKindUpsert RunsChangedKind = "upsert"
+	// RunsChangedKindRemove removes one run summary from the collection view.
+	RunsChangedKindRemove RunsChangedKind = "remove"
+	// RunsChangedKindReset indicates the client should fetch a fresh authoritative snapshot.
+	RunsChangedKindReset RunsChangedKind = "reset"
+)
+
+// RunsChangedPayload defines one runs/changed notification body.
+type RunsChangedPayload struct {
+	Kind  RunsChangedKind `json:"kind"`
+	Run   *RunSummaryView `json:"run,omitempty"`
+	RunID *string         `json:"runId,omitempty"`
+}
+
+// RunsChangedParams defines the runs/changed notification payload.
+type RunsChangedParams struct {
+	Revision int64              `json:"revision"`
+	Payload  RunsChangedPayload `json:"payload"`
+}
+
 // ErrorData carries machine-actionable Sigil domain error data.
 type ErrorData struct {
 	Code      string                 `json:"code"`
@@ -619,10 +671,10 @@ func Definitions() []MethodDefinition {
 			Result: RunEventsReadResult{},
 		},
 		{
-			Name:   "run/list",
+			Name:   "runs/list",
 			Kind:   MethodKindRequest,
-			Params: RunListParams{},
-			Result: RunListResult{},
+			Params: RunsListParams{},
+			Result: RunsListResult{},
 		},
 		{
 			Name:   "run/node/read",
@@ -679,6 +731,18 @@ func Definitions() []MethodDefinition {
 			Result: RunUnsubscribeResult{},
 		},
 		{
+			Name:   "runs/subscribe",
+			Kind:   MethodKindRequest,
+			Params: RunsSubscribeParams{},
+			Result: RunsSubscribeResult{},
+		},
+		{
+			Name:   "runs/unsubscribe",
+			Kind:   MethodKindRequest,
+			Params: RunsUnsubscribeParams{},
+			Result: RunsUnsubscribeResult{},
+		},
+		{
 			Name:   "run/completed",
 			Kind:   MethodKindNotification,
 			Params: RunCompletedParams{},
@@ -697,6 +761,11 @@ func Definitions() []MethodDefinition {
 			Name:   "run/statusChanged",
 			Kind:   MethodKindNotification,
 			Params: RunStatusChangedParams{},
+		},
+		{
+			Name:   "runs/changed",
+			Kind:   MethodKindNotification,
+			Params: RunsChangedParams{},
 		},
 		{
 			Name:   "server/heartbeat",
