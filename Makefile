@@ -27,6 +27,7 @@ endef
 .PHONY: default \
 	help help-nocolor \
 	build build-nocolor \
+	install install-nocolor \
 	fmt fmt-nocolor \
 	tidy tidy-nocolor \
 	test-unit test-unit-nocolor \
@@ -43,6 +44,7 @@ help:
 	@printf "%b\n" "$(CYAN)Sigil Make Targets$(RESET)"
 	@printf "%b\n" "  $(YELLOW)help$(RESET)                Show available make targets"
 	@printf "%b\n" "  $(YELLOW)build$(RESET)               Build the sigil executable at ./sigil"
+	@printf "%b\n" "  $(YELLOW)install$(RESET)             Build and install sigil to ~/.local/bin/"
 	@printf "%b\n" "  $(YELLOW)fmt$(RESET)                 Format Go source files with gofmt"
 	@printf "%b\n" "  $(YELLOW)tidy$(RESET)                Reconcile go.mod/go.sum dependencies"
 	@printf "%b\n" "  $(YELLOW)test-unit$(RESET)           Run unit-focused tests for cmd and internal packages"
@@ -65,6 +67,15 @@ build:
 
 build-nocolor:
 	@$(MAKE) --no-print-directory COLOR=0 build
+
+install:
+	$(call step,Building and installing sigil to ~/.local/bin/)
+	@mkdir -p ~/.local/bin
+	@go build -o ~/.local/bin/sigil .
+	$(call done,Installed: ~/.local/bin/sigil)
+
+install-nocolor:
+	@$(MAKE) --no-print-directory COLOR=0 install
 
 fmt:
 	$(call step,Formatting Go files)
