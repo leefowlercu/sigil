@@ -16,6 +16,13 @@ import (
 	"github.com/leefowlercu/sigil/internal/runtime"
 )
 
+const (
+	previousStepFeedbackCodeRecursivePartitionMapRequired = "recursive_partition_map_required"
+	previousStepFeedbackCodePrematureFinalRejected        = "premature_final_rejected"
+	previousStepFeedbackCodeRecursiveMapReducerRequired   = "recursive_map_reducer_required"
+	previousStepFeedbackCodeRecursiveReducerFinalRejected = "recursive_reducer_final_rejected"
+)
+
 type executionContext struct {
 	runConfig    config.RunConfig
 	runContext   context.Context
@@ -472,6 +479,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 	}
 	contextMetadata := buildContextMetadata(baseContext, contextRef)
 	var previousFeedback *PreviousActionFeedback
+	var previousStepFeedback *PreviousStepFeedback
 	recursiveSubcallsAllowed := true
 	var recursiveSubcallsReason *string
 	for {
@@ -498,6 +506,16 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			"step_id", stepStarted.StepID,
 			"step_index", stepStarted.StepIndex,
 		)
+		if shouldDisableChildRecursionAfterStall(node, budgetSnapshot, recursiveSubcallsAllowed, previousFeedback) {
+			reason := "child node has used multiple steps without finalizing; stay local and return a bounded answer or unresolved result to the parent"
+			recursiveSubcallsAllowed = false
+			recursiveSubcallsReason = &reason
+			logger.Info("switching stalled child node to local-only recursive subcall fallback",
+				"node_id", node.ID,
+				"step_id", stepStarted.StepID,
+				"node_steps_used", budgetSnapshot.NodeStepsUsed,
+			)
+		}
 
 		executionState := buildStepExecutionState(
 			node,
@@ -516,6 +534,7 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("failed to build deterministic step input envelope", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to build deterministic step input envelope", err)
 		}
+		envelope.PreviousStepFeedback = previousStepFeedback
 
 		userMessage, err := encodeStepInputEnvelope(envelope)
 		if err != nil {
@@ -736,18 +755,80 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 				logger.Error("deterministic runtime guardrail breached after continue step completion", "step_id", stepStarted.StepID, "error", err)
 				return nodeExecutionResult{}, err
 			}
-			logger.Debug("completed continue step",
-				"step_id", stepStarted.StepID,
-				"duration_ms", durationMS(stepStart),
-			)
-
 			feedback, feedbackErr := buildPreviousActionFeedback(execCtx.lifecycle.RunID(), execCtx.artifacts, actionPayload)
 			if feedbackErr != nil {
 				logger.Error("failed to build repl feedback", "step_id", stepStarted.StepID, "error", feedbackErr)
 				return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to build repl feedback", feedbackErr)
 			}
 			previousFeedback = feedback
-			if executionState.SmallContext && recursiveSubcallsAllowed && feedback.SubcallSummary != nil && feedback.SubcallSummary.RecursiveCount > 0 {
+			if actionPayload.Status == runtime.ActionExecutionStatusCompleted {
+				artifact, err := execCtx.artifacts.Read(execCtx.lifecycle.RunID(), actionPayload.ActionRef)
+				if err != nil {
+					logger.Error("failed to inspect completed action artifact for marked final answer", "step_id", stepStarted.StepID, "error", err)
+					return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to inspect completed action artifact", err)
+				}
+				if candidate, ok := extractMarkedFinalAnswerCandidate(artifact.Stdout); ok {
+					if shouldRequireRecursiveMapReducer(node, envelope, feedback) {
+						previousStepFeedback = buildRecursiveMapReducerRequiredFeedback(stepStarted.StepID, feedback.SubcallSummary)
+						logger.Info("rejecting marked final answer until recursive-map reducer step completes",
+							"node_id", node.ID,
+							"step_id", stepStarted.StepID,
+							"recursive_subcalls", feedback.SubcallSummary.RecursiveCount,
+						)
+						continue
+					}
+					finalAnswer := normalizeFinalAnswer(candidate)
+					if finalAnswer == "" {
+						logger.Error("marked final answer candidate is empty after normalization", "step_id", stepStarted.StepID)
+						return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "marked final answer candidate is empty after boundary whitespace normalization", nil)
+					}
+					finalEvidence := []FinalEvidence{{Ref: actionPayload.ActionRef}}
+					finalRef, err := completeNodeWithFinalAnswer(execCtx, node, finalAnswer, finalEvidence, nil)
+					if err != nil {
+						logger.Error("failed to complete node from marked final answer candidate", "step_id", stepStarted.StepID, "error", err)
+						return nodeExecutionResult{}, err
+					}
+					failedStepID = nil
+					logger.Info("node reached marked final answer from continue action",
+						"step_id", stepStarted.StepID,
+						"duration_ms", durationMS(stepStart),
+						"final_answer_ref", finalRef,
+						"final_answer_bytes", len(finalAnswer),
+					)
+					return nodeExecutionResult{answer: finalAnswer, finalRef: finalRef}, nil
+				}
+			}
+			logger.Debug("completed continue step",
+				"step_id", stepStarted.StepID,
+				"duration_ms", durationMS(stepStart),
+			)
+
+			if shouldRequireRecursivePartitionMapRetry(node, envelope, feedback) {
+				previousStepFeedback = buildRecursivePartitionMapRequiredFeedback(stepStarted.StepID)
+				logger.Info("requesting recursive partition-map retry after local-only root step",
+					"node_id", node.ID,
+					"step_id", stepStarted.StepID,
+					"action_status", feedback.Status,
+				)
+			} else if shouldRequireRecursiveMapReducer(node, envelope, feedback) {
+				previousStepFeedback = buildRecursiveMapReducerRequiredFeedback(stepStarted.StepID, feedback.SubcallSummary)
+				logger.Info("requesting local reducer step after root recursive map",
+					"node_id", node.ID,
+					"step_id", stepStarted.StepID,
+					"recursive_subcalls", feedback.SubcallSummary.RecursiveCount,
+				)
+			} else {
+				previousStepFeedback = nil
+			}
+			if shouldDisableChildRecursionAfterRecursiveWork(node, recursiveSubcallsAllowed, feedback) {
+				reason := "child node already used recursive subcalls; finish locally or return a bounded unresolved result to the parent"
+				recursiveSubcallsAllowed = false
+				recursiveSubcallsReason = &reason
+				logger.Info("switching recursive child node to local-only fallback after child recursion",
+					"node_id", node.ID,
+					"step_id", stepStarted.StepID,
+				)
+			} else if executionState.SmallContext && recursiveSubcallsAllowed && feedback.SubcallSummary != nil && feedback.SubcallSummary.RecursiveCount > 0 {
 				reason := "small context already used recursive subcalls in this node; stay local in later steps"
 				recursiveSubcallsAllowed = false
 				recursiveSubcallsReason = &reason
@@ -796,47 +877,204 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			logger.Error("final payload is missing", "step_id", stepStarted.StepID)
 			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final payload is required for final decision", nil)
 		}
+		if shouldRejectPrematureRecursiveFinal(node, envelope, decisionPayload) {
+			previousStepFeedback = buildPrematureFinalRejectedFeedback(stepStarted.StepID)
+			logger.Info("rejecting premature root final before recursive partition-map evidence",
+				"step_id", stepStarted.StepID,
+				"step_index", stepStarted.StepIndex,
+			)
+			continue
+		}
+		if shouldRejectFinalBeforeRecursiveReducer(node, envelope, decisionPayload) {
+			previousStepFeedback = buildRecursiveReducerFinalRejectedFeedback(stepStarted.StepID)
+			logger.Info("rejecting root final before required recursive-map reducer action",
+				"step_id", stepStarted.StepID,
+				"step_index", stepStarted.StepIndex,
+			)
+			continue
+		}
 
 		if err := resolveFinalEvidenceRefs(execCtx.lifecycle.RunID(), execCtx.runArtifacts.runsBaseDir, execCtx.artifacts, node.ID, decisionPayload.Final.Evidence); err != nil {
 			logger.Error("failed to resolve final evidence refs", "step_id", stepStarted.StepID, "error", err)
 			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final evidence resolution failed", err)
 		}
 
-		finalRef, err := execCtx.runArtifacts.PersistFinalAnswer(
-			execCtx.lifecycle.RunID(),
-			node.ID,
-			decisionPayload.Final.Answer,
-			decisionPayload.Final.Evidence,
-			decisionPayload.Final.Confidence,
-		)
+		finalAnswer := decisionPayload.Final.Answer
+		if candidate, ok, err := finalAnswerCandidateFromEvidence(execCtx.lifecycle.RunID(), execCtx.artifacts, decisionPayload.Final.Evidence); err != nil {
+			logger.Error("failed to inspect final evidence for marked final-answer candidate", "step_id", stepStarted.StepID, "error", err)
+			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final evidence candidate resolution failed", err)
+		} else if ok {
+			finalAnswer = candidate
+		}
+		finalAnswer = normalizeFinalAnswer(finalAnswer)
+		if finalAnswer == "" {
+			logger.Error("final payload answer is empty after normalization", "step_id", stepStarted.StepID)
+			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final.answer is empty after boundary whitespace normalization", nil)
+		}
+
+		finalRef, err := completeNodeWithFinalAnswer(execCtx, node, finalAnswer, decisionPayload.Final.Evidence, decisionPayload.Final.Confidence)
 		if err != nil {
-			logger.Error("failed to persist final answer output", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist final answer output", err)
-		}
-		nodeAccounting := execCtx.ledger.NodeRollup(node.ID)
-		nodeAccountingRef, err := execCtx.runArtifacts.PersistNodeAccounting(execCtx.lifecycle.RunID(), node.ID, nodeAccounting)
-		if err != nil {
-			logger.Error("failed to persist node accounting output", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist node accounting output", err)
-		}
-		if err := execCtx.lifecycle.CompleteNodeWithAccounting(node.ID, &finalRef, nodeAccounting, &nodeAccountingRef); err != nil {
-			logger.Error("failed to persist node.completed event", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to complete node", err)
-		}
-		if err := execCtx.sessions.CloseNode(node.ID); err != nil {
-			logger.Error("failed to close node repl session", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to close node repl session", err)
+			logger.Error("failed to complete node with final answer", "step_id", stepStarted.StepID, "error", err)
+			return nodeExecutionResult{}, err
 		}
 		failedStepID = nil
 		logger.Info("node reached final decision",
 			"step_id", stepStarted.StepID,
 			"duration_ms", durationMS(stepStart),
 			"final_answer_ref", finalRef,
-			"final_answer_bytes", len(decisionPayload.Final.Answer),
+			"final_answer_bytes", len(finalAnswer),
 		)
 
-		return nodeExecutionResult{answer: decisionPayload.Final.Answer, finalRef: finalRef}, nil
+		return nodeExecutionResult{answer: finalAnswer, finalRef: finalRef}, nil
 	}
+}
+
+func shouldRequireRecursivePartitionMapRetry(node runtime.Node, envelope StepInputEnvelope, feedback *PreviousActionFeedback) bool {
+	if node.Depth != 0 || feedback == nil {
+		return false
+	}
+	if envelope.RecursionPolicy == nil || *envelope.RecursionPolicy != StepRecursionPolicyPartitionMapRecursive {
+		return false
+	}
+	if envelope.ExecutionState.SmallContext || !envelope.ExecutionState.RecursiveSubcallsAllowed || envelope.ExecutionState.RemainingDepth <= 0 {
+		return false
+	}
+	if feedback.SubcallSummary == nil {
+		return true
+	}
+	return feedback.SubcallSummary.RecursiveCount == 0
+}
+
+func shouldRequireRecursiveMapReducer(node runtime.Node, envelope StepInputEnvelope, feedback *PreviousActionFeedback) bool {
+	if node.Depth != 0 || feedback == nil || feedback.SubcallSummary == nil {
+		return false
+	}
+	if envelope.ExecutionState.SmallContext {
+		return false
+	}
+	if feedback.Status != string(runtime.ActionExecutionStatusCompleted) {
+		return false
+	}
+	if feedback.SubcallSummary.RecursiveCount <= 1 || feedback.SubcallSummary.FailedCount > 0 {
+		return false
+	}
+	if envelope.PreviousStepFeedback != nil &&
+		(envelope.PreviousStepFeedback.Code == previousStepFeedbackCodeRecursiveMapReducerRequired ||
+			envelope.PreviousStepFeedback.Code == previousStepFeedbackCodeRecursiveReducerFinalRejected) {
+		return false
+	}
+	return true
+}
+
+func shouldRejectPrematureRecursiveFinal(node runtime.Node, envelope StepInputEnvelope, decisionPayload DecisionPayload) bool {
+	if node.Depth != 0 || decisionPayload.Final == nil {
+		return false
+	}
+	if envelope.RecursionPolicy == nil || *envelope.RecursionPolicy != StepRecursionPolicyPartitionMapRecursive {
+		return false
+	}
+	if envelope.ExecutionState.SmallContext || !envelope.ExecutionState.RecursiveSubcallsAllowed || envelope.ExecutionState.RemainingDepth <= 0 {
+		return false
+	}
+	if strings.EqualFold(normalizeFinalAnswer(decisionPayload.Final.Answer), "NONE") {
+		return false
+	}
+	if envelope.StepIndex == 1 && envelope.PreviousActionFeedback == nil && envelope.PreviousStepFeedback == nil {
+		return true
+	}
+	return envelope.PreviousStepFeedback != nil
+}
+
+func shouldRejectFinalBeforeRecursiveReducer(node runtime.Node, envelope StepInputEnvelope, decisionPayload DecisionPayload) bool {
+	if node.Depth != 0 || decisionPayload.Final == nil || envelope.PreviousStepFeedback == nil {
+		return false
+	}
+	switch envelope.PreviousStepFeedback.Code {
+	case previousStepFeedbackCodeRecursiveMapReducerRequired, previousStepFeedbackCodeRecursiveReducerFinalRejected:
+		return !strings.EqualFold(normalizeFinalAnswer(decisionPayload.Final.Answer), "NONE")
+	default:
+		return false
+	}
+}
+
+func shouldDisableChildRecursionAfterStall(node runtime.Node, budgetSnapshot stepBudgetSnapshot, recursiveSubcallsAllowed bool, previousFeedback *PreviousActionFeedback) bool {
+	return node.Depth > 0 && recursiveSubcallsAllowed && previousFeedback != nil && budgetSnapshot.NodeStepsUsed >= 3
+}
+
+func shouldDisableChildRecursionAfterRecursiveWork(node runtime.Node, recursiveSubcallsAllowed bool, feedback *PreviousActionFeedback) bool {
+	if node.Depth == 0 || !recursiveSubcallsAllowed || feedback == nil || feedback.SubcallSummary == nil {
+		return false
+	}
+	return feedback.SubcallSummary.RecursiveCount > 0
+}
+
+func buildRecursivePartitionMapRequiredFeedback(stepID string) *PreviousStepFeedback {
+	policy := StepRecursionPolicyPartitionMapRecursive
+	return &PreviousStepFeedback{
+		StepID:                  stepID,
+		Code:                    previousStepFeedbackCodeRecursivePartitionMapRequired,
+		Message:                 "The previous root step was classified as partition_map_recursive but executed no recursive subcalls. Retry with a compile-safe recursive partition-map action, or return NONE only if the task is explicitly absent.",
+		RequiredRecursionPolicy: &policy,
+	}
+}
+
+func buildPrematureFinalRejectedFeedback(stepID string) *PreviousStepFeedback {
+	policy := StepRecursionPolicyPartitionMapRecursive
+	return &PreviousStepFeedback{
+		StepID:                  stepID,
+		Code:                    previousStepFeedbackCodePrematureFinalRejected,
+		Message:                 "The previous root final was rejected because large-context recursive partition-map evidence is still required. Execute recursive child subcalls before finalizing, unless the canonical answer is exactly NONE.",
+		RequiredRecursionPolicy: &policy,
+	}
+}
+
+func buildRecursiveMapReducerRequiredFeedback(stepID string, summary *PreviousActionSubcallSummary) *PreviousStepFeedback {
+	policy := StepRecursionPolicyLocalOrLeaf
+	recursiveCount := 0
+	if summary != nil {
+		recursiveCount = summary.RecursiveCount
+	}
+	return &PreviousStepFeedback{
+		StepID:                  stepID,
+		Code:                    previousStepFeedbackCodeRecursiveMapReducerRequired,
+		Message:                 fmt.Sprintf("The previous root action completed %d recursive subcall(s). Run one local reducer action before finalizing: read the previous action artifact, aggregate all child answer strings, verify coverage, and print the reduced result.", recursiveCount),
+		RequiredRecursionPolicy: &policy,
+	}
+}
+
+func buildRecursiveReducerFinalRejectedFeedback(stepID string) *PreviousStepFeedback {
+	policy := StepRecursionPolicyLocalOrLeaf
+	return &PreviousStepFeedback{
+		StepID:                  stepID,
+		Code:                    previousStepFeedbackCodeRecursiveReducerFinalRejected,
+		Message:                 "The previous root final was rejected because recursive-map results must be reduced by a local action first. Use read_action_artifact(previous_action_ref), aggregate every child result, verify coverage, then finalize.",
+		RequiredRecursionPolicy: &policy,
+	}
+}
+
+func completeNodeWithFinalAnswer(execCtx *executionContext, node runtime.Node, finalAnswer string, evidence []FinalEvidence, confidence *string) (string, error) {
+	finalRef, err := execCtx.runArtifacts.PersistFinalAnswer(
+		execCtx.lifecycle.RunID(),
+		node.ID,
+		finalAnswer,
+		evidence,
+		confidence,
+	)
+	if err != nil {
+		return "", WrapError(ErrorCodeInfrastructure, "failed to persist final answer output", err)
+	}
+	nodeAccounting := execCtx.ledger.NodeRollup(node.ID)
+	nodeAccountingRef, err := execCtx.runArtifacts.PersistNodeAccounting(execCtx.lifecycle.RunID(), node.ID, nodeAccounting)
+	if err != nil {
+		return "", WrapError(ErrorCodeInfrastructure, "failed to persist node accounting output", err)
+	}
+	if err := execCtx.lifecycle.CompleteNodeWithAccounting(node.ID, &finalRef, nodeAccounting, &nodeAccountingRef); err != nil {
+		return "", WrapError(ErrorCodeInfrastructure, "failed to complete node", err)
+	}
+	if err := execCtx.sessions.CloseNode(node.ID); err != nil {
+		return "", WrapError(ErrorCodeInfrastructure, "failed to close node repl session", err)
+	}
+	return finalRef, nil
 }
 
 func appendContinueStepCompleted(execCtx *executionContext, nodeID string, stepStarted runtime.NodeStepStartedPayload, stepStart time.Time) error {

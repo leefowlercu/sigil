@@ -1,0 +1,790 @@
+# Synthetic Citation RAG Corpus
+
+[REF-001] Operational reference 01
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-002] Operational reference 02
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-003] Operational reference 03
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-004] Operational reference 04
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-005] Operational reference 05
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-006] Operational reference 06
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-007] Operational reference 07
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-008] Operational reference 08
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-009] Operational reference 09
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-010] Operational reference 10
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-011] Operational reference 11
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-012] Operational reference 12
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-013] Operational reference 13
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-014] Operational reference 14
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-015] Operational reference 15
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-016] Operational reference 16
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-017] Operational reference 17
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-018] Operational reference 18
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-019] Operational reference 19
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-020] Operational reference 20
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-021] Operational reference 21
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-022] Operational reference 22
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-023] Operational reference 23
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-024] Operational reference 24
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-025] Operational reference 25
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-026] Operational reference 26
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-027] Operational reference 27
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-028] Operational reference 28
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-029] Operational reference 29
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-030] Operational reference 30
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-031] Operational reference 31
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-032] Operational reference 32
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-033] Operational reference 33
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-034] Operational reference 34
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-035] Operational reference 35
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-036] Operational reference 36
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-037] Operational reference 37
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-038] Operational reference 38
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-039] Operational reference 39
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-040] Operational reference 40
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-041] Operational reference 41
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-042] Operational reference 42
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-043] Operational reference 43
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-044] Operational reference 44
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-045] Operational reference 45
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-046] Operational reference 46
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-047] Operational reference 47
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-048] Operational reference 48
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-049] Operational reference 49
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-050] Operational reference 50
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-051] Operational reference 51
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-052] Operational reference 52
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-053] Operational reference 53
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-054] Operational reference 54
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-055] Operational reference 55
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-056] Operational reference 56
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-057] Operational reference 57
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-058] Operational reference 58
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-059] Operational reference 59
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-060] Operational reference 60
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-061] Operational reference 61
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-062] Operational reference 62
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-063] Operational reference 63
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-064] Operational reference 64
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-065] Operational reference 65
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-066] Operational reference 66
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-067] Operational reference 67
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-068] Operational reference 68
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-069] Operational reference 69
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-070] Operational reference 70
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[POL-004] Offline cache release policy
+Offline cache may ship only when revocation-ledger synchronization is scheduled within 24 hours and the audit export includes per-record hashes.
+
+[REF-071] Operational reference 72
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-072] Operational reference 73
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-073] Operational reference 74
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-074] Operational reference 75
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-075] Operational reference 76
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-076] Operational reference 77
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-077] Operational reference 78
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-078] Operational reference 79
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-079] Operational reference 80
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-080] Operational reference 81
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-081] Operational reference 82
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-082] Operational reference 83
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-083] Operational reference 84
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-084] Operational reference 85
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-085] Operational reference 86
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-086] Operational reference 87
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-087] Operational reference 88
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-088] Operational reference 89
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-089] Operational reference 90
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-090] Operational reference 91
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-091] Operational reference 92
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-092] Operational reference 93
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-093] Operational reference 94
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-094] Operational reference 95
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-095] Operational reference 96
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-096] Operational reference 97
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-097] Operational reference 98
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-098] Operational reference 99
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-099] Operational reference 100
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-100] Operational reference 101
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-101] Operational reference 102
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-102] Operational reference 103
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-103] Operational reference 104
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-104] Operational reference 105
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-105] Operational reference 106
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-106] Operational reference 107
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-107] Operational reference 108
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-108] Operational reference 109
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-109] Operational reference 110
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-110] Operational reference 111
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-111] Operational reference 112
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-112] Operational reference 113
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-113] Operational reference 114
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-114] Operational reference 115
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-115] Operational reference 116
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-116] Operational reference 117
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-117] Operational reference 118
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-118] Operational reference 119
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-119] Operational reference 120
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-120] Operational reference 121
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-121] Operational reference 122
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-122] Operational reference 123
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-123] Operational reference 124
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-124] Operational reference 125
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-125] Operational reference 126
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-126] Operational reference 127
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-127] Operational reference 128
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-128] Operational reference 129
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-129] Operational reference 130
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-130] Operational reference 131
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-131] Operational reference 132
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-132] Operational reference 133
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-133] Operational reference 134
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-134] Operational reference 135
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-135] Operational reference 136
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-136] Operational reference 137
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-137] Operational reference 138
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-138] Operational reference 139
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-139] Operational reference 140
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-140] Operational reference 141
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-141] Operational reference 142
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-142] Operational reference 143
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-143] Operational reference 144
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-144] Operational reference 145
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-145] Operational reference 146
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-146] Operational reference 147
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-147] Operational reference 148
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-148] Operational reference 149
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-149] Operational reference 150
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-150] Operational reference 151
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-151] Operational reference 152
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-152] Operational reference 153
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-153] Operational reference 154
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-154] Operational reference 155
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-155] Operational reference 156
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-156] Operational reference 157
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-157] Operational reference 158
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-158] Operational reference 159
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-159] Operational reference 160
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-160] Operational reference 161
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REL-009] Delta build 14.8 release note
+Delta build 14.8 syncs the revocation ledger every 18 hours and exports a SHA-256 hash for each cached record. This note supersedes the older beta limitation.
+
+[REF-161] Operational reference 163
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-162] Operational reference 164
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-163] Operational reference 165
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-164] Operational reference 166
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-165] Operational reference 167
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-166] Operational reference 168
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-167] Operational reference 169
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-168] Operational reference 170
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-169] Operational reference 171
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-170] Operational reference 172
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-171] Operational reference 173
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-172] Operational reference 174
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-173] Operational reference 175
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-174] Operational reference 176
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-175] Operational reference 177
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-176] Operational reference 178
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-177] Operational reference 179
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-178] Operational reference 180
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-179] Operational reference 181
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-180] Operational reference 182
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-181] Operational reference 183
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-182] Operational reference 184
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-183] Operational reference 185
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-184] Operational reference 186
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-185] Operational reference 187
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-186] Operational reference 188
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-187] Operational reference 189
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-188] Operational reference 190
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-189] Operational reference 191
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-190] Operational reference 192
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-191] Operational reference 193
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-192] Operational reference 194
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-193] Operational reference 195
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-194] Operational reference 196
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-195] Operational reference 197
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-196] Operational reference 198
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-197] Operational reference 199
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-198] Operational reference 200
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-199] Operational reference 201
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-200] Operational reference 202
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-201] Operational reference 203
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-202] Operational reference 204
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-203] Operational reference 205
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-204] Operational reference 206
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-205] Operational reference 207
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-206] Operational reference 208
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-207] Operational reference 209
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-208] Operational reference 210
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-209] Operational reference 211
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-210] Operational reference 212
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-211] Operational reference 213
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-212] Operational reference 214
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-213] Operational reference 215
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-214] Operational reference 216
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-215] Operational reference 217
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-216] Operational reference 218
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-217] Operational reference 219
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-218] Operational reference 220
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-219] Operational reference 221
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-220] Operational reference 222
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-221] Operational reference 223
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-222] Operational reference 224
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-223] Operational reference 225
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-224] Operational reference 226
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-225] Operational reference 227
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-226] Operational reference 228
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-227] Operational reference 229
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-228] Operational reference 230
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-229] Operational reference 231
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-230] Operational reference 232
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[RISK-017] Kestrel clinic rollout risk
+Kestrel clinics require printed override cards until staff training completes on June 3.
+
+[REF-231] Operational reference 234
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-232] Operational reference 235
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-233] Operational reference 236
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-234] Operational reference 237
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-235] Operational reference 238
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-236] Operational reference 239
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-237] Operational reference 240
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-238] Operational reference 241
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-239] Operational reference 242
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-240] Operational reference 243
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-241] Operational reference 244
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-242] Operational reference 245
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-243] Operational reference 246
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-244] Operational reference 247
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-245] Operational reference 248
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-246] Operational reference 249
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-247] Operational reference 250
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-248] Operational reference 251
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-249] Operational reference 252
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-250] Operational reference 253
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-251] Operational reference 254
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-252] Operational reference 255
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-253] Operational reference 256
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-254] Operational reference 257
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-255] Operational reference 258
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-256] Operational reference 259
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-257] Operational reference 260
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta. A previous beta concern is noted here, but it is not the current build note.
+
+[REF-258] Operational reference 261
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-259] Operational reference 262
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.
+
+[REF-260] Operational reference 263
+This reference covers staffing, telemetry labels, or older rollout assumptions. It does not jointly establish the offline-cache release decision for Team Delta.

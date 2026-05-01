@@ -69,6 +69,41 @@ func TestResolveFinalEvidenceRefsRejectsUnresolvableRefs(t *testing.T) {
 	}
 }
 
+func TestResolveFinalEvidenceRefsRejectsFailedActionRefs(t *testing.T) {
+	runsBaseDir := t.TempDir()
+	runID := mustUUIDv7String(t)
+	nodeID := mustUUIDv7String(t)
+	stepID := mustUUIDv7String(t)
+
+	artifactStore, err := NewActionArtifactStore(runsBaseDir)
+	if err != nil {
+		t.Fatalf("expected action artifact store creation success, got %v", err)
+	}
+	actionRef, err := artifactStore.Persist(ActionArtifact{
+		RunID:       runID,
+		NodeID:      nodeID,
+		StepID:      stepID,
+		ActionIndex: 1,
+		ActionType:  "repl_code",
+		Language:    "go",
+		Status:      "failed",
+		Code:        `fmt.Print("ok")`,
+		DurationMS:  1,
+	})
+	if err != nil {
+		t.Fatalf("expected action artifact persistence success, got %v", err)
+	}
+
+	evidence := []FinalEvidence{{Ref: actionRef}}
+	err = resolveFinalEvidenceRefs(runID, runsBaseDir, artifactStore, nodeID, evidence)
+	if err == nil {
+		t.Fatal("expected failed action evidence ref rejection")
+	}
+	if !strings.Contains(err.Error(), "final evidence requires completed action") {
+		t.Fatalf("expected completed-action evidence error, got %v", err)
+	}
+}
+
 func TestResolveFinalEvidenceRefsNormalizesMalformedPreviousActionRefs(t *testing.T) {
 	runsBaseDir := t.TempDir()
 	runID := mustUUIDv7String(t)

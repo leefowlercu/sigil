@@ -1,0 +1,3 @@
+logs:
+  level: info
+  dir: ./.sigil/logs

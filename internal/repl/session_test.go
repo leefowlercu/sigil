@@ -197,6 +197,38 @@ func TestYaegiSessionExecAllowsRepeatedImportsAcrossSteps(t *testing.T) {
 	}
 }
 
+func TestYaegiSessionExecRetriesNameCollisionInScopedBody(t *testing.T) {
+	session := mustNewSession(t)
+
+	result, err := session.Exec(context.Background(), `import "fmt"; ref := "first"; fmt.Print(ref)`)
+	if err != nil {
+		t.Fatalf("expected first exec success, got %v", err)
+	}
+	if result.Stdout != "first" {
+		t.Fatalf("expected stdout first, got %q", result.Stdout)
+	}
+
+	result, err = session.Exec(context.Background(), `import "fmt"; ref := "second"; fmt.Print(ref)`)
+	if err != nil {
+		t.Fatalf("expected second exec success after scoped retry, got %v", err)
+	}
+	if result.Stdout != "second" {
+		t.Fatalf("expected stdout second, got %q", result.Stdout)
+	}
+}
+
+func TestYaegiSessionExecAutoImportsAllowedUndefinedPackageSymbol(t *testing.T) {
+	session := mustNewSession(t)
+
+	result, err := session.Exec(context.Background(), `import "fmt"; fmt.Print(strconv.Itoa(42))`)
+	if err != nil {
+		t.Fatalf("expected exec success after allowed import recovery, got %v", err)
+	}
+	if result.Stdout != "42" {
+		t.Fatalf("expected stdout 42, got %q", result.Stdout)
+	}
+}
+
 func TestYaegiSessionExposesContextBinding(t *testing.T) {
 	session := mustNewSessionWithContext(t, "ctx-value")
 
@@ -364,6 +396,31 @@ fmt.Print(output.Status + "|" + output.Stdout + "|" + output.Stderr + "|" + outp
 		t.Fatalf("expected read_action_artifact exec success, got %v", err)
 	}
 	expected := "completed|exact stdout|exact stderr|err_code|err message"
+	if result.Stdout != expected {
+		t.Fatalf("expected output %q, got %q", expected, result.Stdout)
+	}
+}
+
+func TestYaegiSessionExposesActionOutputType(t *testing.T) {
+	session := mustNewSessionWithActionOutputReader(t, func(actionRef string) (ActionOutput, error) {
+		if actionRef != "run-artifact://node/one/step/two/action-1.json" {
+			t.Fatalf("expected action_ref to be forwarded, got %q", actionRef)
+		}
+		return ActionOutput{Status: "completed", Stdout: "exact stdout"}, nil
+	})
+
+	result, err := session.Exec(context.Background(), `
+import "fmt"
+artifact := ActionOutput{}
+var artifactErr error
+artifact, artifactErr = read_action_artifact("run-artifact://node/one/step/two/action-1.json")
+if artifactErr != nil { panic(artifactErr) }
+fmt.Print(artifact.Status + "|" + artifact.Stdout)
+`)
+	if err != nil {
+		t.Fatalf("expected explicit ActionOutput exec success, got %v", err)
+	}
+	expected := "completed|exact stdout"
 	if result.Stdout != expected {
 		t.Fatalf("expected output %q, got %q", expected, result.Stdout)
 	}

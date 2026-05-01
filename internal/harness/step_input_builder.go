@@ -14,6 +14,8 @@ const (
 	stepInputPreviewCapBytes   = 2048
 	smallContextBytesThreshold = 2000
 	smallContextLineThreshold  = 20
+	childRecursiveBytesFloor   = 12000
+	childRecursiveLineFloor    = 80
 )
 
 // StepContextMetadata captures deterministic context identity and sizing details.
@@ -39,6 +41,17 @@ type StepExecutionState struct {
 	RecursiveSubcallsAllowed  bool    `json:"recursive_subcalls_allowed"`
 	RecursiveSubcallsReason   *string `json:"recursive_subcalls_reason,omitempty"`
 }
+
+// StepRecursionPolicy is the deterministic recursion mode advertised to a node step.
+type StepRecursionPolicy string
+
+const (
+	StepRecursionPolicyLeafOnly                         StepRecursionPolicy = "leaf_only"
+	StepRecursionPolicyLocalOrLeaf                      StepRecursionPolicy = "local_or_leaf"
+	StepRecursionPolicyPartitionMapRecursive            StepRecursionPolicy = "partition_map_recursive"
+	StepRecursionPolicyChildPartitionOrSolve            StepRecursionPolicy = "child_partition_or_solve"
+	StepRecursionPolicyRecursiveVerificationRecommended StepRecursionPolicy = "recursive_verification_recommended"
+)
 
 // PreviousActionSubcallSummary captures deterministic counts for prior-step subcall execution.
 type PreviousActionSubcallSummary struct {
@@ -66,13 +79,23 @@ type PreviousActionFeedback struct {
 	StderrTruncated bool                          `json:"stderr_truncated"`
 }
 
+// PreviousStepFeedback is deterministic harness feedback for non-action step corrections.
+type PreviousStepFeedback struct {
+	StepID                  string               `json:"step_id"`
+	Code                    string               `json:"code"`
+	Message                 string               `json:"message"`
+	RequiredRecursionPolicy *StepRecursionPolicy `json:"required_recursion_policy,omitempty"`
+}
+
 // StepInputEnvelope is the deterministic user message payload sent to model-step inference.
 type StepInputEnvelope struct {
 	Query                  string                  `json:"query"`
 	StepIndex              int                     `json:"step_index"`
 	ContextMetadata        StepContextMetadata     `json:"context_metadata"`
 	ExecutionState         StepExecutionState      `json:"execution_state"`
+	RecursionPolicy        *StepRecursionPolicy    `json:"recursion_policy,omitempty"`
 	PreviousActionFeedback *PreviousActionFeedback `json:"previous_action_feedback,omitempty"`
+	PreviousStepFeedback   *PreviousStepFeedback   `json:"previous_step_feedback,omitempty"`
 }
 
 func buildContextMetadata(rawContext string, contextRef string) StepContextMetadata {
@@ -141,6 +164,7 @@ func buildStepInputEnvelope(query string, stepIndex int, metadata StepContextMet
 		StepIndex:              stepIndex,
 		ContextMetadata:        metadata,
 		ExecutionState:         executionState,
+		RecursionPolicy:        buildStepRecursionPolicy(metadata, executionState, feedback),
 		PreviousActionFeedback: feedback,
 	}, nil
 }
@@ -210,6 +234,34 @@ func buildStepExecutionState(node runtime.Node, maxDepth int, nodeStepsUsed int,
 
 func isSmallContext(metadata StepContextMetadata) bool {
 	return metadata.ContextBytes <= smallContextBytesThreshold || metadata.ContextLineCount <= smallContextLineThreshold
+}
+
+func buildStepRecursionPolicy(metadata StepContextMetadata, executionState StepExecutionState, feedback *PreviousActionFeedback) *StepRecursionPolicy {
+	policy := StepRecursionPolicyLocalOrLeaf
+	if !executionState.RecursiveSubcallsAllowed || executionState.RemainingDepth <= 0 {
+		policy = StepRecursionPolicyLeafOnly
+	} else if executionState.SmallContext {
+		policy = StepRecursionPolicyLocalOrLeaf
+	} else if feedback != nil && feedback.SubcallSummary != nil && feedback.SubcallSummary.RecursiveCount > 0 {
+		if feedback.SubcallSummary.FailedCount > 0 {
+			policy = StepRecursionPolicyRecursiveVerificationRecommended
+		} else {
+			policy = StepRecursionPolicyLocalOrLeaf
+		}
+	} else if executionState.NodeDepth > 0 {
+		if isLargeChildContext(metadata) {
+			policy = StepRecursionPolicyChildPartitionOrSolve
+		} else {
+			policy = StepRecursionPolicyLocalOrLeaf
+		}
+	} else {
+		policy = StepRecursionPolicyPartitionMapRecursive
+	}
+	return &policy
+}
+
+func isLargeChildContext(metadata StepContextMetadata) bool {
+	return metadata.ContextBytes > childRecursiveBytesFloor && metadata.ContextLineCount > childRecursiveLineFloor
 }
 
 func buildPreviousActionSubcallSummary(subcalls []ActionSubcallTrace) *PreviousActionSubcallSummary {

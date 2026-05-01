@@ -46,19 +46,23 @@ func resolveEvidenceRef(runID string, runsBaseDir string, artifacts *ActionArtif
 
 	if strings.HasPrefix(trimmed, runtime.ArtifactRefPrefix) {
 		if _, err := runtime.ParseActionArtifactRef(trimmed); err == nil {
-			if _, readErr := artifacts.Read(runID, trimmed); readErr != nil {
+			artifact, readErr := artifacts.Read(runID, trimmed)
+			if readErr != nil {
 				repairedRef, repaired := normalizeMalformedActionRef(runID, runsBaseDir, currentNodeID, trimmed)
 				if repaired {
-					if _, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil {
+					if repairedArtifact, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil && repairedArtifact.Status == "completed" {
 						return repairedRef, nil
 					}
 				}
 				return "", fmt.Errorf("failed to resolve action artifact ref %q; %w", trimmed, readErr)
 			}
+			if artifact.Status != "completed" {
+				return "", fmt.Errorf("action artifact ref %q has status %q; final evidence requires completed action", trimmed, artifact.Status)
+			}
 			return trimmed, nil
 		}
 		if repairedRef, repaired := normalizeMalformedActionRef(runID, runsBaseDir, currentNodeID, trimmed); repaired {
-			if _, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil {
+			if repairedArtifact, repairedErr := artifacts.Read(runID, repairedRef); repairedErr == nil && repairedArtifact.Status == "completed" {
 				return repairedRef, nil
 			}
 		}

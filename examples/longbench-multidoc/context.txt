@@ -1,0 +1,769 @@
+# Synthetic Multi-Document QA Corpus
+
+[DOC-0001] Meridian Atlas regional note 01
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0002] Shoreline Kit regional note 02
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0003] Cobalt Fieldbox regional note 03
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0004] Helio Prism regional note 04
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0005] Meridian Atlas regional note 05
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0006] Shoreline Kit regional note 06
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0007] Cobalt Fieldbox regional note 07
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0008] Helio Prism regional note 08
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0009] Meridian Atlas regional note 09
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0010] Shoreline Kit regional note 10
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0011] Cobalt Fieldbox regional note 11
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0012] Helio Prism regional note 12
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0013] Meridian Atlas regional note 13
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0014] Shoreline Kit regional note 14
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0015] Cobalt Fieldbox regional note 15
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0016] Helio Prism regional note 16
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0017] Meridian Atlas regional note 17
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0018] Shoreline Kit regional note 18
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0019] Cobalt Fieldbox regional note 19
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0020] Helio Prism regional note 20
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0021] Meridian Atlas regional note 21
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0022] Shoreline Kit regional note 22
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0023] Cobalt Fieldbox regional note 23
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0024] Helio Prism regional note 24
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0025] Meridian Atlas regional note 25
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0026] Shoreline Kit regional note 26
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0027] Cobalt Fieldbox regional note 27
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0028] Helio Prism regional note 28
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0029] Meridian Atlas regional note 29
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0030] Shoreline Kit regional note 30
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0031] Cobalt Fieldbox regional note 31
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0032] Helio Prism regional note 32
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0033] Meridian Atlas regional note 33
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0034] Shoreline Kit regional note 34
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0035] Cobalt Fieldbox regional note 35
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0036] Helio Prism regional note 36
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0037] Meridian Atlas regional note 37
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0038] Shoreline Kit regional note 38
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0039] Cobalt Fieldbox regional note 39
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0040] Helio Prism regional note 40
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0041] Meridian Atlas regional note 41
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0042] Shoreline Kit regional note 42
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0043] Cobalt Fieldbox regional note 43
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0044] Helio Prism regional note 44
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0045] Meridian Atlas regional note 45
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0046] Shoreline Kit regional note 46
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0047] Polar Relay hard requirements
+The selected field-terminal vendor must support sealed offline mode, avoid biometric access, operate at or below -25 C, and keep first-year cost at or below 180000.
+
+[DOC-0048] Helio Prism regional note 48
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0049] Meridian Atlas regional note 49
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0050] Shoreline Kit regional note 50
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0051] Cobalt Fieldbox regional note 51
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0052] Helio Prism regional note 52
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0053] Meridian Atlas regional note 53
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0054] Shoreline Kit regional note 54
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0055] Cobalt Fieldbox regional note 55
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0056] Helio Prism regional note 56
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0057] Meridian Atlas regional note 57
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0058] Shoreline Kit regional note 58
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0059] Cobalt Fieldbox regional note 59
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0060] Helio Prism regional note 60
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0061] Meridian Atlas regional note 61
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0062] Shoreline Kit regional note 62
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0063] Cobalt Fieldbox regional note 63
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0064] Helio Prism regional note 64
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0065] Meridian Atlas regional note 65
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0066] Shoreline Kit regional note 66
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0067] Cobalt Fieldbox regional note 67
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0068] Helio Prism regional note 68
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0069] Meridian Atlas regional note 69
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0070] Shoreline Kit regional note 70
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0071] Cobalt Fieldbox regional note 71
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0072] Helio Prism regional note 72
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0073] Meridian Atlas regional note 73
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0074] Shoreline Kit regional note 74
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0075] Cobalt Fieldbox regional note 75
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0076] Helio Prism regional note 76
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0077] Meridian Atlas regional note 77
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0078] Shoreline Kit regional note 78
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0079] Cobalt Fieldbox regional note 79
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0080] Helio Prism regional note 80
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0081] Meridian Atlas regional note 81
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0082] Shoreline Kit regional note 82
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0083] Cobalt Fieldbox regional note 83
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0084] Helio Prism regional note 84
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0085] Meridian Atlas regional note 85
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0086] Shoreline Kit regional note 86
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0087] Cobalt Fieldbox regional note 87
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0088] Helio Prism regional note 88
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0089] Meridian Atlas regional note 89
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0090] Shoreline Kit regional note 90
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0091] Cobalt Fieldbox regional note 91
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0092] Helio Prism regional note 92
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0093] Meridian Atlas regional note 93
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0094] Shoreline Kit regional note 94
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0095] Cobalt Fieldbox regional note 95
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0096] Helio Prism regional note 96
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0097] Meridian Atlas regional note 97
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0098] Shoreline Kit regional note 98
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0099] Cobalt Fieldbox regional note 99
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0100] Helio Prism regional note 100
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0101] Meridian Atlas regional note 101
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0102] Shoreline Kit regional note 102
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0103] Cobalt Fieldbox regional note 103
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0104] Helio Prism regional note 104
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0105] Meridian Atlas regional note 105
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0106] Shoreline Kit regional note 106
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0107] Cobalt Fieldbox regional note 107
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0108] Helio Prism regional note 108
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0109] Meridian Atlas regional note 109
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0110] Shoreline Kit regional note 110
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0111] Cobalt Fieldbox regional note 111
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0112] Helio Prism regional note 112
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0113] Meridian Atlas regional note 113
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0114] Shoreline Kit regional note 114
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0115] Cobalt Fieldbox regional note 115
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0116] Helio Prism regional note 116
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0117] Meridian Atlas regional note 117
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0118] Shoreline Kit regional note 118
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0119] Cobalt Fieldbox regional note 119
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0120] Helio Prism regional note 120
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0121] Northstar Lattice technical note
+Northstar Lattice supports sealed offline mode for isolated outposts, runs through a -30 C cold-start test, and keeps an audited local export queue while disconnected.
+
+[DOC-0122] Shoreline Kit regional note 122
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0123] Cobalt Fieldbox regional note 123
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0124] Helio Prism regional note 124
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0125] Meridian Atlas regional note 125
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0126] Shoreline Kit regional note 126
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0127] Cobalt Fieldbox regional note 127
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0128] Helio Prism regional note 128
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0129] Meridian Atlas regional note 129
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0130] Shoreline Kit regional note 130
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0131] Cobalt Fieldbox regional note 131
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0132] Helio Prism regional note 132
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0133] Meridian Atlas regional note 133
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0134] Shoreline Kit regional note 134
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0135] Cobalt Fieldbox regional note 135
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0136] Helio Prism regional note 136
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0137] Meridian Atlas regional note 137
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0138] Shoreline Kit regional note 138
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0139] Cobalt Fieldbox regional note 139
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0140] Helio Prism regional note 140
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0141] Meridian Atlas regional note 141
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0142] Shoreline Kit regional note 142
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0143] Cobalt Fieldbox regional note 143
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0144] Helio Prism regional note 144
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0145] Meridian Atlas regional note 145
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0146] Shoreline Kit regional note 146
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0147] Cobalt Fieldbox regional note 147
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0148] Helio Prism regional note 148
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0149] Meridian Atlas regional note 149
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0150] Shoreline Kit regional note 150
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0151] Cobalt Fieldbox regional note 151
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0152] Helio Prism regional note 152
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0153] Meridian Atlas regional note 153
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0154] Shoreline Kit regional note 154
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0155] Cobalt Fieldbox regional note 155
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0156] Helio Prism regional note 156
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0157] Meridian Atlas regional note 157
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0158] Shoreline Kit regional note 158
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0159] Cobalt Fieldbox regional note 159
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0160] Helio Prism regional note 160
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0161] Meridian Atlas regional note 161
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0162] Shoreline Kit regional note 162
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0163] Cobalt Fieldbox regional note 163
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0164] Helio Prism regional note 164
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0165] Meridian Atlas regional note 165
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0166] Shoreline Kit regional note 166
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0167] Cobalt Fieldbox regional note 167
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0168] Helio Prism regional note 168
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0169] Meridian Atlas regional note 169
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0170] Shoreline Kit regional note 170
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0171] Cobalt Fieldbox regional note 171
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0172] Helio Prism regional note 172
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0173] Meridian Atlas regional note 173
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0174] Shoreline Kit regional note 174
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0175] Cobalt Fieldbox regional note 175
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0176] Helio Prism regional note 176
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0177] Meridian Atlas regional note 177
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0178] Shoreline Kit regional note 178
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0179] Cobalt Fieldbox regional note 179
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0180] Helio Prism regional note 180
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0181] Meridian Atlas regional note 181
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0182] Shoreline Kit regional note 182
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0183] Cobalt Fieldbox regional note 183
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0184] Helio Prism regional note 184
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0185] Meridian Atlas regional note 185
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0186] Shoreline Kit regional note 186
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0187] Cobalt Fieldbox regional note 187
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0188] Helio Prism regional note 188
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0189] Meridian Atlas regional note 189
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0190] Shoreline Kit regional note 190
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0191] Cobalt Fieldbox regional note 191
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0192] Helio Prism regional note 192
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0193] Meridian Atlas regional note 193
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0194] Shoreline Kit regional note 194
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0195] Cobalt Fieldbox regional note 195
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0196] Helio Prism regional note 196
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0197] Meridian Atlas regional note 197
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0198] Privacy addendum
+Northstar Lattice uses a non-biometric keypad. Helio Prism requires a fingerprint unlock, and Meridian Atlas uses face unlock during supervisor override.
+
+[DOC-0199] Cobalt Fieldbox regional note 199
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0200] Helio Prism regional note 200
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0201] Meridian Atlas regional note 201
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0202] Shoreline Kit regional note 202
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0203] Cobalt Fieldbox regional note 203
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0204] Helio Prism regional note 204
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0205] Meridian Atlas regional note 205
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0206] Shoreline Kit regional note 206
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0207] Cobalt Fieldbox regional note 207
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0208] Helio Prism regional note 208
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0209] Meridian Atlas regional note 209
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0210] Shoreline Kit regional note 210
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0211] Cobalt Fieldbox regional note 211
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0212] Helio Prism regional note 212
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0213] Meridian Atlas regional note 213
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0214] Shoreline Kit regional note 214
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0215] Cobalt Fieldbox regional note 215
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0216] Helio Prism regional note 216
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0217] Meridian Atlas regional note 217
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0218] Shoreline Kit regional note 218
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0219] Cobalt Fieldbox regional note 219
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0220] Helio Prism regional note 220
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0221] Meridian Atlas regional note 221
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0222] Shoreline Kit regional note 222
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0223] Cobalt Fieldbox regional note 223
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0224] Helio Prism regional note 224
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0225] Meridian Atlas regional note 225
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0226] Shoreline Kit regional note 226
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0227] Cobalt Fieldbox regional note 227
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0228] Helio Prism regional note 228
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0229] Meridian Atlas regional note 229
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0230] Shoreline Kit regional note 230
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0231] Cobalt Fieldbox regional note 231
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0232] Helio Prism regional note 232
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0233] Commercial comparison
+Northstar Lattice has a first-year cost of 172000. Helio Prism is 165000, Meridian Atlas is 151000, and Shoreline Kit is 181500.
+
+[DOC-0234] Shoreline Kit regional note 234
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0235] Cobalt Fieldbox regional note 235
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0236] Helio Prism regional note 236
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0237] Meridian Atlas regional note 237
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0238] Shoreline Kit regional note 238
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0239] Cobalt Fieldbox regional note 239
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0240] Helio Prism regional note 240
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0241] Meridian Atlas regional note 241
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0242] Shoreline Kit regional note 242
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0243] Cobalt Fieldbox regional note 243
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0244] Helio Prism regional note 244
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0245] Meridian Atlas regional note 245
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0246] Shoreline Kit regional note 246
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0247] Cobalt Fieldbox regional note 247
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0248] Helio Prism regional note 248
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0249] Meridian Atlas regional note 249
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0250] Shoreline Kit regional note 250
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0251] Cobalt Fieldbox regional note 251
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0252] Helio Prism regional note 252
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0253] Meridian Atlas regional note 253
+Meridian Atlas has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0254] Shoreline Kit regional note 254
+Shoreline Kit has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0255] Cobalt Fieldbox regional note 255
+Cobalt Fieldbox has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.
+
+[DOC-0256] Helio Prism regional note 256
+Helio Prism has a useful property in one region, but this document does not establish all Polar Relay hard requirements. Treat marketing claims, pilot rumors, and partial discounts as insufficient unless another document provides the missing requirement.

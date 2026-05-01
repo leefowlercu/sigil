@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"reflect"
 	"strconv"
 	"strings"
@@ -143,6 +144,7 @@ func (f *Factory) NewSession(_ context.Context, options SessionOptions) (Session
 	}
 	exports := interp.Exports{
 		"sigil/repl/repl": map[string]reflect.Value{
+			"ActionOutput": reflect.ValueOf((*ActionOutput)(nil)),
 			"LLMQuery": reflect.ValueOf(func(prompt string, subContext string) (string, error) {
 				execCtx, ctxErr := session.activeExecContext()
 				if ctxErr != nil {
@@ -391,7 +393,7 @@ func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error
 	if evalErr == nil {
 		body := stripImportDecls(code)
 		if body != "" {
-			_, evalErr = s.interpreter.EvalWithContext(execCtx, body)
+			evalErr = s.evalBodyWithRecovery(execCtx, body)
 		}
 	}
 
@@ -438,6 +440,83 @@ func (s *yaegiSession) Exec(ctx context.Context, code string) (ExecResult, error
 		"error", evalErr,
 	)
 	return result, WrapError(ErrorCodeExecutionCompile, "repl execution failed at compile stage", evalErr)
+}
+
+func (s *yaegiSession) evalBodyWithRecovery(execCtx context.Context, body string) error {
+	_, evalErr := s.interpreter.EvalWithContext(execCtx, body)
+	if importPath, ok := s.missingAllowedImport(evalErr); ok && execCtx.Err() == nil {
+		if _, imported := s.imported[importPath]; !imported {
+			if _, importErr := s.interpreter.EvalWithContext(execCtx, fmt.Sprintf(`import %q`, importPath)); importErr == nil {
+				s.imported[importPath] = struct{}{}
+				s.stdout.Reset()
+				s.stderr.Reset()
+				_, evalErr = s.interpreter.EvalWithContext(execCtx, body)
+			}
+		}
+	}
+	if shouldRetryEvalInScopedBody(evalErr) && execCtx.Err() == nil {
+		s.stdout.Reset()
+		s.stderr.Reset()
+		_, evalErr = s.interpreter.EvalWithContext(execCtx, scopedEvalBody(body))
+	}
+	return evalErr
+}
+
+func (s *yaegiSession) missingAllowedImport(err error) (string, bool) {
+	if err == nil || classifyEvalError(err) == ErrorCodeExecutionRuntime {
+		return "", false
+	}
+	const marker = "undefined: "
+	message := err.Error()
+	index := strings.LastIndex(message, marker)
+	if index < 0 {
+		return "", false
+	}
+	symbol := readIdentifier(message[index+len(marker):])
+	if symbol == "" {
+		return "", false
+	}
+	if _, ok := s.allowedImports[symbol]; ok {
+		return symbol, true
+	}
+	for importPath := range s.allowedImports {
+		if path.Base(importPath) == symbol {
+			return importPath, true
+		}
+	}
+	return "", false
+}
+
+func readIdentifier(raw string) string {
+	raw = strings.TrimSpace(raw)
+	var builder strings.Builder
+	for _, r := range raw {
+		if r == '_' || r == '/' || r == '-' || r == '.' || ('0' <= r && r <= '9') || ('A' <= r && r <= 'Z') || ('a' <= r && r <= 'z') {
+			builder.WriteRune(r)
+			continue
+		}
+		break
+	}
+	return builder.String()
+}
+
+func shouldRetryEvalInScopedBody(err error) bool {
+	if err == nil || classifyEvalError(err) == ErrorCodeExecutionRuntime {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "constant definition loop") ||
+		strings.Contains(message, "redeclared in this block") ||
+		strings.Contains(message, "already declared") ||
+		strings.Contains(message, "no new variables on left side of :=")
+}
+
+func scopedEvalBody(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return ""
+	}
+	return "func() {\n" + trimmed + "\n}()"
 }
 
 func (s *yaegiSession) Close() error {

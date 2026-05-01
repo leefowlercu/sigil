@@ -1,0 +1,1 @@
+Which vendor satisfies Polar Relay's hard requirements? Return exactly: vendor=<name>; constraints=<comma-separated facts>; evidence=<doc-ids in ascending order>.

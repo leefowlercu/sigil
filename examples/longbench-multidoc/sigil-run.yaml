@@ -1,10 +1,9 @@
-name: run-start-templated
+name: longbench-multidoc
 
 prompt_template: |
   {{.question}}
 
 context_template: |
-  # External Context
   {{.external_context}}
 
 llm:
@@ -21,15 +20,15 @@ llm:
 
 rlm:
   enabled: true
-  max_depth: 3
+  max_depth: 4
 
 guardrails:
-  max_steps_per_node: 96
-  max_total_steps_per_run: 384
+  max_steps_per_node: 128
+  max_total_steps_per_run: 512
   max_run_duration_ms: 1800000
   max_consecutive_step_failures: 10
-  max_total_tokens: 1000000
-  max_total_cost_usd: "5"
+  max_total_tokens: 1500000
+  max_total_cost_usd: "10"
 
 accounting:
   pricing_version: openrouter-2026-03-07

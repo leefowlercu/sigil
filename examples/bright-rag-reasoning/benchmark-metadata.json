@@ -1,0 +1,11 @@
+{
+  "source": "synthetic",
+  "task_family": "multi-hop technical RAG",
+  "inspired_by": [
+    "BRIGHT",
+    "RAGBench",
+    "Long2RAG"
+  ],
+  "design_note": "The final answer depends on matching an incident, deployment matrix, and patch note.",
+  "scoring_note": "Compare final_answer to expected-answer.txt after trimming boundary whitespace."
+}

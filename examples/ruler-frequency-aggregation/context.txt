@@ -1,0 +1,2051 @@
+# Synthetic Frequency Aggregation Packets
+Count only tokens on lines beginning with 'signals:' that start with 'sig-'.
+Ignore stoplist tokens and tokens beginning with 'decoy-'.
+
+PACKET-0001
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0002
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0003
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0004
+signals: sig-harbor, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0005
+signals: sig-lantern, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0006
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0007
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0008
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0009
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0010
+signals: sig-saffron, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0011
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0012
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0013
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0014
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0015
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0016
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0017
+signals: sig-copper, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0018
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0019
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0020
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0021
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0022
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0023
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0024
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0025
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0026
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0027
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0028
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0029
+signals: sig-violet, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0030
+signals: sig-river, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0031
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0032
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0033
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0034
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0035
+signals: sig-harbor, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0036
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0037
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0038
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0039
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0040
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0041
+signals: sig-harbor, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0042
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0043
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0044
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0045
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0046
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0047
+signals: sig-saffron, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0048
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0049
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0050
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0051
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0052
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0053
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0054
+signals: sig-copper, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0055
+signals: sig-river, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0056
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0057
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0058
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0059
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0060
+signals: sig-violet, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0061
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0062
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0063
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0064
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0065
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0066
+signals: sig-violet, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0067
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0068
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0069
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0070
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0071
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0072
+signals: sig-harbor, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0073
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0074
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0075
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0076
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0077
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0078
+signals: sig-harbor, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0079
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0080
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0081
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0082
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0083
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0084
+signals: sig-saffron, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0085
+signals: sig-copper, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0086
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0087
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0088
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0089
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0090
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0091
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0092
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0093
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0094
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0095
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0096
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0097
+signals: sig-violet, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0098
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0099
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0100
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0101
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0102
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0103
+signals: sig-violet, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0104
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0105
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0106
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0107
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0108
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0109
+signals: sig-harbor, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0110
+signals: sig-lantern, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0111
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0112
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0113
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0114
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0115
+signals: sig-harbor, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0116
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0117
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0118
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0119
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0120
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0121
+signals: sig-saffron, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0122
+signals: sig-copper, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0123
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0124
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0125
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0126
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0127
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0128
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0129
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0130
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0131
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0132
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0133
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0134
+signals: sig-violet, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0135
+signals: sig-river, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0136
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0137
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0138
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0139
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0140
+signals: sig-violet, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0141
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0142
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0143
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0144
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0145
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0146
+signals: sig-harbor, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0147
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0148
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0149
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0150
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0151
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0152
+signals: sig-harbor, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0153
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0154
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0155
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0156
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0157
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0158
+signals: sig-saffron, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0159
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0160
+signals: sig-river, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0161
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0162
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0163
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0164
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0165
+signals: sig-copper, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0166
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0167
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0168
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0169
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0170
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0171
+signals: sig-violet, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0172
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0173
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0174
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0175
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0176
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0177
+signals: sig-violet, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0178
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0179
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0180
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0181
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0182
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0183
+signals: sig-harbor, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0184
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0185
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0186
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0187
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0188
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0189
+signals: sig-saffron, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0190
+signals: sig-lantern, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0191
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0192
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0193
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0194
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0195
+signals: sig-saffron, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0196
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0197
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0198
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0199
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0200
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0201
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0202
+signals: sig-copper, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0203
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0204
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0205
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0206
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0207
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0208
+signals: sig-violet, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0209
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0210
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0211
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0212
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0213
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0214
+signals: sig-violet, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0215
+signals: sig-lantern, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0216
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0217
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0218
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0219
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0220
+signals: sig-harbor, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0221
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0222
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0223
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0224
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0225
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0226
+signals: sig-saffron, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0227
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0228
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0229
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0230
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0231
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0232
+signals: sig-saffron, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0233
+signals: sig-copper, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0234
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0235
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0236
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0237
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0238
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0239
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0240
+signals: sig-river, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0241
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0242
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0243
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0244
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0245
+signals: sig-violet, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0246
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0247
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0248
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0249
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0250
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0251
+signals: sig-violet, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0252
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0253
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0254
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0255
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0256
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0257
+signals: sig-harbor, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0258
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0259
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0260
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0261
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0262
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0263
+signals: sig-saffron, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0264
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0265
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0266
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0267
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0268
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0269
+signals: sig-saffron, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0270
+signals: sig-copper, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0271
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0272
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0273
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0274
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0275
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0276
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0277
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0278
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0279
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0280
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0281
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0282
+signals: sig-violet, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0283
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0284
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0285
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0286
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0287
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0288
+signals: sig-violet, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0289
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0290
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0291
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0292
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0293
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0294
+signals: sig-harbor, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0295
+signals: sig-lantern, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0296
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0297
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0298
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0299
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0300
+signals: sig-saffron, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0301
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0302
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0303
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0304
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0305
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0306
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0307
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0308
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0309
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0310
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0311
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0312
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0313
+signals: sig-copper, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0314
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0315
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0316
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0317
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0318
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0319
+signals: sig-violet, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0320
+signals: sig-river, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0321
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0322
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0323
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0324
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0325
+signals: sig-violet, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0326
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0327
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0328
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0329
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0330
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0331
+signals: sig-harbor, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0332
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0333
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0334
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0335
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0336
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0337
+signals: sig-saffron, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0338
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0339
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0340
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0341
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0342
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0343
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0344
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0345
+signals: sig-river, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0346
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0347
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0348
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0349
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0350
+signals: sig-copper, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0351
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0352
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0353
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0354
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0355
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0356
+signals: sig-violet, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0357
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0358
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0359
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0360
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0361
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0362
+signals: sig-violet, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0363
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0364
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0365
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0366
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0367
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0368
+signals: sig-harbor, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0369
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0370
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0371
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0372
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0373
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0374
+signals: sig-saffron, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0375
+signals: sig-lantern, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0376
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0377
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0378
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0379
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0380
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0381
+signals: sig-copper, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0382
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0383
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0384
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0385
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0386
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0387
+signals: sig-copper, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0388
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0389
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0390
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0391
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0392
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0393
+signals: sig-violet, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0394
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0395
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0396
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0397
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0398
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0399
+signals: sig-violet, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0400
+signals: sig-lantern, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0401
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0402
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0403
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0404
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0405
+signals: sig-harbor, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0406
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0407
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0408
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0409
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0410
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0411
+signals: sig-saffron, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0412
+signals: sig-lantern, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0413
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0414
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0415
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0416
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0417
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0418
+signals: sig-copper, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0419
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0420
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0421
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0422
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0423
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0424
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0425
+signals: sig-river, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0426
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0427
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0428
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0429
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0430
+signals: sig-violet, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0431
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0432
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0433
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0434
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0435
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0436
+signals: sig-violet, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0437
+signals: sig-lantern, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0438
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0439
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0440
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0441
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0442
+signals: sig-harbor, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0443
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0444
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0445
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0446
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0447
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0448
+signals: sig-saffron, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0449
+signals: sig-copper, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0450
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0451
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0452
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0453
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0454
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0455
+signals: sig-copper, ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0456
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0457
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0458
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0459
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0460
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0461
+signals: sig-copper, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0462
+signals: sig-river, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0463
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0464
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0465
+signals: blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0466
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0467
+signals: sig-violet, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0468
+signals: sig-river, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0469
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0470
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0471
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0472
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0473
+signals: sig-violet, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0474
+signals: sig-lantern, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0475
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0476
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0477
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0478
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0479
+signals: sig-harbor, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0480
+signals: sig-lantern, noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0481
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0482
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0483
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0484
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0485
+signals: sig-saffron, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0486
+signals: sig-copper, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0487
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0488
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0489
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0490
+signals: hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0491
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0492
+signals: sig-copper, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0493
+signals: sig-river, blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0494
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0495
+signals: ping, noise, decoy-violet, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0496
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0497
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0498
+signals: sig-copper, hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0499
+signals: sig-river, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0500
+signals: noise, blank, decoy-river, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0501
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0502
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0503
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0504
+signals: sig-violet, noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0505
+signals: sig-river, blank, hold, decoy-lantern, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0506
+signals: hold, ping, decoy-copper
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0507
+signals: ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0508
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0509
+signals: blank, hold, decoy-lantern
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0510
+signals: sig-harbor, hold, ping, decoy-copper, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0511
+signals: sig-lantern, ping, noise, decoy-violet
+note: summary text may name colors and waterways, but only the signals line is authoritative.
+
+PACKET-0512
+signals: noise, blank, decoy-river
+note: summary text may name colors and waterways, but only the signals line is authoritative.

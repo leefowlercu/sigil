@@ -1,0 +1,1 @@
+rank1=sig-river:43; rank2=sig-lantern:38; rank3=sig-copper:31

@@ -1,0 +1,1 @@
+Can Team Delta ship offline cache to Kestrel clinics on May 12? Return exactly: decision=<go|no-go|conditional-go>; rationale=<short>; citations=<ids>.

@@ -1,0 +1,9 @@
+{
+  "source": "synthetic",
+  "task_family": "multi-document question answering",
+  "inspired_by": [
+    "LongBench v2 multi-document QA"
+  ],
+  "design_note": "The final answer depends on synthesizing compatible evidence across several documents.",
+  "scoring_note": "Compare final_answer to expected-answer.txt after trimming boundary whitespace."
+}

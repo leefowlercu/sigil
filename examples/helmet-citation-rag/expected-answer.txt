@@ -1,0 +1,1 @@
+decision=conditional-go; rationale=Delta build meets the offline-cache sync and hash-export policy, but Kestrel clinics require printed override cards until training completes on June 3; citations=POL-004,REL-009,RISK-017

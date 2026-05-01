@@ -1,0 +1,9 @@
+{
+  "source": "synthetic",
+  "task_family": "state tracking",
+  "inspired_by": [
+    "RULER variable tracking"
+  ],
+  "design_note": "The final answer depends on applying ordered state updates while ignoring decoy checkpoint text.",
+  "scoring_note": "Compare final_answer to expected-answer.txt after trimming boundary whitespace."
+}

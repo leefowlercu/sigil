@@ -1,0 +1,1 @@
+Count every token on `signals:` lines whose token begins with `sig-`. Ignore stoplist tokens and `decoy-` tokens. Return the top three by descending frequency exactly as: rank1=<token>:<count>; rank2=<token>:<count>; rank3=<token>:<count>.

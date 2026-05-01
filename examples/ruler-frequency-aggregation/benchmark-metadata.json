@@ -1,0 +1,10 @@
+{
+  "source": "synthetic",
+  "task_family": "aggregation",
+  "inspired_by": [
+    "RULER common words extraction",
+    "RULER frequent words extraction"
+  ],
+  "design_note": "The final answer depends on partition-friendly counting and top-k aggregation.",
+  "scoring_note": "Compare final_answer to expected-answer.txt after trimming boundary whitespace."
+}

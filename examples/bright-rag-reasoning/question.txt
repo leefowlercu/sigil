@@ -1,0 +1,1 @@
+Which patch should Terra apply for AX-19, and what config precondition makes it safe? Return exactly: patch=<id>; package=<name>; version=<version>; precondition=<key=value>; evidence=<ids>.

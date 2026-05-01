@@ -153,6 +153,15 @@ func TestResolveBaseOpenAIPromptIncludesPromptRegressionShields(t *testing.T) {
 	assertContainsAll(t, prompt,
 		"Each continue action may perform at most 4 recursive subcalls and at most 8 total subcalls.",
 		"If more expansion is needed, finish the current action, record what narrowed successfully, and use a new step before expanding again.",
+		"recursion_policy is deterministic harness guidance for this step. Treat it as the default strategy unless the current step already has complete evidence for the final answer.",
+		"partition_map_recursive: this is a large root orchestration step. Use REPL to build bounded partitions, then use rlm_query or rlm_query_batched to map child work across those partitions before synthesizing locally.",
+		"On the first action for this policy, do not attempt a full-corpus local solve; partition and run a bounded recursive map unless recursion is explicitly disallowed or the context is small.",
+		"If recursion_policy=partition_map_recursive, the first continue action should partition and call rlm_query or rlm_query_batched.",
+		"For a first recursive map, prefer 2 to 4 child calls with compact contexts for search or triage.",
+		"For corpus-wide aggregation, comparison, or exhaustive retrieval, the recursive map must cover every relevant partition",
+		"Before finalizing from recursive map results, verify partition coverage locally",
+		"After a recursive map completes successfully, parse and aggregate child answers locally.",
+		"Use at most one bounded recursive verification subcall only for unresolved conflicts, failed child coverage, or incomplete evidence.",
 		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
 		"If execution_state.recursive_subcalls_allowed=false, stay local for this step even if recursive APIs are available.",
 		"read_action_artifact(action_ref string) (ActionOutput, error)",
@@ -185,10 +194,32 @@ func TestResolveBaseProviderPromptsExplainPlainSubcallAnswerStringContract(t *te
 		}
 
 		assertContainsAll(t, prompt,
+			"recursion_policy",
+			"partition_map_recursive",
+			"child_partition_or_solve",
+			"recursive_verification_recommended",
 			"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
 			`The harness`,
 			`{"has_token":true,"token":"...","line":"..."}`,
 			"minified JSON text inside the answer string",
+		)
+	}
+}
+
+func TestResolveBaseProviderPromptsRequestOperatorFacingREPLComments(t *testing.T) {
+	resolver := NewSystemPromptResolver()
+
+	for _, provider := range []string{"openai", "anthropic"} {
+		_, prompt, err := resolver.ResolveBase(provider)
+		if err != nil {
+			t.Fatalf("expected %s prompt resolution success, got %v", provider, err)
+		}
+
+		assertContainsAll(t, prompt,
+			"For non-trivial repl_code, include concise Go comments that make the action reviewable by an operator.",
+			"Comments should explain observable intent, data flow, partitioning strategy, aggregation/reduction steps, and validation checkpoints.",
+			"Do not reveal hidden reasoning or write long narrative comments.",
+			"Do not comment trivial assignments or obvious syntax.",
 		)
 	}
 }
@@ -207,6 +238,8 @@ func TestResolveBaseOpenAIPromptIncludesCompileSafeStructuredPromptGuidance(t *t
 		`Do NOT over-escape prompt strings with sequences like {\\"has_token\\":true} inside double-quoted Go code.`,
 		"For structured parsing from map[string]any, prefer predeclared variables plus assignment over compact two-value short declarations.",
 		"At REPL top level, do NOT introduce ok/present/type flags with := and then reference them in later statements.",
+		"Do not use a variable named ok in REPL code.",
+		`Avoid if-initializer map lookups such as if v, ok := m["key"]; ok { ... } in REPL code.`,
 		`hasRaw := any(nil)`,
 		`hasRaw, present = parsed["has_token"]`,
 		`hasTokenBool, typeOK = hasRaw.(bool)`,

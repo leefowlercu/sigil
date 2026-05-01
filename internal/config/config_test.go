@@ -1086,6 +1086,74 @@ func TestExampleConfigFilesRemainValid(t *testing.T) {
 	}
 }
 
+func TestExampleDirectoryConfigsRemainValid(t *testing.T) {
+	examplesPath := filepath.Join(mustAbsPath(t, filepath.Join("..", "..")), "examples")
+	entries, err := os.ReadDir(examplesPath)
+	if err != nil {
+		t.Fatalf("failed to read examples directory: %v", err)
+	}
+
+	found := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == "__pycache__" {
+			continue
+		}
+		found++
+		examplePath := filepath.Join(examplesPath, entry.Name())
+
+		requiredFiles := []string{
+			"README.md",
+			"context.txt",
+			"sigil-run.yaml",
+			"sigil.yaml",
+		}
+		if entry.Name() != "templated" {
+			requiredFiles = append(requiredFiles, "expected-answer.txt", "question.txt")
+		}
+
+		for _, filename := range requiredFiles {
+			if _, err := os.Stat(filepath.Join(examplePath, filename)); err != nil {
+				t.Fatalf("expected %s to include %s: %v", entry.Name(), filename, err)
+			}
+		}
+		if entry.Name() != "templated" && !exampleHasMetadataFile(examplePath) {
+			t.Fatalf("expected %s to include benchmark or MRCR metadata", entry.Name())
+		}
+
+		runConfigContent, err := os.ReadFile(filepath.Join(examplePath, "sigil-run.yaml"))
+		if err != nil {
+			t.Fatalf("failed to read %s run config: %v", entry.Name(), err)
+		}
+
+		runConfig, err := DecodeRunConfigYAML(string(runConfigContent))
+		if err != nil {
+			t.Fatalf("expected %s run config to validate, got %v", entry.Name(), err)
+		}
+		if runConfig.PromptTemplate == "" {
+			t.Fatalf("expected %s prompt_template to be configured", entry.Name())
+		}
+		if runConfig.ContextTemplate == "" {
+			t.Fatalf("expected %s context_template to be configured", entry.Name())
+		}
+		if runConfig.RLM.MaxDepth <= 0 {
+			t.Fatalf("expected %s rlm.max_depth to be positive", entry.Name())
+		}
+	}
+
+	if found == 0 {
+		t.Fatal("expected at least one example directory")
+	}
+}
+
+func exampleHasMetadataFile(examplePath string) bool {
+	for _, filename := range []string{"benchmark-metadata.json", "mrcr-metadata.json"} {
+		if _, err := os.Stat(filepath.Join(examplePath, filename)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func chdir(t *testing.T, dir string) {
 	t.Helper()
 

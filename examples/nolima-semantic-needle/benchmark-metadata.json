@@ -1,0 +1,9 @@
+{
+  "source": "synthetic",
+  "task_family": "semantic retrieval",
+  "inspired_by": [
+    "NoLiMa"
+  ],
+  "design_note": "The question intentionally uses different surface words than the target passage.",
+  "scoring_note": "Compare final_answer to expected-answer.txt after trimming boundary whitespace."
+}

@@ -72,6 +72,195 @@ func TestBuildStepExecutionStateIncludesBudgetsAndRecursionPolicy(t *testing.T) 
 	}
 }
 
+func TestBuildStepInputEnvelopeIncludesDeterministicRecursionPolicy(t *testing.T) {
+	largeMetadata := StepContextMetadata{
+		ContextType:      "string",
+		ContextBytes:     smallContextBytesThreshold + 1,
+		ContextLineCount: smallContextLineThreshold + 1,
+		ContextSHA256:    strings.Repeat("a", 64),
+		ContextRef:       "run-artifact://node/root/context.json",
+	}
+
+	testCases := []struct {
+		name           string
+		executionState StepExecutionState
+		feedback       *PreviousActionFeedback
+		want           StepRecursionPolicy
+	}{
+		{
+			name: "large root uses partition map recursion",
+			executionState: StepExecutionState{
+				NodeDepth:                0,
+				MaxDepth:                 4,
+				RemainingDepth:           4,
+				NodeStepsUsed:            1,
+				NodeStepsRemaining:       63,
+				RunStepsUsed:             1,
+				RunStepsRemaining:        255,
+				SmallContext:             false,
+				RecursiveSubcallsAllowed: true,
+			},
+			want: StepRecursionPolicyPartitionMapRecursive,
+		},
+		{
+			name: "bounded child solves locally",
+			executionState: StepExecutionState{
+				NodeDepth:                1,
+				MaxDepth:                 4,
+				RemainingDepth:           3,
+				NodeStepsUsed:            1,
+				NodeStepsRemaining:       63,
+				RunStepsUsed:             2,
+				RunStepsRemaining:        254,
+				SmallContext:             false,
+				RecursiveSubcallsAllowed: true,
+			},
+			want: StepRecursionPolicyLocalOrLeaf,
+		},
+		{
+			name: "genuinely large child may solve or partition further",
+			executionState: StepExecutionState{
+				NodeDepth:                1,
+				MaxDepth:                 4,
+				RemainingDepth:           3,
+				NodeStepsUsed:            1,
+				NodeStepsRemaining:       63,
+				RunStepsUsed:             2,
+				RunStepsRemaining:        254,
+				SmallContext:             false,
+				RecursiveSubcallsAllowed: true,
+			},
+			feedback: &PreviousActionFeedback{},
+			want:     StepRecursionPolicyChildPartitionOrSolve,
+		},
+		{
+			name: "small context stays local or leaf",
+			executionState: StepExecutionState{
+				NodeDepth:                0,
+				MaxDepth:                 4,
+				RemainingDepth:           4,
+				NodeStepsUsed:            1,
+				NodeStepsRemaining:       63,
+				RunStepsUsed:             1,
+				RunStepsRemaining:        255,
+				SmallContext:             true,
+				RecursiveSubcallsAllowed: true,
+			},
+			want: StepRecursionPolicyLocalOrLeaf,
+		},
+		{
+			name: "recursive disallowed is leaf only",
+			executionState: StepExecutionState{
+				NodeDepth:                0,
+				MaxDepth:                 4,
+				RemainingDepth:           4,
+				NodeStepsUsed:            1,
+				NodeStepsRemaining:       63,
+				RunStepsUsed:             1,
+				RunStepsRemaining:        255,
+				SmallContext:             false,
+				RecursiveSubcallsAllowed: false,
+			},
+			want: StepRecursionPolicyLeafOnly,
+		},
+		{
+			name: "prior successful recursive work returns to local aggregation",
+			executionState: StepExecutionState{
+				NodeDepth:                0,
+				MaxDepth:                 4,
+				RemainingDepth:           4,
+				NodeStepsUsed:            2,
+				NodeStepsRemaining:       62,
+				RunStepsUsed:             2,
+				RunStepsRemaining:        254,
+				SmallContext:             false,
+				RecursiveSubcallsAllowed: true,
+			},
+			feedback: &PreviousActionFeedback{
+				ActionRef:      "run-artifact://node/root/step/previous/action-1.json",
+				Status:         string(runtime.ActionExecutionStatusCompleted),
+				SubcallSummary: &PreviousActionSubcallSummary{TotalCount: 2, RecursiveCount: 2, CompletedCount: 2},
+			},
+			want: StepRecursionPolicyLocalOrLeaf,
+		},
+		{
+			name: "prior failed recursive work recommends verification",
+			executionState: StepExecutionState{
+				NodeDepth:                0,
+				MaxDepth:                 4,
+				RemainingDepth:           4,
+				NodeStepsUsed:            2,
+				NodeStepsRemaining:       62,
+				RunStepsUsed:             2,
+				RunStepsRemaining:        254,
+				SmallContext:             false,
+				RecursiveSubcallsAllowed: true,
+			},
+			feedback: &PreviousActionFeedback{
+				ActionRef:      "run-artifact://node/root/step/previous/action-1.json",
+				Status:         string(runtime.ActionExecutionStatusCompleted),
+				SubcallSummary: &PreviousActionSubcallSummary{TotalCount: 2, RecursiveCount: 2, CompletedCount: 1, FailedCount: 1},
+			},
+			want: StepRecursionPolicyRecursiveVerificationRecommended,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			metadata := largeMetadata
+			if testCase.name == "genuinely large child may solve or partition further" {
+				metadata.ContextBytes = childRecursiveBytesFloor + 1
+				metadata.ContextLineCount = childRecursiveLineFloor + 1
+			}
+			envelope, err := buildStepInputEnvelope("answer the query", 1, metadata, testCase.executionState, testCase.feedback)
+			if err != nil {
+				t.Fatalf("expected envelope build success, got %v", err)
+			}
+			if envelope.RecursionPolicy == nil {
+				t.Fatal("expected recursion_policy to be set")
+			}
+			if *envelope.RecursionPolicy != testCase.want {
+				t.Fatalf("expected recursion_policy=%q, got %q", testCase.want, *envelope.RecursionPolicy)
+			}
+		})
+	}
+}
+
+func TestEncodeStepInputEnvelopeIncludesRecursionPolicy(t *testing.T) {
+	policy := StepRecursionPolicyPartitionMapRecursive
+	envelope := StepInputEnvelope{
+		Query:     "answer the query",
+		StepIndex: 1,
+		ContextMetadata: StepContextMetadata{
+			ContextType:      "string",
+			ContextBytes:     smallContextBytesThreshold + 1,
+			ContextLineCount: smallContextLineThreshold + 1,
+			ContextSHA256:    strings.Repeat("a", 64),
+			ContextRef:       "run-artifact://node/root/context.json",
+		},
+		ExecutionState: StepExecutionState{
+			NodeDepth:                0,
+			MaxDepth:                 4,
+			RemainingDepth:           4,
+			NodeStepsUsed:            1,
+			NodeStepsRemaining:       63,
+			RunStepsUsed:             1,
+			RunStepsRemaining:        255,
+			SmallContext:             false,
+			RecursiveSubcallsAllowed: true,
+		},
+		RecursionPolicy: &policy,
+	}
+
+	encoded, err := encodeStepInputEnvelope(envelope)
+	if err != nil {
+		t.Fatalf("expected envelope encode success, got %v", err)
+	}
+	if !strings.Contains(encoded, `"recursion_policy":"partition_map_recursive"`) {
+		t.Fatalf("expected encoded envelope to include recursion_policy, got %s", encoded)
+	}
+}
+
 func TestBuildPreviousActionFeedbackCapsStdoutAndStderrPreviews(t *testing.T) {
 	baseDir := t.TempDir()
 	store, err := NewActionArtifactStore(baseDir)

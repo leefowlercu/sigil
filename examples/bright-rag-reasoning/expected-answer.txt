@@ -1,0 +1,1 @@
+patch=PATCH-031; package=quartz-indexer; version=2.7.4; precondition=cache_schema=delta; evidence=ISSUE-014,MATRIX-006,PATCH-031

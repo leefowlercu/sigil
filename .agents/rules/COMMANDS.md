@@ -27,6 +27,6 @@ Run all commands from the `sigil/` root.
 
 - Default application config path: `./sigil.yaml`
 - Default run config path: `./sigil-run.yaml`
-- Example templated run config: `./examples/run-start-templated/sigil-run.yaml`
+- Example templated run config: `./examples/templated/sigil-run.yaml`
 
 Prefer the Make targets unless you need narrower raw `go test` or `go run` output.

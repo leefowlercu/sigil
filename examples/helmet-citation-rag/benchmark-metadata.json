@@ -1,0 +1,9 @@
+{
+  "source": "synthetic",
+  "task_family": "citation-grounded RAG",
+  "inspired_by": [
+    "HELMET"
+  ],
+  "design_note": "The final answer must reconcile policy, release, and rollout-risk documents.",
+  "scoring_note": "Compare final_answer to expected-answer.txt after trimming boundary whitespace."
+}

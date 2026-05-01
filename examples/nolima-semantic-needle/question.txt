@@ -1,0 +1,1 @@
+Where was the emergency insulin ampoule hidden before the handoff, and who received it? The context may describe the medicine indirectly. Return exactly: container=<container>; recipient=<recipient>; evidence=<card-id>.

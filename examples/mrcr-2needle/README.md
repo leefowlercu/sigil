@@ -1,10 +1,10 @@
-# run-start-mrcr-4needle
+# mrcr-2needle
 
-This example is a pinned OpenAI MRCR showcase run for the 4-needle task.
+This example is a pinned OpenAI MRCR showcase run for the 2-needle task.
 
 The checked-in assets are derived from `openai/mrcr`,
-`4needle/4needle_0.parquet`, row `0`. The source row contains `802` total
-messages, `726354` prompt characters, and targets message index `93`.
+`2needle/2needle_0.parquet`, row `0`. The source row contains `772` total
+messages, `708925` prompt characters, and targets message index `721`.
 
 The bundled `sigil-run.yaml` preserves the benchmark's native answer contract:
 the model must return the exact benchmark answer with the required random
@@ -23,12 +23,12 @@ disabled, recursion enabled, and showcase-biased step/accounting guardrails.
 ```bash
 cd /Users/lee/Dev/project/project-sigil/sigil
 
-question_value="$(cat ./examples/run-start-mrcr-4needle/question.txt)"
-context_value="$(cat ./examples/run-start-mrcr-4needle/context.txt)"
+question_value="$(cat ./examples/mrcr-2needle/question.txt)"
+context_value="$(cat ./examples/mrcr-2needle/context.txt)"
 
 ./sigil run start \
-  --config ./examples/run-start-mrcr-4needle/sigil.yaml \
-  --run-config ./examples/run-start-mrcr-4needle/sigil-run.yaml \
+  --config ./examples/mrcr-2needle/sigil.yaml \
+  --run-config ./examples/mrcr-2needle/sigil-run.yaml \
   --var question="$question_value" \
   --var external_context="$context_value"
 ```
@@ -38,12 +38,12 @@ context_value="$(cat ./examples/run-start-mrcr-4needle/context.txt)"
 ```bash
 cd /Users/lee/Dev/project/project-sigil/sigil
 
-question_value="$(cat ./examples/run-start-mrcr-4needle/question.txt)"
-context_value="$(cat ./examples/run-start-mrcr-4needle/context.txt)"
+question_value="$(cat ./examples/mrcr-2needle/question.txt)"
+context_value="$(cat ./examples/mrcr-2needle/context.txt)"
 
 ./sigil run start -o json \
-  --config ./examples/run-start-mrcr-4needle/sigil.yaml \
-  --run-config ./examples/run-start-mrcr-4needle/sigil-run.yaml \
+  --config ./examples/mrcr-2needle/sigil.yaml \
+  --run-config ./examples/mrcr-2needle/sigil-run.yaml \
   --var question="$question_value" \
   --var external_context="$context_value"
 ```
@@ -53,17 +53,17 @@ context_value="$(cat ./examples/run-start-mrcr-4needle/context.txt)"
 ```bash
 cd /Users/lee/Dev/project/project-sigil/sigil
 
-question_value="$(cat ./examples/run-start-mrcr-4needle/question.txt)"
-context_value="$(cat ./examples/run-start-mrcr-4needle/context.txt)"
+question_value="$(cat ./examples/mrcr-2needle/question.txt)"
+context_value="$(cat ./examples/mrcr-2needle/context.txt)"
 output_json="$(mktemp)"
 
 ./sigil run start -o json \
-  --config ./examples/run-start-mrcr-4needle/sigil.yaml \
-  --run-config ./examples/run-start-mrcr-4needle/sigil-run.yaml \
+  --config ./examples/mrcr-2needle/sigil.yaml \
+  --run-config ./examples/mrcr-2needle/sigil-run.yaml \
   --var question="$question_value" \
   --var external_context="$context_value" >"$output_json"
 
-python3 - "$output_json" ./examples/run-start-mrcr-4needle/expected-answer.txt <<'PY'
+python3 - "$output_json" ./examples/mrcr-2needle/expected-answer.txt <<'PY'
 import json
 import pathlib
 import sys

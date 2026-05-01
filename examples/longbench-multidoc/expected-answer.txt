@@ -1,0 +1,1 @@
+vendor=Northstar Lattice; constraints=sealed offline mode, non-biometric access, -30 C operation, 172000 cost; evidence=DOC-0047,DOC-0121,DOC-0198,DOC-0233
