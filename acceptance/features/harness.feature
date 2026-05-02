@@ -888,6 +888,12 @@ Feature: Sigil baseline CLI and config contracts
     Then run transitions to "completed"
     And run completion references terminal root final output
 
+  Scenario: Completes run from marked recursive-map reducer output without another inference turn
+    Given a root recursive-map action emits complete marked final-answer output
+    When harness evaluates marked recursive-map reducer output
+    Then run completes using the marked reducer final answer
+    And no additional root inference turn is requested
+
   Scenario: Prints human-readable run progress and terminal summary by default
     Given application config exists at "./sigil.yaml" with:
       """

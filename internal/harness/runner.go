@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -768,7 +769,8 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 					return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to inspect completed action artifact", err)
 				}
 				if candidate, ok := extractMarkedFinalAnswerCandidate(artifact.Stdout); ok {
-					if shouldRequireRecursiveMapReducer(node, envelope, feedback) {
+					if shouldRequireRecursiveMapReducer(node, envelope, feedback) &&
+						!markedFinalAnswerCompletesRecursiveMapReducer(artifact.Stdout, feedback.SubcallSummary) {
 						previousStepFeedback = buildRecursiveMapReducerRequiredFeedback(stepStarted.StepID, feedback.SubcallSummary)
 						logger.Info("rejecting marked final answer until recursive-map reducer step completes",
 							"node_id", node.ID,
@@ -964,6 +966,52 @@ func shouldRequireRecursiveMapReducer(node runtime.Node, envelope StepInputEnvel
 		return false
 	}
 	return true
+}
+
+func markedFinalAnswerCompletesRecursiveMapReducer(stdout string, summary *PreviousActionSubcallSummary) bool {
+	if summary == nil {
+		return false
+	}
+	if summary.TotalCount <= 0 || summary.RecursiveCount <= 1 {
+		return false
+	}
+	if summary.FailedCount > 0 || summary.CompletedCount != summary.TotalCount {
+		return false
+	}
+	return stdoutContainsCompleteCoverage(stdout, summary.CompletedCount, summary.TotalCount)
+}
+
+func stdoutContainsCompleteCoverage(stdout string, completed int, total int) bool {
+	normalized := strings.ReplaceAll(stdout, "\r\n", "\n")
+	for _, line := range strings.Split(normalized, "\n") {
+		actualCompleted, actualTotal, ok := parseCoverageLine(line)
+		if ok && actualCompleted == completed && actualTotal == total {
+			return true
+		}
+	}
+	return false
+}
+
+func parseCoverageLine(line string) (int, int, bool) {
+	fields := strings.Fields(line)
+	if len(fields) == 4 && strings.EqualFold(fields[0], "COVERAGE") && fields[2] == "/" {
+		completed, completedErr := strconv.Atoi(fields[1])
+		total, totalErr := strconv.Atoi(fields[3])
+		if completedErr == nil && totalErr == nil {
+			return completed, total, true
+		}
+	}
+	if len(fields) == 2 && strings.EqualFold(fields[0], "COVERAGE") {
+		parts := strings.Split(fields[1], "/")
+		if len(parts) == 2 {
+			completed, completedErr := strconv.Atoi(strings.TrimSpace(parts[0]))
+			total, totalErr := strconv.Atoi(strings.TrimSpace(parts[1]))
+			if completedErr == nil && totalErr == nil {
+				return completed, total, true
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 func shouldRejectPrematureRecursiveFinal(node runtime.Node, envelope StepInputEnvelope, decisionPayload DecisionPayload) bool {

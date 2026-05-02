@@ -31,6 +31,12 @@ type boundedInferenceResponse struct {
 	err    error
 }
 
+type markedRecursiveMapReducerInference struct {
+	replCode string
+	requests []sigilinference.Request
+	calls    int
+}
+
 func (c *boundedCaptureInference) Infer(_ context.Context, request sigilinference.Request) (sigilinference.Result, error) {
 	c.requests = append(c.requests, request)
 	if c.calls >= len(c.responses) {
@@ -39,6 +45,22 @@ func (c *boundedCaptureInference) Infer(_ context.Context, request sigilinferenc
 	response := c.responses[c.calls]
 	c.calls++
 	return hydrateBoundedFinalEvidenceRef(response.result, request), response.err
+}
+
+func (m *markedRecursiveMapReducerInference) Infer(_ context.Context, request sigilinference.Request) (sigilinference.Result, error) {
+	m.requests = append(m.requests, request)
+	m.calls++
+
+	switch m.calls {
+	case 1:
+		return hydrateBoundedFinalEvidenceRef(boundedContinueResult(m.replCode), request), nil
+	case 2:
+		return hydrateBoundedFinalEvidenceRef(boundedFinalResult("child one answer"), request), nil
+	case 3:
+		return hydrateBoundedFinalEvidenceRef(boundedFinalResult("child two answer"), request), nil
+	default:
+		return sigilinference.Result{}, fmt.Errorf("unexpected inference call")
+	}
 }
 
 func hydrateBoundedFinalEvidenceRef(result sigilinference.Result, request sigilinference.Request) sigilinference.Result {
@@ -141,6 +163,77 @@ func (w *harnessWorld) aHarnessRunnerIsConfiguredWithRawContext(rawContext strin
 	state.boundedActionArtifact = sigilharness.ActionArtifact{}
 	state.boundedUserTurnArtifact = nil
 	state.boundedPersistedEvents = nil
+	return nil
+}
+
+func (w *harnessWorld) aRootRecursiveMapActionEmitsCompleteMarkedFinalAnswerOutput() error {
+	state := w.rlm()
+	state.continuationCode = `import "fmt"; calls := []map[string]string{{"prompt":"child one","context":"chunk one"},{"prompt":"child two","context":"chunk two"}}; answers, err := rlm_query_batched(calls); if err != nil { panic(err) }; fmt.Printf("COVERAGE %d / %d\n", len(answers), len(calls)); fmt.Print("FINAL_ANSWER_START\nalpha=2; beta=1\nFINAL_ANSWER_END\n")`
+	state.boundedRequests = nil
+	state.boundedRunResult = sigilharness.RunResult{}
+	state.boundedRunErr = nil
+	return nil
+}
+
+func (w *harnessWorld) harnessEvaluatesMarkedRecursiveMapReducerOutput() error {
+	state := w.rlm()
+	if strings.TrimSpace(state.continuationCode) == "" {
+		return fmt.Errorf("marked reducer continuation code is required")
+	}
+	largeContext := strings.Repeat("large context line with enough bytes to exceed the small-context byte threshold\n", 40)
+	runConfig := boundedRunConfig("root prompt", largeContext)
+	inferenceClient := &markedRecursiveMapReducerInference{replCode: state.continuationCode}
+	runner := sigilharness.NewRunner(
+		sigilharness.WithRunsBaseDir(w.runsBaseDir()),
+		sigilharness.WithInferenceFactory(func(_ config.RunConfig) (sigilharness.InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), sigilharness.RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     runConfig,
+		TemplateVars:  map[string]string{},
+	})
+	state.boundedRunResult = result
+	state.boundedRunErr = err
+	state.boundedRequests = append([]sigilinference.Request(nil), inferenceClient.requests...)
+	return nil
+}
+
+func (w *harnessWorld) runCompletesUsingTheMarkedReducerFinalAnswer() error {
+	state := w.rlm()
+	if state.boundedRunErr != nil {
+		return fmt.Errorf("expected marked reducer run to complete, got %v", state.boundedRunErr)
+	}
+	if state.boundedRunResult.State != string(sigilruntime.RunStateCompleted) {
+		return fmt.Errorf("expected completed run, got %q", state.boundedRunResult.State)
+	}
+	if state.boundedRunResult.FinalAnswer != "alpha=2; beta=1" {
+		return fmt.Errorf("expected marked reducer final answer, got %q", state.boundedRunResult.FinalAnswer)
+	}
+	if strings.TrimSpace(state.boundedRunResult.FinalAnswerRef) == "" {
+		return fmt.Errorf("expected final_answer_ref")
+	}
+	return nil
+}
+
+func (w *harnessWorld) noAdditionalRootInferenceTurnIsRequested() error {
+	state := w.rlm()
+	rootRequests := 0
+	for _, request := range state.boundedRequests {
+		envelope, err := decodeEnvelopeFromRequest(request)
+		if err != nil {
+			return err
+		}
+		if envelope.ExecutionState.NodeDepth == 0 {
+			rootRequests++
+		}
+	}
+	if rootRequests != 1 {
+		return fmt.Errorf("expected exactly one root inference request, got %d", rootRequests)
+	}
 	return nil
 }
 

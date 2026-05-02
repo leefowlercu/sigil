@@ -186,6 +186,10 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^an active root node inference result is decision final with answer "([^"]*)"$`, world.anActiveRootNodeInferenceResultIsDecisionFinalWithAnswer)
 	ctx.Step(`^harness evaluates root node step$`, world.harnessEvaluatesRootNodeStep)
 	ctx.Step(`^run completion references terminal root final output$`, world.runCompletionReferencesTerminalRootFinalOutput)
+	ctx.Step(`^a root recursive-map action emits complete marked final-answer output$`, world.aRootRecursiveMapActionEmitsCompleteMarkedFinalAnswerOutput)
+	ctx.Step(`^harness evaluates marked recursive-map reducer output$`, world.harnessEvaluatesMarkedRecursiveMapReducerOutput)
+	ctx.Step(`^run completes using the marked reducer final answer$`, world.runCompletesUsingTheMarkedReducerFinalAnswer)
+	ctx.Step(`^no additional root inference turn is requested$`, world.noAdditionalRootInferenceTurnIsRequested)
 
 	ctx.Step(`^v(\d+) REPL runtime architecture rules$`, world.vREPLRuntimeArchitectureRules)
 	ctx.Step(`^REPL engine configuration is resolved$`, world.rEPLEngineConfigurationIsResolved)

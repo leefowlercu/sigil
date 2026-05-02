@@ -999,6 +999,134 @@ func TestRunnerRunRequiresReducerActionAfterMultiChildRecursiveMap(t *testing.T)
 	}
 }
 
+func TestRunnerRunCompletesFromMarkedRecursiveMapReducerOutput(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
+	largeContext := strings.Repeat("large context line with enough bytes to exceed the small-context byte threshold\n", 40)
+	inferenceClient := &queuedInference{
+		responses: []queuedInferenceResponse{
+			{result: continueResult(`import "fmt"; calls := []map[string]string{{"prompt":"child one","context":"chunk one"},{"prompt":"child two","context":"chunk two"}}; answers, err := rlm_query_batched(calls); if err != nil { panic(err) }; fmt.Printf("COVERAGE %d / %d\n", len(answers), len(calls)); fmt.Print("FINAL_ANSWER_START\nalpha=2; beta=1\nFINAL_ANSWER_END\n")`)},
+			{result: finalResult("child one answer")},
+			{result: finalResult("child two answer")},
+		},
+	}
+
+	runner := NewRunner(
+		WithRunsBaseDir(baseDir),
+		WithInferenceFactory(func(_ config.RunConfig) (InferenceClient, error) {
+			return inferenceClient, nil
+		}),
+	)
+
+	result, err := runner.Run(context.Background(), RunInput{
+		AppConfigPath: "./sigil.yaml",
+		RunConfigPath: "./sigil-run.yaml",
+		RunConfig:     testRunConfig("root prompt", "", largeContext, ""),
+		TemplateVars:  map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("expected runner success, got %v", err)
+	}
+	if result.FinalAnswer != "alpha=2; beta=1" {
+		t.Fatalf("expected marked reducer final answer, got %q", result.FinalAnswer)
+	}
+	if len(inferenceClient.requests) != 3 {
+		t.Fatalf("expected one root request and two child requests, got %d", len(inferenceClient.requests))
+	}
+
+	rootRequests := 0
+	for _, request := range inferenceClient.requests {
+		var envelope StepInputEnvelope
+		if err := json.Unmarshal([]byte(request.Messages[1].Content), &envelope); err != nil {
+			t.Fatalf("expected envelope decode success, got %v", err)
+		}
+		if envelope.ExecutionState.NodeDepth == 0 {
+			rootRequests++
+		}
+	}
+	if rootRequests != 1 {
+		t.Fatalf("expected no additional root inference turn, got %d root requests", rootRequests)
+	}
+}
+
+func TestMarkedFinalAnswerCompletesRecursiveMapReducer(t *testing.T) {
+	tests := []struct {
+		name    string
+		stdout  string
+		summary *PreviousActionSubcallSummary
+		want    bool
+	}{
+		{
+			name:   "complete spaced coverage",
+			stdout: "COVERAGE 2 / 2\nFINAL_ANSWER_START\nanswer\nFINAL_ANSWER_END\n",
+			summary: &PreviousActionSubcallSummary{
+				TotalCount:     2,
+				RecursiveCount: 2,
+				CompletedCount: 2,
+			},
+			want: true,
+		},
+		{
+			name:   "complete compact coverage",
+			stdout: "COVERAGE 2/2\nFINAL_ANSWER_START\nanswer\nFINAL_ANSWER_END\n",
+			summary: &PreviousActionSubcallSummary{
+				TotalCount:     2,
+				RecursiveCount: 2,
+				CompletedCount: 2,
+			},
+			want: true,
+		},
+		{
+			name:   "missing coverage",
+			stdout: "FINAL_ANSWER_START\nanswer\nFINAL_ANSWER_END\n",
+			summary: &PreviousActionSubcallSummary{
+				TotalCount:     2,
+				RecursiveCount: 2,
+				CompletedCount: 2,
+			},
+			want: false,
+		},
+		{
+			name:   "failed subcall",
+			stdout: "COVERAGE 2 / 2\nFINAL_ANSWER_START\nanswer\nFINAL_ANSWER_END\n",
+			summary: &PreviousActionSubcallSummary{
+				TotalCount:     2,
+				RecursiveCount: 2,
+				CompletedCount: 2,
+				FailedCount:    1,
+			},
+			want: false,
+		},
+		{
+			name:   "incomplete summary",
+			stdout: "COVERAGE 2 / 2\nFINAL_ANSWER_START\nanswer\nFINAL_ANSWER_END\n",
+			summary: &PreviousActionSubcallSummary{
+				TotalCount:     3,
+				RecursiveCount: 3,
+				CompletedCount: 2,
+			},
+			want: false,
+		},
+		{
+			name:   "single recursive subcall",
+			stdout: "COVERAGE 1 / 1\nFINAL_ANSWER_START\nanswer\nFINAL_ANSWER_END\n",
+			summary: &PreviousActionSubcallSummary{
+				TotalCount:     1,
+				RecursiveCount: 1,
+				CompletedCount: 1,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := markedFinalAnswerCompletesRecursiveMapReducer(tt.stdout, tt.summary); got != tt.want {
+				t.Fatalf("markedFinalAnswerCompletesRecursiveMapReducer() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunnerRunDisablesChildRecursionAfterRecursiveChildWork(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
