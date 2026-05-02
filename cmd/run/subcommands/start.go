@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	defaultStartConfigPath    = "./sigil.yaml"
 	defaultStartRunConfigPath = "./sigil-run.yaml"
 )
 
@@ -51,7 +50,6 @@ func NewStartCmd() *cobra.Command {
 		RunE:    runStartCommand,
 	}
 
-	startCmd.Flags().StringVar(&startConfigPath, "config", defaultStartConfigPath, "Path to Sigil application config file")
 	startCmd.Flags().StringVar(&startRunConfigPath, "run-config", defaultStartRunConfigPath, "Path to Sigil run config file")
 	startCmd.Flags().StringArrayVar(&startTemplateVarRaw, "var", nil, "Template variable in key=value format (repeatable)")
 
@@ -59,7 +57,7 @@ func NewStartCmd() *cobra.Command {
 }
 
 func resetStartFlags() {
-	startConfigPath = defaultStartConfigPath
+	startConfigPath = config.DefaultConfigPath
 	startRunConfigPath = defaultStartRunConfigPath
 	startTemplateVarRaw = nil
 	startTemplateVars = make(map[string]string)
@@ -83,7 +81,11 @@ func validateStartInputs(cmd *cobra.Command, args []string) error {
 	}
 	startTemplateVars = resolvedVars
 
-	startConfigPath = resolvePathOrDefault(startConfigPath, defaultStartConfigPath)
+	resolvedConfigPath, _, err := inheritedStringFlag(cmd, "config")
+	if err != nil {
+		return err
+	}
+	startConfigPath = resolvePathOrDefault(resolvedConfigPath, config.DefaultConfigPath)
 	startRunConfigPath = resolvePathOrDefault(startRunConfigPath, defaultStartRunConfigPath)
 
 	if err := validateReadableRegularFile(startConfigPath); err != nil {
@@ -112,7 +114,11 @@ func validateStartInputs(cmd *cobra.Command, args []string) error {
 }
 
 func validateNonEmptyStartFlags(cmd *cobra.Command) error {
-	if cmd.Flags().Changed("config") && strings.TrimSpace(startConfigPath) == "" {
+	configPath, configChanged, err := inheritedStringFlag(cmd, "config")
+	if err != nil {
+		return err
+	}
+	if configChanged && strings.TrimSpace(configPath) == "" {
 		return fmt.Errorf("invalid --config value; path cannot be empty")
 	}
 

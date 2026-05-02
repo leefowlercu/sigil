@@ -215,6 +215,46 @@ func TestRootBootstrapUsesConfigOverrideForLoggingPath(t *testing.T) {
 	}
 }
 
+func TestAppServerServeAcceptsRootConfigFlag(t *testing.T) {
+	workDir := t.TempDir()
+	writeFile(t, filepath.Join(workDir, "custom-sigil.yaml"), applicationConfigYAML("info", "./app-server-logs"))
+
+	_, stderr, err := executeRootCommand(
+		t,
+		workDir,
+		nil,
+		"app-server",
+		"serve",
+		"--config",
+		"./custom-sigil.yaml",
+		"--listen",
+		"invalid-listen",
+	)
+	if err == nil {
+		t.Fatal("expected validation error for invalid listen value")
+	}
+
+	if !strings.Contains(err.Error(), "invalid --listen value") {
+		t.Fatalf("expected listen validation error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "unknown flag") || strings.Contains(stderr, "unknown flag") {
+		t.Fatalf("expected --config to be accepted by app-server serve, got err=%v stderr=%q", err, stderr)
+	}
+
+	activeLogPath, err := logging.ActiveLogFilePath()
+	if err != nil {
+		t.Fatalf("expected active log path, got %v", err)
+	}
+
+	expectedPath, err := config.ExpandPath("./app-server-logs/sigil.log")
+	if err != nil {
+		t.Fatalf("expected expected-path expansion success, got %v", err)
+	}
+	if activeLogPath != expectedPath {
+		t.Fatalf("expected active log path %q, got %q", expectedPath, activeLogPath)
+	}
+}
+
 func TestRootBootstrapFailsWhenLogSinkCannotBeInitialized(t *testing.T) {
 	workDir := t.TempDir()
 	blockedTarget := filepath.Join(workDir, "blocked-log-target")

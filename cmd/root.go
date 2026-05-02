@@ -14,6 +14,7 @@ import (
 )
 
 var rootOutputFormat clioutput.Format
+var rootConfigPath string
 
 // Execute runs the root CLI command for sigil.
 func Execute() error {
@@ -23,6 +24,7 @@ func Execute() error {
 // NewRootCmd builds the root command and full command tree.
 func NewRootCmd() *cobra.Command {
 	rootOutputFormat = clioutput.FormatText
+	rootConfigPath = config.DefaultConfigPath
 
 	rootCmd := &cobra.Command{
 		Use:   "sigil",
@@ -39,6 +41,7 @@ func NewRootCmd() *cobra.Command {
 		RunE:              runRootCommand,
 	}
 
+	rootCmd.PersistentFlags().StringVar(&rootConfigPath, "config", config.DefaultConfigPath, "Path to Sigil application config file")
 	clioutput.AddOutputFlag(rootCmd, &rootOutputFormat)
 	rootCmd.AddCommand(run.NewRunCmd())
 	rootCmd.AddCommand(appserver.NewAppServerCmd())
@@ -86,6 +89,9 @@ func initializeRootApplication(cmd *cobra.Command, _ []string) error {
 func resolveApplicationConfigPath(cmd *cobra.Command) string {
 	for current := cmd; current != nil; current = current.Parent() {
 		configFlag := current.Flags().Lookup("config")
+		if configFlag == nil {
+			configFlag = current.PersistentFlags().Lookup("config")
+		}
 		if configFlag == nil {
 			continue
 		}
