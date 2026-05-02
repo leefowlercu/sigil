@@ -769,6 +769,27 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 					return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to inspect completed action artifact", err)
 				}
 				if candidate, ok := extractMarkedFinalAnswerCandidate(artifact.Stdout); ok {
+					finalAnswer := normalizeFinalAnswer(candidate)
+					if finalAnswer == "" {
+						logger.Error("marked final answer candidate is empty after normalization", "step_id", stepStarted.StepID)
+						return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "marked final answer candidate is empty after boundary whitespace normalization", nil)
+					}
+					if shouldRejectPrematureRecursiveMarkedFinal(node, envelope, feedback, finalAnswer) {
+						previousStepFeedback = buildRecursivePartitionMapRequiredFeedback(stepStarted.StepID)
+						logger.Info("rejecting marked final answer until recursive partition-map action runs",
+							"node_id", node.ID,
+							"step_id", stepStarted.StepID,
+						)
+						continue
+					}
+					if shouldRejectMarkedFinalBeforeRecursiveReducer(node, envelope, finalAnswer) {
+						previousStepFeedback = buildRecursiveReducerFinalRejectedFeedback(stepStarted.StepID)
+						logger.Info("rejecting marked final answer until recursive-map reducer action runs",
+							"node_id", node.ID,
+							"step_id", stepStarted.StepID,
+						)
+						continue
+					}
 					if shouldRequireRecursiveMapReducer(node, envelope, feedback) &&
 						!markedFinalAnswerCompletesRecursiveMapReducer(artifact.Stdout, feedback.SubcallSummary) {
 						previousStepFeedback = buildRecursiveMapReducerRequiredFeedback(stepStarted.StepID, feedback.SubcallSummary)
@@ -778,11 +799,6 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 							"recursive_subcalls", feedback.SubcallSummary.RecursiveCount,
 						)
 						continue
-					}
-					finalAnswer := normalizeFinalAnswer(candidate)
-					if finalAnswer == "" {
-						logger.Error("marked final answer candidate is empty after normalization", "step_id", stepStarted.StepID)
-						return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "marked final answer candidate is empty after boundary whitespace normalization", nil)
 					}
 					finalEvidence := []FinalEvidence{{Ref: actionPayload.ActionRef}}
 					finalRef, err := completeNodeWithFinalAnswer(execCtx, node, finalAnswer, finalEvidence, nil)
@@ -842,92 +858,11 @@ func (r *Runner) executeNode(ctx context.Context, execCtx *executionContext, nod
 			continue
 		}
 
-		if interruptErr := interruptionError(ctx, node.ID); interruptErr != nil {
-			return nodeExecutionResult{}, interruptErr
-		}
-		if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
-			logger.Error("deterministic runtime guardrail interrupted final-decision step before completion", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, err
-		}
-		stepRollup := execCtx.ledger.StepRollup(node.ID, stepStarted.StepID)
-		stepAccountingRef, err := execCtx.runArtifacts.PersistStepAccounting(execCtx.lifecycle.RunID(), node.ID, stepStarted.StepID, stepRollup)
-		if err != nil {
-			logger.Error("failed to persist final-step accounting output", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to persist final-step accounting output", err)
-		}
-		if err := execCtx.lifecycle.AppendNodeStepCompleted(node.ID, runtime.NodeStepCompletedPayload{
-			StepID:        stepStarted.StepID,
-			Decision:      runtime.StepDecisionFinal,
-			ActionCount:   0,
-			DurationMS:    durationMS(stepStart),
-			Accounting:    stepRollup,
-			AccountingRef: stepAccountingRef,
-		}); err != nil {
-			logger.Error("failed to append node.step.completed for final decision",
-				"step_id", stepStarted.StepID,
-				"error", err,
-			)
-			return nodeExecutionResult{}, WrapError(ErrorCodeInfrastructure, "failed to append node.step.completed", err)
-		}
-		execCtx.guardrails.RecordFinalDecision()
-		if err := execCtx.guardrails.CheckRunDuration(node.ID, stepStarted.StepID, time.Now().UTC()); err != nil {
-			logger.Error("deterministic runtime guardrail breached before node finalization", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, err
-		}
-
-		if decisionPayload.Final == nil {
-			logger.Error("final payload is missing", "step_id", stepStarted.StepID)
-			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final payload is required for final decision", nil)
-		}
-		if shouldRejectPrematureRecursiveFinal(node, envelope, decisionPayload) {
-			previousStepFeedback = buildPrematureFinalRejectedFeedback(stepStarted.StepID)
-			logger.Info("rejecting premature root final before recursive partition-map evidence",
-				"step_id", stepStarted.StepID,
-				"step_index", stepStarted.StepIndex,
-			)
-			continue
-		}
-		if shouldRejectFinalBeforeRecursiveReducer(node, envelope, decisionPayload) {
-			previousStepFeedback = buildRecursiveReducerFinalRejectedFeedback(stepStarted.StepID)
-			logger.Info("rejecting root final before required recursive-map reducer action",
-				"step_id", stepStarted.StepID,
-				"step_index", stepStarted.StepIndex,
-			)
-			continue
-		}
-
-		if err := resolveFinalEvidenceRefs(execCtx.lifecycle.RunID(), execCtx.runArtifacts.runsBaseDir, execCtx.artifacts, node.ID, decisionPayload.Final.Evidence); err != nil {
-			logger.Error("failed to resolve final evidence refs", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final evidence resolution failed", err)
-		}
-
-		finalAnswer := decisionPayload.Final.Answer
-		if candidate, ok, err := finalAnswerCandidateFromEvidence(execCtx.lifecycle.RunID(), execCtx.artifacts, decisionPayload.Final.Evidence); err != nil {
-			logger.Error("failed to inspect final evidence for marked final-answer candidate", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final evidence candidate resolution failed", err)
-		} else if ok {
-			finalAnswer = candidate
-		}
-		finalAnswer = normalizeFinalAnswer(finalAnswer)
-		if finalAnswer == "" {
-			logger.Error("final payload answer is empty after normalization", "step_id", stepStarted.StepID)
-			return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "final.answer is empty after boundary whitespace normalization", nil)
-		}
-
-		finalRef, err := completeNodeWithFinalAnswer(execCtx, node, finalAnswer, decisionPayload.Final.Evidence, decisionPayload.Final.Confidence)
-		if err != nil {
-			logger.Error("failed to complete node with final answer", "step_id", stepStarted.StepID, "error", err)
-			return nodeExecutionResult{}, err
-		}
-		failedStepID = nil
-		logger.Info("node reached final decision",
+		logger.Error("unsupported non-action model decision",
 			"step_id", stepStarted.StepID,
-			"duration_ms", durationMS(stepStart),
-			"final_answer_ref", finalRef,
-			"final_answer_bytes", len(finalAnswer),
+			"decision", decisionPayload.Decision,
 		)
-
-		return nodeExecutionResult{answer: finalAnswer, finalRef: finalRef}, nil
+		return nodeExecutionResult{}, WrapError(ErrorCodeOutputValidation, "decision=final is not supported; final answers must be emitted by continuation.repl_code using FINAL_ANSWER_START and FINAL_ANSWER_END", nil)
 	}
 }
 
@@ -939,6 +874,11 @@ func shouldRequireRecursivePartitionMapRetry(node runtime.Node, envelope StepInp
 		return false
 	}
 	if envelope.ExecutionState.SmallContext || !envelope.ExecutionState.RecursiveSubcallsAllowed || envelope.ExecutionState.RemainingDepth <= 0 {
+		return false
+	}
+	if envelope.PreviousStepFeedback != nil &&
+		(envelope.PreviousStepFeedback.Code == previousStepFeedbackCodeRecursiveMapReducerRequired ||
+			envelope.PreviousStepFeedback.Code == previousStepFeedbackCodeRecursiveReducerFinalRejected) {
 		return false
 	}
 	if feedback.SubcallSummary == nil {
@@ -1012,6 +952,40 @@ func parseCoverageLine(line string) (int, int, bool) {
 		}
 	}
 	return 0, 0, false
+}
+
+func shouldRejectPrematureRecursiveMarkedFinal(node runtime.Node, envelope StepInputEnvelope, feedback *PreviousActionFeedback, finalAnswer string) bool {
+	if node.Depth != 0 {
+		return false
+	}
+	if envelope.RecursionPolicy == nil || *envelope.RecursionPolicy != StepRecursionPolicyPartitionMapRecursive {
+		return false
+	}
+	if envelope.ExecutionState.SmallContext || !envelope.ExecutionState.RecursiveSubcallsAllowed || envelope.ExecutionState.RemainingDepth <= 0 {
+		return false
+	}
+	if strings.EqualFold(normalizeFinalAnswer(finalAnswer), "NONE") {
+		return false
+	}
+	if feedback != nil && feedback.SubcallSummary != nil && feedback.SubcallSummary.RecursiveCount > 0 {
+		return false
+	}
+	if envelope.StepIndex == 1 && envelope.PreviousActionFeedback == nil && envelope.PreviousStepFeedback == nil {
+		return true
+	}
+	return envelope.PreviousStepFeedback != nil
+}
+
+func shouldRejectMarkedFinalBeforeRecursiveReducer(node runtime.Node, envelope StepInputEnvelope, finalAnswer string) bool {
+	if node.Depth != 0 || envelope.PreviousStepFeedback == nil {
+		return false
+	}
+	switch envelope.PreviousStepFeedback.Code {
+	case previousStepFeedbackCodeRecursiveMapReducerRequired, previousStepFeedbackCodeRecursiveReducerFinalRejected:
+	default:
+		return false
+	}
+	return !strings.EqualFold(normalizeFinalAnswer(finalAnswer), "NONE")
 }
 
 func shouldRejectPrematureRecursiveFinal(node runtime.Node, envelope StepInputEnvelope, decisionPayload DecisionPayload) bool {

@@ -275,18 +275,6 @@ func TestNormalizePayloadAcceptsCanonicalV1Payloads(t *testing.T) {
 			},
 		},
 		{
-			name:      "node.step.completed final",
-			eventType: EventTypeNodeStepCompleted,
-			payload: NodeStepCompletedPayload{
-				StepID:        stepID,
-				Decision:      StepDecisionFinal,
-				ActionCount:   0,
-				DurationMS:    9,
-				Accounting:    accountingRollup,
-				AccountingRef: testStepAccountingRef(nodeID, stepID),
-			},
-		},
-		{
 			name:      "node.turn.user",
 			eventType: EventTypeNodeTurnUser,
 			payload: NodeTurnPayload{

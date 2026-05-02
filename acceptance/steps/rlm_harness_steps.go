@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,6 +147,7 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^openai system prompt explains safe structured parsing in repl code$`, world.openaiSystemPromptExplainsSafeStructuredParsingInReplCode)
 	ctx.Step(`^anthropic system prompt preserves safety rules without openai block sections$`, world.anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlockSections)
 	ctx.Step(`^system prompt requires byte-for-byte previous_action_feedback\.action_ref reuse with context_ref fallback$`, world.systemPromptRequiresByteforbytePrevious_action_feedbackaction_refReuseWithContext_refFallback)
+	ctx.Step(`^system prompt requires byte-for-byte previous_action_feedback\.action_ref reuse$`, world.systemPromptRequiresByteforbytePrevious_action_feedbackaction_refReuseWithContext_refFallback)
 
 	ctx.Step(`^harness execution starts$`, world.harnessExecutionStarts)
 	ctx.Step(`^exactly one root node exists with depth (\d+) and null parent$`, world.exactlyOneRootNodeExistsWithDepthAndNullParent)
@@ -179,12 +181,15 @@ func registerRLMHarnessSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 
 	ctx.Step(`^an active parent node with child node in progress$`, world.anActiveParentNodeWithChildNodeInProgress)
 	ctx.Step(`^child node inference result is decision final with answer "([^"]*)"$`, world.childNodeInferenceResultIsDecisionFinalWithAnswer)
+	ctx.Step(`^child node marked final action output is "([^"]*)"$`, world.childNodeInferenceResultIsDecisionFinalWithAnswer)
 	ctx.Step(`^child node completes$`, world.childNodeCompletes)
 	ctx.Step(`^caller REPL context receives rlm_query result "([^"]*)"$`, world.callerREPLContextReceivesRlm_queryResult)
 	ctx.Step(`^child final answer is returned to caller REPL context$`, world.childFinalAnswerIsReturnedToCallerREPLContext)
 
 	ctx.Step(`^an active root node inference result is decision final with answer "([^"]*)"$`, world.anActiveRootNodeInferenceResultIsDecisionFinalWithAnswer)
+	ctx.Step(`^a root action emits marked final-answer output$`, world.aRootActionEmitsMarkedFinalanswerOutput)
 	ctx.Step(`^harness evaluates root node step$`, world.harnessEvaluatesRootNodeStep)
+	ctx.Step(`^harness evaluates marked action output$`, world.harnessEvaluatesRootNodeStep)
 	ctx.Step(`^run completion references terminal root final output$`, world.runCompletionReferencesTerminalRootFinalOutput)
 	ctx.Step(`^a root recursive-map action emits complete marked final-answer output$`, world.aRootRecursiveMapActionEmitsCompleteMarkedFinalAnswerOutput)
 	ctx.Step(`^harness evaluates marked recursive-map reducer output$`, world.harnessEvaluatesMarkedRecursiveMapReducerOutput)
@@ -611,9 +616,9 @@ func (w *harnessWorld) openaiSystemPromptUsesBlockSectionsAndHardFinalizationGat
 		"<citation_rules>",
 		"<finalization_gate>",
 		"<recovery_rules>",
-		"decision=final is allowed only when all of the following are true:",
+		"decision=final is not supported. Every model response MUST choose decision=continue",
 		"Do not finalize on a guess, on partial formatting, or on unsupported evidence.",
-		`{"decision":"final","final":{"answer":"NONE"`,
+		"FINAL_ANSWER_START",
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(prompt, snippet) {
@@ -704,8 +709,9 @@ func (w *harnessWorld) anthropicSystemPromptPreservesSafetyRulesWithoutOpenaiBlo
 		"read_action_artifact(action_ref string) (ActionOutput, error)",
 		"Evidence rules:",
 		"Finalization gate:",
-		"decision=final is allowed only when the requested deliverable is obtained, final.answer matches the requested answer format, and at least one valid evidence ref directly supports the answer.",
+		"decision=final is not supported. Every model response must choose decision=continue",
 		"If you cite previous_action_feedback.action_ref, copy it byte-for-byte.",
+		"FINAL_ANSWER_START",
 		"llm_query and rlm_query return a plain string answer to your Go code, not an arbitrary top-level JSON object.",
 		"If you need structured data, ask the subcall to return minified JSON text inside the answer string and parse that string in REPL.",
 		"If execution_state.small_context=true, solve locally with REPL or llm_query and do not call rlm_query or rlm_query_batched.",
@@ -764,8 +770,8 @@ func (w *harnessWorld) oneInferenceRequestAndResponseHandlingCycleComplete() err
 	w.rlm().activeStepID = step.StepID
 	return w.lifecycle.AppendNodeStepCompleted(rootNode.ID, sigilruntime.NodeStepCompletedPayload{
 		StepID:      step.StepID,
-		Decision:    sigilruntime.StepDecisionFinal,
-		ActionCount: 0,
+		Decision:    sigilruntime.StepDecisionContinue,
+		ActionCount: 1,
 		DurationMS:  1,
 	})
 }
@@ -1094,6 +1100,10 @@ func (w *harnessWorld) anActiveRootNodeInferenceResultIsDecisionFinalWithAnswer(
 	w.rlm().rootFinalAnswer = answer
 	w.rlm().rootFinalRef = "run-artifact://node/root/final-answer"
 	return nil
+}
+
+func (w *harnessWorld) aRootActionEmitsMarkedFinalanswerOutput() error {
+	return w.anActiveRootNodeInferenceResultIsDecisionFinalWithAnswer("done")
 }
 
 func (w *harnessWorld) harnessEvaluatesRootNodeStep() error {
@@ -1961,10 +1971,11 @@ func guardrailFinalResult(answer string) sigilinference.Result {
 	return sigilinference.Result{
 		SchemaID: "sigil.rlm.response.v1",
 		ValidatedPayload: map[string]any{
-			"decision": "final",
-			"final": map[string]any{
-				"answer":   answer,
-				"evidence": []any{map[string]any{"ref": "__context_ref__"}},
+			"decision": "continue",
+			"continuation": map[string]any{
+				"repl_code":            "print(" + strconv.Quote("FINAL_ANSWER_START\n"+answer+"\nFINAL_ANSWER_END\n") + ")",
+				"intent":               "Emit verified final answer.",
+				"expected_observation": "A final-answer block containing the requested answer.",
 			},
 		},
 		Gateway:           "openrouter",

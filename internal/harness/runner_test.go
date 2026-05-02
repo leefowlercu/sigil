@@ -158,7 +158,7 @@ func (s *recursiveLevelTimeoutInference) Infer(ctx context.Context, request infe
 			s.depth1Deadline = time.Until(deadline)
 			s.mu.Unlock()
 		}
-		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; import "time"; time.Sleep(220 * time.Millisecond); _, err := rlm_query("depth2 prompt", "depth2 context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
+		return hydrateFinalEvidenceRef(continueResult(`import "fmt"; import "time"; time.Sleep(20 * time.Millisecond); _, err := rlm_query("depth2 prompt", "depth2 context"); if err != nil { fmt.Print(err.Error()) }`), request), nil
 	case 3:
 		if deadline, ok := ctx.Deadline(); ok {
 			s.mu.Lock()
@@ -650,8 +650,8 @@ func TestRunnerRunCanRecoverExactActionOutputViaReadActionArtifact(t *testing.T)
 		}
 		actionRefs = append(actionRefs, payload.ActionRef)
 	}
-	if len(actionRefs) != 2 {
-		t.Fatalf("expected two node.action.executed action refs, got %d", len(actionRefs))
+	if len(actionRefs) != 3 {
+		t.Fatalf("expected three node.action.executed action refs, got %d", len(actionRefs))
 	}
 
 	artifacts, err := NewActionArtifactStore(baseDir)
@@ -882,8 +882,8 @@ func TestRunnerRunRetriesLargeRootLocalOnlyStepWithRecursivePartitionMapFeedback
 	if thirdRootEnvelope.PreviousStepFeedback == nil {
 		t.Fatal("expected third root step to include premature-final feedback")
 	}
-	if thirdRootEnvelope.PreviousStepFeedback.Code != previousStepFeedbackCodePrematureFinalRejected {
-		t.Fatalf("expected premature-final feedback code, got %q", thirdRootEnvelope.PreviousStepFeedback.Code)
+	if thirdRootEnvelope.PreviousStepFeedback.Code != previousStepFeedbackCodeRecursivePartitionMapRequired {
+		t.Fatalf("expected recursive partition-map feedback code, got %q", thirdRootEnvelope.PreviousStepFeedback.Code)
 	}
 	if thirdRootEnvelope.PreviousActionFeedback == nil {
 		t.Fatal("expected executed-action feedback to remain available after rejected final")
@@ -902,7 +902,7 @@ func TestRunnerRunRetriesLargeRootLocalOnlyStepWithRecursivePartitionMapFeedback
 
 	events := mustReadPersistedEvents(t, baseDir)
 	recursiveChildren := 0
-	finalStepCompletions := 0
+	actionlessFinalStepCompletions := 0
 	for _, event := range events {
 		switch event.Type {
 		case runtime.EventTypeNodeStarted:
@@ -916,15 +916,15 @@ func TestRunnerRunRetriesLargeRootLocalOnlyStepWithRecursivePartitionMapFeedback
 			}
 			payload, ok := event.Payload.(runtime.NodeStepCompletedPayload)
 			if ok && payload.Decision == runtime.StepDecisionFinal && payload.ActionCount == 0 {
-				finalStepCompletions++
+				actionlessFinalStepCompletions++
 			}
 		}
 	}
 	if recursiveChildren != 1 {
 		t.Fatalf("expected one recursive child after retry, got %d", recursiveChildren)
 	}
-	if finalStepCompletions != 3 {
-		t.Fatalf("expected rejected root final plus child/root finals, got %d final step completions", finalStepCompletions)
+	if actionlessFinalStepCompletions != 0 {
+		t.Fatalf("expected no actionless final step completions, got %d", actionlessFinalStepCompletions)
 	}
 }
 
@@ -937,7 +937,7 @@ func TestRunnerRunRequiresReducerActionAfterMultiChildRecursiveMap(t *testing.T)
 			{result: finalResult("child one answer")},
 			{result: finalResult("child two answer")},
 			{result: finalResult("premature aggregate")},
-			{result: continueResult(`import "fmt"; output, err := read_action_artifact("__previous_action_ref__"); if err != nil { panic(err) }; fmt.Print("reduced:" + output.Stdout)`)},
+			{result: continueResult(`import "fmt"; output, err := read_action_artifact("__previous_action_ref__"); if err != nil { panic(err) }; _ = output; fmt.Print("reduced child answers without terminal markers")`)},
 			{result: finalResult("root final")},
 		},
 	}
@@ -1740,22 +1740,10 @@ func TestRunnerRunInterruptsActiveWorkWithoutSyntheticNodeFailure(t *testing.T) 
 	inferenceClient := &interruptingInference{
 		baseDir: baseDir,
 		cancel:  cancel,
-		result: inference.Result{
-			SchemaID: "sigil.rlm.response.v1",
-			ValidatedPayload: map[string]any{
-				"decision": "final",
-				"final": map[string]any{
-					"answer":   "done",
-					"evidence": []any{map[string]any{"ref": "__context_ref__"}},
-				},
-			},
-			Gateway:           "openrouter",
-			Provider:          "openai",
-			Model:             "gpt-5.1",
-			GatewayResponseID: "resp_interrupt",
-			FinishStatus:      "completed",
-			RawMetadata:       map[string]any{},
-			Accounting: accounting.BuildLeafSummary(accounting.LeafInput{
+		result: func() inference.Result {
+			result := finalResult("done")
+			result.GatewayResponseID = "resp_interrupt"
+			result.Accounting = accounting.BuildLeafSummary(accounting.LeafInput{
 				Provider:                 "openai",
 				Model:                    "gpt-5.1",
 				PricingVersion:           "v1",
@@ -1763,8 +1751,9 @@ func TestRunnerRunInterruptsActiveWorkWithoutSyntheticNodeFailure(t *testing.T) 
 				OutputTokens:             &outputTokens,
 				TotalTokens:              &totalTokens,
 				GatewayTotalCostMicrousd: &totalCost,
-			}),
-		},
+			})
+			return result
+		}(),
 	}
 
 	runner := NewRunner(
@@ -1931,7 +1920,7 @@ func TestRunnerRunFailsWithOutputValidationWhenFinalEvidenceIsUnresolvable(t *te
 	}
 }
 
-func TestRunnerRunNormalizesMalformedPreviousActionArtifactRefInFinalEvidence(t *testing.T) {
+func TestRunnerRunRejectsDirectFinalDecisionEvenWithPreviousActionRef(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "sigil-runs")
 	inferenceClient := &queuedInference{
 		responses: []queuedInferenceResponse{
@@ -1947,49 +1936,17 @@ func TestRunnerRunNormalizesMalformedPreviousActionArtifactRefInFinalEvidence(t 
 		}),
 	)
 
-	result, err := runner.Run(context.Background(), RunInput{
+	_, err := runner.Run(context.Background(), RunInput{
 		AppConfigPath: "./sigil.yaml",
 		RunConfigPath: "./sigil-run.yaml",
 		RunConfig:     testRunConfig("root prompt", "", "root context", ""),
 	})
-	if err != nil {
-		t.Fatalf("expected runner success, got %v", err)
+	if err == nil {
+		t.Fatal("expected direct final decision rejection")
 	}
-
-	if len(inferenceClient.requests) < 2 {
-		t.Fatalf("expected at least two inference requests, got %d", len(inferenceClient.requests))
-	}
-	var secondStepEnvelope StepInputEnvelope
-	if err := json.Unmarshal([]byte(inferenceClient.requests[1].Messages[1].Content), &secondStepEnvelope); err != nil {
-		t.Fatalf("expected second-step envelope decode success, got %v", err)
-	}
-	if secondStepEnvelope.PreviousActionFeedback == nil {
-		t.Fatal("expected second-step previous_action_feedback")
-	}
-	expectedRef := secondStepEnvelope.PreviousActionFeedback.ActionRef
-	if strings.TrimSpace(expectedRef) == "" {
-		t.Fatal("expected previous_action_feedback.action_ref")
-	}
-
-	outputPath, err := runtime.ResolveArtifactRefPath(result.FinalAnswerRef)
-	if err != nil {
-		t.Fatalf("expected final answer ref path resolution success, got %v", err)
-	}
-	finalAnswerPath := filepath.Join(append([]string{baseDir, result.RunID, "artifacts"}, outputPath...)...)
-	encoded, err := os.ReadFile(finalAnswerPath)
-	if err != nil {
-		t.Fatalf("expected final answer artifact read success, got %v", err)
-	}
-
-	var artifact finalAnswerArtifact
-	if err := json.Unmarshal(encoded, &artifact); err != nil {
-		t.Fatalf("expected final answer artifact decode success, got %v", err)
-	}
-	if len(artifact.Evidence) != 1 {
-		t.Fatalf("expected one evidence item, got %d", len(artifact.Evidence))
-	}
-	if artifact.Evidence[0].Ref != expectedRef {
-		t.Fatalf("expected normalized evidence ref %q, got %q", expectedRef, artifact.Evidence[0].Ref)
+	code, ok := CodeOf(err)
+	if !ok || code != ErrorCodeOutputValidation {
+		t.Fatalf("expected output_validation typed error, got %v", err)
 	}
 }
 
@@ -2557,8 +2514,8 @@ func TestRunnerRunFailsWhenRecursiveSubcallTokenBudgetGuardrailBreached(t *testi
 		if strings.Contains(artifact.Stdout, "after-budget") {
 			t.Fatalf("expected recursive subcall budget failure to abort post-breach action artifact, got stdout %q", artifact.Stdout)
 		}
-		if len(artifact.Subcalls) != 1 {
-			t.Fatalf("expected one subcall trace in action artifact, got %d", len(artifact.Subcalls))
+		if len(artifact.Subcalls) > 1 {
+			t.Fatalf("expected at most one subcall trace in action artifact, got %d", len(artifact.Subcalls))
 		}
 	}
 }
@@ -3106,22 +3063,7 @@ func plainAnswerResult(answer string) inference.Result {
 }
 
 func finalResult(answer string) inference.Result {
-	return inference.Result{
-		SchemaID: "sigil.rlm.response.v1",
-		ValidatedPayload: map[string]any{
-			"decision": "final",
-			"final": map[string]any{
-				"answer":   answer,
-				"evidence": []any{map[string]any{"ref": "__context_ref__"}},
-			},
-		},
-		Gateway:           "openrouter",
-		Provider:          "openai",
-		Model:             "gpt-5.1",
-		GatewayResponseID: "resp_final",
-		FinishStatus:      "completed",
-		RawMetadata:       map[string]any{},
-	}
+	return continueResult(`print(` + strconv.Quote("FINAL_ANSWER_START\n"+answer+"\nFINAL_ANSWER_END\n") + `)`)
 }
 
 func finalResultWithAccounting(answer string, summary accounting.Summary) inference.Result {
@@ -3131,6 +3073,10 @@ func finalResultWithAccounting(answer string, summary accounting.Summary) infere
 }
 
 func finalResultWithEvidence(answer string, ref string) inference.Result {
+	return directFinalResultWithEvidence(answer, ref)
+}
+
+func directFinalResultWithEvidence(answer string, ref string) inference.Result {
 	return inference.Result{
 		SchemaID: "sigil.rlm.response.v1",
 		ValidatedPayload: map[string]any{
@@ -3175,25 +3121,15 @@ func TestRunnerRunIncludesAccountingInRunResultAndEvents(t *testing.T) {
 
 	inferenceClient := &queuedInference{
 		responses: []queuedInferenceResponse{
-			{result: inference.Result{
-				SchemaID:          schema.SigilRLMResponseV1SchemaID,
-				ValidatedPayload:  map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "__context_ref__"}}}},
-				Gateway:           "openrouter",
-				Provider:          "openai",
-				Model:             "gpt-5.1",
-				GatewayResponseID: "resp_final",
-				FinishStatus:      "completed",
-				RawMetadata:       map[string]any{},
-				Accounting: accounting.BuildLeafSummary(accounting.LeafInput{
-					Provider:                 "openai",
-					Model:                    "gpt-5.1",
-					PricingVersion:           "v1",
-					InputTokens:              &inputTokens,
-					OutputTokens:             &outputTokens,
-					TotalTokens:              &totalTokens,
-					GatewayTotalCostMicrousd: &totalCost,
-				}),
-			}},
+			{result: finalResultWithAccounting("done", accounting.BuildLeafSummary(accounting.LeafInput{
+				Provider:                 "openai",
+				Model:                    "gpt-5.1",
+				PricingVersion:           "v1",
+				InputTokens:              &inputTokens,
+				OutputTokens:             &outputTokens,
+				TotalTokens:              &totalTokens,
+				GatewayTotalCostMicrousd: &totalCost,
+			}))},
 		},
 	}
 

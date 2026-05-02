@@ -828,7 +828,7 @@ Feature: Sigil baseline CLI and config contracts
     Then command exits non-zero
     And command error contains `harness_template_render`
 
-  Scenario: Executes multi-step decision loop until root terminal decision
+  Scenario: Executes multi-step action loop until root action finalizes
     Given an active node with existing REPL session state
     When additional continue actions execute for that node
     Then subsequent actions run in the same node REPL session state
@@ -882,13 +882,13 @@ Feature: Sigil baseline CLI and config contracts
     When rlm_query is invoked from node-local Go REPL context
     Then typed depth-limit error is returned and child node is not created
 
-  Scenario: Completes run on root final answer and sets run.completed.final_answer_ref
-    Given an active root node inference result is decision final with answer "final answer"
-    When harness evaluates root node step
+  Scenario: Completes run from marked final-answer action and sets run.completed.final_answer_ref
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
     Then run transitions to "completed"
     And run completion references terminal root final output
 
-  Scenario: Completes run from marked recursive-map reducer output without another inference turn
+  Scenario: Completes run from marked recursive-map reducer action without another inference turn
     Given a root recursive-map action emits complete marked final-answer output
     When harness evaluates marked recursive-map reducer output
     Then run completes using the marked reducer final answer
@@ -1211,13 +1211,13 @@ Feature: Sigil baseline CLI and config contracts
 
   Scenario: Resolves inference gateway through registry using llm.gateway
     Given a valid inference request for gateway resolution
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference gateway resolution runs
     Then resolution occurs through gateway registry lookup
 
   Scenario: Uses OpenRouter Responses API in non-streaming mode for v1
     Given a valid inference request for execution
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then request targets OpenRouter Responses API in non-streaming mode
 
@@ -1225,7 +1225,7 @@ Feature: Sigil baseline CLI and config contracts
     Given a valid inference request for execution
     And central inference schema registry is initialized
     And inference request schema_id is "sigil.rlm.response.v1"
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then schema is resolved from central registry and applied to request
 
@@ -1233,33 +1233,33 @@ Feature: Sigil baseline CLI and config contracts
     Given a valid inference request for execution
     And central inference schema registry is initialized
     And inference request schema_id is "sigil.rlm.response.v1"
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then schema is resolved from central registry and applied to request
 
   Scenario: Requires strict json_schema structured outputs on all inference requests
     Given a valid inference request for execution
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then strict json_schema structured output mode is required
 
   Scenario: Enables response healing plugin on all inference requests
     Given a valid inference request for execution
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then response healing plugin is enabled
 
   Scenario: Applies reasoning configuration when llm.reasoning.enabled is true
     Given a valid inference request for execution
     And inference reasoning is enabled with effort "medium"
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then reasoning config is included using configured effort "medium"
 
   Scenario: Omits reasoning request block when llm.reasoning.enabled is false
     Given a valid inference request for execution
     And inference reasoning is disabled
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then reasoning config is omitted
 
@@ -1296,15 +1296,15 @@ Feature: Sigil baseline CLI and config contracts
 
   Scenario: Returns canonical normalized inference response shape on success
     Given a valid inference request for execution
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference execution runs
     Then normalized output contains all required canonical fields
 
-  Scenario: Requires decision discriminator values continue or final in sigil.rlm.response.v1
+  Scenario: Requires action-only continue discriminator in sigil.rlm.response.v1
     Given a valid inference request for execution
     And openrouter mock gateway returns payload fixture "decision-invalid"
     When inference execution runs
-    Then decision discriminator enforces continue or final
+    Then decision discriminator enforces action-only continue
 
   Scenario: Requires continuation repl_code and forbids final branch when decision is continue
     Given a valid inference request for execution
@@ -1312,11 +1312,11 @@ Feature: Sigil baseline CLI and config contracts
     When inference execution runs
     Then continuation branch invariant is enforced
 
-  Scenario: Requires final branch and forbids continuation branch when decision is final
+  Scenario: Forbids final branch fields in action-only RLM payloads
     Given a valid inference request for execution
     And openrouter mock gateway returns payload fixture "final-branch-invalid"
     When inference execution runs
-    Then final branch invariant is enforced
+    Then direct final decision is rejected
 
   Scenario: Rejects unknown fields in sigil.rlm.response.v1 payloads
     Given a valid inference request for execution
@@ -1465,19 +1465,19 @@ Feature: Sigil baseline CLI and config contracts
     When rlm_query is invoked from node-local Go REPL context
     Then plain subcall fallback answer is returned and child node is not created
 
-  Scenario: Returns child final answer to caller REPL context on successful recursive subcall
+  Scenario: Returns child marked final answer to caller REPL context on successful recursive subcall
     Given an active parent node with child node in progress
-    And child node inference result is decision final with answer "child answer"
+    And child node marked final action output is "child answer"
     When child node completes
     Then caller REPL context receives rlm_query result "child answer"
 
-  Scenario: Completes run when root node emits decision final with non-empty final answer
-    Given an active root node inference result is decision final with answer "final answer"
-    When harness evaluates root node step
+  Scenario: Completes run when root action emits marked final-answer output
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
     Then run transitions to "completed"
     And run completion references terminal root final output
 
-  Scenario: Defines step as one node-local decision cycle
+  Scenario: Defines step as one action-backed node-local decision cycle
     Given an active node in harness execution
     When one inference request and response handling cycle complete
     Then exactly one node-local step is recorded
@@ -1487,7 +1487,7 @@ Feature: Sigil baseline CLI and config contracts
     When transcript contributions are persisted for that step
     Then each turn contribution is recorded with role user or model
 
-  Scenario: Limits continue steps to exactly one executable action
+  Scenario: Limits every completed step to exactly one executable action
     Given a node-local step with decision continue
     When continuation payload is validated
     Then exactly one executable action is accepted for that step
@@ -1546,7 +1546,7 @@ Feature: Sigil baseline CLI and config contracts
 
   Scenario: Returns child final answer to caller REPL context on successful subcall
     Given an active parent node with child node in progress
-    And child node inference result is decision final with answer "child answer"
+    And child node marked final action output is "child answer"
     When child node completes
     Then child final answer is returned to caller REPL context
 
@@ -1671,7 +1671,7 @@ Feature: Sigil baseline CLI and config contracts
 
   Scenario: Constructs OpenRouter Responses API requests with message-array input preserving role order
     Given a valid inference request for execution
-    And openrouter mock gateway returns payload fixture "valid-final"
+    And openrouter mock gateway returns payload fixture "valid-continue"
     When inference request construction runs
     Then request uses message-array input preserving role order
 
@@ -1792,7 +1792,7 @@ Feature: Sigil baseline CLI and config contracts
     When inference execution runs
     Then inference fails with typed error code "output_validation"
 
-  Scenario: Requires final evidence array when decision is final
+  Scenario: Rejects final payload missing evidence under action-only schema
     Given a valid inference request for execution
     And central inference schema registry is initialized
     And inference request schema_id is "sigil.rlm.response.v1"
@@ -1800,7 +1800,7 @@ Feature: Sigil baseline CLI and config contracts
     When inference execution runs
     Then inference fails with typed error code "output_validation"
 
-  Scenario: Restricts final confidence to enum low medium or high when present
+  Scenario: Rejects final confidence fields under action-only schema
     Given a valid inference request for execution
     And central inference schema registry is initialized
     And inference request schema_id is "sigil.rlm.response.v1"
@@ -1821,15 +1821,15 @@ Feature: Sigil baseline CLI and config contracts
     When inference execution runs
     Then inference fails with typed error code "output_validation"
 
-  Scenario: Requires final answer evidence and optional confidence enum in final branch
+  Scenario: Rejects direct final decision payloads in sigil.rlm.response.v1
     Given a valid inference request for execution
     And central inference schema registry is initialized
     And inference request schema_id is "sigil.rlm.response.v1"
     And openrouter mock gateway returns payload fixture "valid-final"
     When inference execution runs
-    Then normalized output contains all required canonical fields
+    Then direct final decision is rejected
 
-  Scenario: Rejects unknown fields and malformed evidence entries under strict schema
+  Scenario: Rejects unknown fields under strict schema
     Given a valid inference request for execution
     And central inference schema registry is initialized
     And inference request schema_id is "sigil.rlm.response.v1"
@@ -1847,24 +1847,29 @@ Feature: Sigil baseline CLI and config contracts
     When model-step inference input is constructed for next step
     Then previous-action feedback summary includes action_ref and bounded preview truncation metadata
 
-  Scenario: Validates final evidence references against run-local persisted artifacts before node completion
-    Given an active root node inference result is decision final with answer "root final"
-    When harness evaluates root node step
+  Scenario: Validates marked final-answer action evidence before node completion
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
     Then run completion references terminal root final output
 
-  Scenario: Fails run with typed output-validation metadata when any final evidence reference cannot be resolved
+  Scenario: Fails run with typed output-validation metadata when marked final-answer evidence cannot be resolved
     Given step-envelope serialization or persistence failure is injected
     When harness run execution handles bounded model-input failure
     Then run fails with typed infrastructure metadata for bounded model-input failure
 
-  Scenario: Accepts final evidence references for the canonical artifact scheme
+  Scenario: Accepts final-answer evidence references for the canonical artifact scheme
     Given an action execution completes or fails
     When action artifact persistence executes
     Then artifact is persisted and node.action.executed.action_ref is set to canonical artifact reference
 
-  Scenario: Persists enriched final-answer artifact with answer evidence and optional confidence
-    Given an active root node inference result is decision final with answer "root final"
-    When harness evaluates root node step
+  Scenario: Persists final-answer artifact from marked action output
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
+    Then run completion references terminal root final output
+
+  Scenario: Persists enriched final-answer artifact with answer and action evidence
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
     Then run completion references terminal root final output
 
   Scenario: Generates system prompt schema block from central registry definition sigil.rlm.response.v1 at runtime
@@ -1883,7 +1888,7 @@ Feature: Sigil baseline CLI and config contracts
     When continuation payload is validated
     Then exactly one executable action is accepted for that step
 
-  Scenario: Maintains inference schema_id sigil.rlm.response.v1 after schema extension
+  Scenario: Maintains inference schema_id sigil.rlm.response.v1 after action-only schema change
     Given a valid inference request for execution
     And inference request schema_id is "sigil.rlm.response.v1"
     When inference request construction runs
@@ -1894,10 +1899,10 @@ Feature: Sigil baseline CLI and config contracts
     When harness effective system prompt is constructed
     Then effective system prompt equals resolved base prompt
 
-  Scenario: Requires byte-for-byte previous_action_feedback.action_ref reuse with context_ref fallback for final evidence citations
+  Scenario: Requires byte-for-byte previous_action_feedback.action_ref reuse for action evidence recovery
     Given harness base system prompt resolution runs
     When harness effective system prompt is constructed
-    Then system prompt requires byte-for-byte previous_action_feedback.action_ref reuse with context_ref fallback
+    Then system prompt requires byte-for-byte previous_action_feedback.action_ref reuse
 
   Scenario: Defines node.failed event type for canonical failed-node terminalization
     Given canonical v1 run-event validation rules
@@ -1910,8 +1915,8 @@ Feature: Sigil baseline CLI and config contracts
     Then only canonical v1 runtime event types are accepted
 
   Scenario: Enforces node terminal-event exclusivity between node.completed and node.failed
-    Given an active root node inference result is decision final with answer "final answer"
-    When harness evaluates root node step
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
     Then run completion references terminal root final output
 
   Scenario: Applies schema-specific raw-text fallback for sigil.llm.answer.v1 extraction failures
@@ -1975,8 +1980,8 @@ Feature: Sigil baseline CLI and config contracts
     Then run transitions to failed with typed error metadata
 
   Scenario: Emits exactly one terminal node event node.completed or node.failed for every node.started
-    Given an active root node inference result is decision final with answer "final answer"
-    When harness evaluates root node step
+    Given a root action emits marked final-answer output
+    When harness evaluates marked action output
     Then run completion references terminal root final output
 
   Scenario: Emits node.failed for recursive child execution failures before parent node.subcall.executed failed record

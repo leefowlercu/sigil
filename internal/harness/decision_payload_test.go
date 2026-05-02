@@ -27,7 +27,7 @@ func TestParseDecisionPayloadContinueBranch(t *testing.T) {
 	}
 }
 
-func TestParseDecisionPayloadFinalBranch(t *testing.T) {
+func TestParseDecisionPayloadRejectsFinalBranch(t *testing.T) {
 	payload := map[string]any{
 		"decision": "final",
 		"final": map[string]any{
@@ -44,28 +44,12 @@ func TestParseDecisionPayloadFinalBranch(t *testing.T) {
 		},
 	}
 
-	parsed, err := parseDecisionPayload(payload)
-	if err != nil {
-		t.Fatalf("expected parse success, got %v", err)
-	}
-	if parsed.Decision != "final" {
-		t.Fatalf("expected final decision, got %q", parsed.Decision)
-	}
-	if parsed.Final == nil {
-		t.Fatal("expected final payload")
-	}
-	if parsed.Final.Answer != "done" {
-		t.Fatalf("expected answer done, got %q", parsed.Final.Answer)
-	}
-	if len(parsed.Final.Evidence) != 1 {
-		t.Fatalf("expected one evidence item, got %d", len(parsed.Final.Evidence))
-	}
-	if parsed.Final.Confidence == nil || *parsed.Final.Confidence != "high" {
-		t.Fatalf("expected confidence high, got %v", parsed.Final.Confidence)
+	if _, err := parseDecisionPayload(payload); err == nil {
+		t.Fatal("expected final branch rejection")
 	}
 }
 
-func TestParseDecisionPayloadRejectsMalformedEvidenceSpan(t *testing.T) {
+func TestParseDecisionPayloadRejectsDirectFinalBeforeEvidenceParsing(t *testing.T) {
 	payload := map[string]any{
 		"decision": "final",
 		"final": map[string]any{
@@ -81,6 +65,6 @@ func TestParseDecisionPayloadRejectsMalformedEvidenceSpan(t *testing.T) {
 	}
 
 	if _, err := parseDecisionPayload(payload); err == nil {
-		t.Fatal("expected parse failure for malformed span range")
+		t.Fatal("expected parse failure for direct final decision")
 	}
 }

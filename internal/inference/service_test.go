@@ -90,11 +90,11 @@ func TestInferRejectsInvalidMessagesWithTypedGatewayResolutionError(t *testing.T
 
 func validFinalPayload() map[string]any {
 	return map[string]any{
-		"decision": "final",
-		"final": map[string]any{
-			"answer":     "done",
-			"evidence":   []any{map[string]any{"ref": "run-artifact://node/example/context.json"}},
-			"confidence": "medium",
+		"decision": "continue",
+		"continuation": map[string]any{
+			"repl_code":            "fmt.Println(\"FINAL_ANSWER_START\")\nfmt.Println(\"done\")\nfmt.Println(\"FINAL_ANSWER_END\")",
+			"intent":               "Emit verified final answer.",
+			"expected_observation": "A final-answer block containing done.",
 		},
 	}
 }
@@ -176,8 +176,8 @@ func TestInferRetriesTransientGatewayFailuresWithBoundedPolicy(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("expected inference success after retries, got %v", runErr)
 	}
-	if result.ValidatedPayload["decision"] != "final" {
-		t.Fatalf("expected final decision payload, got %+v", result.ValidatedPayload)
+	if result.ValidatedPayload["decision"] != "continue" {
+		t.Fatalf("expected action-only decision payload, got %+v", result.ValidatedPayload)
 	}
 	if gateway.calls != 3 {
 		t.Fatalf("expected 3 gateway calls, got %d", gateway.calls)

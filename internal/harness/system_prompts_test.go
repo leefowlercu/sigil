@@ -95,7 +95,7 @@ func TestResolveBaseRendersSchemaFromRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected prompt render success, got %v", err)
 	}
-	assertContainsAll(t, prompt, `"decision"`, `"expected_observation"`, `"evidence"`, "copy it byte-for-byte")
+	assertContainsAll(t, prompt, `"decision"`, `"continuation"`, `"expected_observation"`, "copy it byte-for-byte")
 }
 
 func TestResolveBaseFailsWhenSchemaRegistryMissing(t *testing.T) {
@@ -128,7 +128,8 @@ func TestResolveBaseProviderPromptsIntentionallyDiverge(t *testing.T) {
 		"<citation_rules>",
 		"<finalization_gate>",
 		"<recovery_rules>",
-		"decision=final is allowed only when all of the following are true:",
+		"decision=final is not supported. Every model response MUST choose decision=continue",
+		"FINAL_ANSWER_START",
 	)
 	if strings.Contains(anthropicPrompt, "<tool_selection>") {
 		t.Fatalf("expected anthropic prompt to remain simpler, got %q", anthropicPrompt)
@@ -137,7 +138,8 @@ func TestResolveBaseProviderPromptsIntentionallyDiverge(t *testing.T) {
 		"read_action_artifact(action_ref string) (ActionOutput, error)",
 		"Evidence rules:",
 		"Finalization gate:",
-		"decision=final is allowed only when the requested deliverable is obtained",
+		"decision=final is not supported. Every model response must choose decision=continue",
+		"FINAL_ANSWER_START",
 		"If previous_action_feedback refers to the same context and its preview suggests the prior action already found or printed the target, prefer exact output recovery over another raw-context scan.",
 	)
 }
@@ -176,8 +178,9 @@ func TestResolveBaseOpenAIPromptIncludesPromptRegressionShields(t *testing.T) {
 		"include span_start or span_end only when you know exact integer offsets",
 		`{"ref":"run-artifact://node/019cc5fc-b991-7b33-bb66-c4e2508378f8/step/019cc5fc-b99b-7b33-bb66-c4e2508378f8/action-1.json"}`,
 		`{"decision":"continue","continuation":`,
-		`{"decision":"final","final":`,
-		`{"decision":"final","final":{"answer":"NONE"`,
+		"Do not include a final branch, final.answer, final.evidence, or final.confidence.",
+		`fmt.Println(\"FINAL_ANSWER_START\")`,
+		`fmt.Println(\"NONE\")`,
 		"Because the REPL session is persistent, save exact candidate answers, narrowed message IDs, and exact extracted long strings in clearly named variables when you obtain them.",
 		"Before rescanning the same full context, first check whether a persistent variable already holds the exact deliverable or the exact extracted text needed for finalization.",
 		"When an action extracts the exact target text, assign it to a persistent REPL variable and verify its length before using a later step to finalize.",

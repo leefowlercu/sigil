@@ -515,20 +515,12 @@ func executeRootCommand(t *testing.T, workingDir string, env map[string]string, 
 
 	if isRunStartCommand(args) {
 		mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-			var requestBody map[string]any
-			_ = json.NewDecoder(request.Body).Decode(&requestBody)
-			contextRef := extractContextRefFromOpenRouterRequest(requestBody)
-			if contextRef == "" {
-				contextRef = "__context_ref_missing__"
-			}
-
 			decisionPayload := map[string]any{
-				"decision": "final",
-				"final": map[string]any{
-					"answer": "done",
-					"evidence": []map[string]any{
-						{"ref": contextRef},
-					},
+				"decision": "continue",
+				"continuation": map[string]any{
+					"repl_code":            "print(\"FINAL_ANSWER_START\\ndone\\nFINAL_ANSWER_END\\n\")",
+					"intent":               "Emit verified final answer from inspected context.",
+					"expected_observation": "A final-answer block containing done.",
 				},
 			}
 			decisionPayloadBytes, _ := json.Marshal(decisionPayload)

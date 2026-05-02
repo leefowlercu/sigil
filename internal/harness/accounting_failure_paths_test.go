@@ -75,8 +75,15 @@ func TestRunnerRunPreservesModelTurnAccountingWhenPersistModelTurnFails(t *testi
 	inferenceClient := &modelTurnPersistFailureInference{
 		runsBaseDir: baseDir,
 		result: inference.Result{
-			SchemaID:          schema.SigilRLMResponseV1SchemaID,
-			ValidatedPayload:  map[string]any{"decision": "final", "final": map[string]any{"answer": "done", "evidence": []any{map[string]any{"ref": "__context_ref__"}}}},
+			SchemaID: schema.SigilRLMResponseV1SchemaID,
+			ValidatedPayload: map[string]any{
+				"decision": "continue",
+				"continuation": map[string]any{
+					"repl_code":            "print(\"FINAL_ANSWER_START\\ndone\\nFINAL_ANSWER_END\\n\")",
+					"intent":               "Emit verified final answer.",
+					"expected_observation": "A final-answer block containing done.",
+				},
+			},
 			Gateway:           "openrouter",
 			Provider:          "openai",
 			Model:             "gpt-5.1",

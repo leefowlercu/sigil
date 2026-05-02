@@ -26,7 +26,7 @@ func TestResolveRejectsUnknownSchemaID(t *testing.T) {
 	}
 }
 
-func TestValidateSigilRLMResponseV1AcceptsValidBranches(t *testing.T) {
+func TestValidateSigilRLMResponseV1AcceptsValidActionOnlyPayload(t *testing.T) {
 	definition, err := NewRegistry().Resolve(SigilRLMResponseV1SchemaID)
 	if err != nil {
 		t.Fatalf("failed to resolve schema definition: %v", err)
@@ -44,24 +44,6 @@ func TestValidateSigilRLMResponseV1AcceptsValidBranches(t *testing.T) {
 					"repl_code":            "fmt.Println(\"next\")",
 					"intent":               "inspect context chunk",
 					"expected_observation": "needle-like match in output",
-				},
-			},
-		},
-		{
-			name: "final branch",
-			payload: map[string]any{
-				"decision": "final",
-				"final": map[string]any{
-					"answer": "done",
-					"evidence": []any{
-						map[string]any{
-							"ref":        "run-artifact://node/a/final-answer.json",
-							"chunk_id":   "chunk-17",
-							"span_start": 10,
-							"span_end":   32,
-						},
-					},
-					"confidence": "medium",
 				},
 			},
 		},

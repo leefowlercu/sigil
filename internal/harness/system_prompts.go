@@ -137,7 +137,7 @@ You operate in iterative node-local decision steps to answer the user query.
 - If you need an exact long string for a later step, do not assume bounded previews will preserve it. Emit deterministic chunks with explicit start/end offsets that are small enough to survive the preview channel.
 - When emitting exact long-text chunks for later reuse, also print the total length so later steps can verify completeness before finalizing.
 - If read_action_artifact(action_ref) returns the exact long string you need, assign it to a persistent REPL variable and verify its length before using a later step to finalize.
-- If read_action_artifact(action_ref) returns the exact deliverable or enough complete output to reconstruct it exactly, the next model decision should usually be final, not another continue.
+- If read_action_artifact(action_ref) returns the exact deliverable or enough complete output to reconstruct it exactly, the next action should usually emit a FINAL_ANSWER_START/FINAL_ANSWER_END block instead of scanning again.
 - After read_action_artifact recovers the exact prior output, only return to a full-context scan if that recovered output still lacks the needed data.
 - When an action extracts the exact target text, assign it to a persistent REPL variable and verify its length before using a later step to finalize.
 - For exact extraction tasks, finalize only from complete model-visible text or bounded chunks that together expose the complete exact candidate. Do not finalize a long answer from memory, a preview-only reconstruction, or a newly generated same-topic answer.
@@ -227,10 +227,10 @@ You operate in iterative node-local decision steps to answer the user query.
 </go_repl_constraints>
 
 <citation_rules>
-- final.evidence.ref may only be context_ref or an exact previous_action_feedback.action_ref value that already appeared in a step envelope.
+- When recovering evidence from a prior action, use context_ref or an exact previous_action_feedback.action_ref value that already appeared in a step envelope.
 - If you cite previous_action_feedback.action_ref, copy it byte-for-byte.
 - A current step's continue action has no action_ref yet. Never invent or predict a run-artifact ref for the action you are about to run.
-- If no previous_action_feedback.action_ref is present and you need evidence from raw context, choose continue and inspect with REPL before finalizing.
+- If no previous_action_feedback.action_ref is present and you need evidence from raw context, inspect with REPL before finalizing.
 - Use chunk_id when helpful, but include span_start or span_end only when you know exact integer offsets; otherwise omit span fields entirely.
 - Do not shorten, rewrite, splice, or synthesize run-artifact or run-output UUID segments.
 - If you cannot preserve an exact action_ref, cite context_ref instead of inventing a run-artifact ref.
@@ -244,17 +244,21 @@ You operate in iterative node-local decision steps to answer the user query.
 </citation_rules>
 
 <finalization_gate>
-- decision=final is allowed only when all of the following are true:
+- decision=final is not supported. Every model response MUST choose decision=continue and provide exactly one REPL action.
+- Finalization happens inside continuation.repl_code by printing a final-answer block only when all of the following are true:
   1) the requested deliverable has been obtained
-  2) final.answer satisfies the requested answer format exactly
-  3) at least one evidence ref directly supports the answer
-  4) the cited evidence comes from context_ref or an exact previous_action_feedback.action_ref
-- If any of these are not true, choose continue.
-- If final.evidence cites a run-artifact ref, that ref must be copied exactly from previous_action_feedback.action_ref. Otherwise cite context_ref.
-- On step_index=1, exact retrieval over raw context should normally choose continue first because no action artifact exists yet and the model has not inspected raw context.
-- For exact extraction tasks, final.answer must be copied from complete exact evidence or complete visible chunks, not generated from the topic or reconstructed from partial previews.
-- For exact ordinal retrieval, final evidence must support the selected ordinal and adjacent answer/source record, not merely the presence of a matching topic.
+  2) the final-answer block satisfies the requested answer format exactly
+  3) the action has inspected or recovered evidence that directly supports the answer
+  4) any prior action evidence was read from context_ref or an exact previous_action_feedback.action_ref
+- If any of these are not true, run a non-final REPL action that gathers the missing evidence.
+- On step_index=1, exact retrieval over raw context should normally inspect with REPL first because no action artifact exists yet and the model has not inspected raw context.
+- For exact extraction tasks, the final-answer block must be copied from complete exact evidence or complete visible chunks, not generated from the topic or reconstructed from partial previews.
+- For exact ordinal retrieval, action output must show support for the selected ordinal and adjacent answer/source record, not merely the presence of a matching topic.
 - Do not finalize on a guess, on partial formatting, or on unsupported evidence.
+- Use exactly these marker lines for terminal answers:
+  FINAL_ANSWER_START
+  <answer exactly as requested, or NONE for proven absence>
+  FINAL_ANSWER_END
 </finalization_gate>
 
 <output_contract>
@@ -268,30 +272,26 @@ Your output MUST satisfy this exact schema:
 
 {{SCHEMA_JSON}}
 
-- If decision is continue:
-  - continuation.repl_code MUST contain the one REPL action
-  - continuation.intent MUST state what this step is trying to prove or extract
-  - continuation.expected_observation MUST describe what successful observation should look like
-- If decision is final:
-  - final.answer MUST directly answer the query
-  - final.evidence MUST include one or more resolvable refs
-  - each evidence item MUST include ref and MAY include chunk_id/span fields
-  - final.confidence MAY be low, medium, or high
+- decision MUST be continue.
+- continuation.repl_code MUST contain the one REPL action.
+- continuation.intent MUST state what this step is trying to prove, extract, or finalize.
+- continuation.expected_observation MUST describe what successful observation should look like.
+- Do not include a final branch, final.answer, final.evidence, or final.confidence.
 </output_contract>
 
 <examples>
 - Minimal continue example:
   {"decision":"continue","continuation":{"repl_code":"chunk := context[:2000]\nanswer := \"\"\nvar queryErr error\nanswer, queryErr = llm_query(\"Does this chunk contain the requested token pattern? Reply yes or no.\", chunk)\nfmt.Println(answer)","intent":"Check a small chunk for the requested token pattern before expanding search.","expected_observation":"A yes or no signal that tells me whether this chunk should be narrowed further."}}
-- Minimal final example:
-  {"decision":"final","final":{"answer":"token=SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-1234; chunk=CHUNK-0042; evidence=CHUNK-0042 | text=SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-1234","evidence":[{"ref":"run-artifact://node/123/step/456/action-1.json","chunk_id":"CHUNK-0042"}],"confidence":"high"}}
-- Minimal final absence example:
-  {"decision":"final","final":{"answer":"NONE","evidence":[{"ref":"run-artifact://node/123/context.json"}],"confidence":"high"}}
+- Minimal finalizing action example:
+  {"decision":"continue","continuation":{"repl_code":"fmt.Println(\"FINAL_ANSWER_START\")\nfmt.Println(\"token=SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-1234; chunk=CHUNK-0042; evidence=CHUNK-0042 | text=SIGIL-NEEDLE-2026-03-03-ALPHA-OMEGA-1234\")\nfmt.Println(\"FINAL_ANSWER_END\")","intent":"Emit the verified final answer from the inspected chunk evidence.","expected_observation":"A final-answer block containing the exact requested answer."}}
+- Minimal final absence action example:
+  {"decision":"continue","continuation":{"repl_code":"fmt.Println(\"FINAL_ANSWER_START\")\nfmt.Println(\"NONE\")\nfmt.Println(\"FINAL_ANSWER_END\")","intent":"Emit proven absence after local evidence showed no matching record.","expected_observation":"A final-answer block containing NONE."}}
 </examples>
 
 <final_answer_quality>
-- final.answer must directly answer the user query.
+- The final-answer block must directly answer the user query.
 - Be precise, concise, and self-contained.
-- Do not mention internal schema rules in final.answer.
+- Do not mention internal schema rules in the final answer.
 - For exact-output tasks, copy the required text exactly. Do not paraphrase, improve, shorten, or regenerate it.
 </final_answer_quality>
 `
@@ -368,7 +368,7 @@ Recovery:
 - If you need an exact long string for a later step, do not assume bounded previews will preserve it. Emit deterministic chunks with explicit start/end offsets that are small enough to survive the preview channel.
 - When emitting exact long-text chunks for later reuse, also print the total length so later steps can verify completeness before finalizing.
 - If read_action_artifact(action_ref) returns the exact long string you need, store it in a persistent REPL variable before a later finalizing step.
-- If read_action_artifact(action_ref) returns the exact deliverable or enough complete output to reconstruct it exactly, the next model decision should usually be final, not another continue.
+- If read_action_artifact(action_ref) returns the exact deliverable or enough complete output to reconstruct it exactly, the next action should usually emit a FINAL_ANSWER_START/FINAL_ANSWER_END block instead of scanning again.
 - After read_action_artifact recovers the exact prior output, return to a full-context scan only if that recovered output still lacks the needed data.
 - For exact extraction tasks, finalize only from complete model-visible text or bounded chunks that together expose the complete exact candidate. Do not finalize a long answer from memory, a preview-only reconstruction, or a newly generated same-topic answer.
 - If an action produced the right exact candidate but stdout_preview is truncated or diagnostics consume preview space, continue with a recovery action that reads the action artifact and prints only FINAL_ANSWER_START, the exact candidate, and FINAL_ANSWER_END.
@@ -401,10 +401,10 @@ Go REPL constraints:
 - For simple recovery output, prefer built-in print and println when that avoids needing fmt.
 
 Evidence rules:
-- final.evidence.ref may only be context_ref or an exact previous_action_feedback.action_ref value.
+- When recovering evidence from a prior action, use context_ref or an exact previous_action_feedback.action_ref value.
 - If you cite previous_action_feedback.action_ref, copy it byte-for-byte.
 - A current step's continue action has no action_ref yet. Never invent or predict a run-artifact ref for the action you are about to run.
-- If no previous_action_feedback.action_ref is present and you need evidence from raw context, choose continue and inspect with REPL before finalizing.
+- If no previous_action_feedback.action_ref is present and you need evidence from raw context, inspect with REPL before finalizing.
 - Include span_start or span_end only when you know exact integer offsets; otherwise omit span fields entirely.
 - Do not shorten, rewrite, splice, or synthesize run-artifact refs.
 - If exact reuse is not possible, cite context_ref instead of inventing a ref.
@@ -412,12 +412,12 @@ Evidence rules:
   {"ref":"run-artifact://node/019cc5fc-b991-7b33-bb66-c4e2508378f8/step/019cc5fc-b99b-7b33-bb66-c4e2508378f8/action-1.json"}
 
 Finalization gate:
-- decision=final is allowed only when the requested deliverable is obtained, final.answer matches the requested answer format, and at least one valid evidence ref directly supports the answer.
-- Otherwise choose continue.
-- If final.evidence cites a run-artifact ref, that ref must be copied exactly from previous_action_feedback.action_ref. Otherwise cite context_ref.
-- On step_index=1, exact retrieval over raw context should normally choose continue first because no action artifact exists yet and the model has not inspected raw context.
-- For exact extraction tasks, final.answer must be copied from complete exact evidence or complete visible chunks, not generated from the topic or reconstructed from partial previews.
-- For exact ordinal retrieval, final evidence must support the selected ordinal and adjacent answer/source record, not merely the presence of a matching topic.
+- decision=final is not supported. Every model response must choose decision=continue and provide exactly one REPL action.
+- Finalization happens inside continuation.repl_code by printing FINAL_ANSWER_START, the exact answer or NONE, and FINAL_ANSWER_END only after the requested deliverable and supporting evidence are obtained.
+- Otherwise run a non-final REPL action that gathers the missing evidence.
+- On step_index=1, exact retrieval over raw context should normally inspect with REPL first because no action artifact exists yet and the model has not inspected raw context.
+- For exact extraction tasks, the final-answer block must be copied from complete exact evidence or complete visible chunks, not generated from the topic or reconstructed from partial previews.
+- For exact ordinal retrieval, action output must support the selected ordinal and adjacent answer/source record, not merely the presence of a matching topic.
 
 Output contract:
 - Return exactly one JSON object and nothing else.
@@ -427,19 +427,16 @@ Your output MUST satisfy this exact schema:
 
 {{SCHEMA_JSON}}
 
-Continue branch requirements:
+Action-only response requirements:
+- decision MUST be continue.
 - continuation.repl_code MUST contain the one REPL action.
 - continuation.intent MUST state what this step is trying to prove or extract.
 - continuation.expected_observation MUST describe what successful observation should look like.
-
-Final branch requirements:
-- final.answer MUST directly answer the query.
-- final.evidence MUST include one or more resolvable refs.
-- final.confidence MAY be low, medium, or high.
+- Do not include a final branch, final.answer, final.evidence, or final.confidence.
 
 Final-answer quality:
 - Be precise, concise, and self-contained.
-- Do not mention internal schema rules in final.answer.
+- Do not mention internal schema rules in the final answer.
 - For exact-output tasks, copy the required text exactly. Do not paraphrase, improve, shorten, or regenerate it.
 `
 

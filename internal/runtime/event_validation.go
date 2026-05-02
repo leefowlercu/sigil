@@ -42,7 +42,6 @@ var (
 
 	stepDecisions = map[StepDecision]struct{}{
 		StepDecisionContinue: {},
-		StepDecisionFinal:    {},
 	}
 
 	actionExecutionStatuses = map[ActionExecutionStatus]struct{}{
@@ -456,17 +455,11 @@ func decodeAndValidatePayload(eventType EventType, payloadRaw []byte) (any, erro
 		if _, ok := stepDecisions[payload.Decision]; !ok {
 			return nil, fmt.Errorf("node.step.completed decision %q is not supported; %w", payload.Decision, ErrInvalidEvent)
 		}
-		if payload.ActionCount < 0 {
-			return nil, fmt.Errorf("node.step.completed action_count must be >= 0; %w", ErrInvalidEvent)
+		if payload.ActionCount != 1 {
+			return nil, fmt.Errorf("node.step.completed action_count must be 1; %w", ErrInvalidEvent)
 		}
 		if payload.DurationMS < 0 {
 			return nil, fmt.Errorf("node.step.completed duration_ms must be >= 0; %w", ErrInvalidEvent)
-		}
-		if payload.Decision == StepDecisionContinue && payload.ActionCount != 1 {
-			return nil, fmt.Errorf("node.step.completed decision=continue requires action_count=1; %w", ErrInvalidEvent)
-		}
-		if payload.Decision == StepDecisionFinal && payload.ActionCount != 0 {
-			return nil, fmt.Errorf("node.step.completed decision=final requires action_count=0; %w", ErrInvalidEvent)
 		}
 		if err := validatePairedAccountingFields(payloadObj, "accounting", "accounting_ref", "node.step.completed", payload.AccountingRef); err != nil {
 			return nil, err

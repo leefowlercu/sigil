@@ -26,7 +26,7 @@ func TestInferBuildsStrictOpenRouterRequestWithHealingAndReasoning(t *testing.T)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_123","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`))
+		_, _ = w.Write([]byte(`{"id":"resp_123","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"print(\\\"FINAL_ANSWER_START\\\\ndone\\\\nFINAL_ANSWER_END\\\\n\\\")\",\"intent\":\"Emit verified final answer.\",\"expected_observation\":\"A final-answer block containing done.\"}}"}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`))
 	}))
 	defer server.Close()
 
@@ -119,7 +119,7 @@ func TestInferBuildsStrictOpenRouterRequestWithHealingAndReasoning(t *testing.T)
 		t.Fatalf("expected reasoning.effort medium, got %q", effort)
 	}
 
-	if response.StructuredPayload["decision"] != "final" {
+	if response.StructuredPayload["decision"] != "continue" {
 		t.Fatalf("expected parsed structured payload, got %+v", response.StructuredPayload)
 	}
 }
@@ -132,7 +132,7 @@ func TestInferOmitsReasoningBlockWhenDisabled(t *testing.T) {
 			t.Fatalf("failed to decode request body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_omit_reasoning","status":"completed","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}]}`))
+		_, _ = w.Write([]byte(`{"id":"resp_omit_reasoning","status":"completed","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"print(\\\"FINAL_ANSWER_START\\\\ndone\\\\nFINAL_ANSWER_END\\\\n\\\")\",\"intent\":\"Emit verified final answer.\",\"expected_observation\":\"A final-answer block containing done.\"}}"}]}]}`))
 	}))
 	defer server.Close()
 
@@ -209,7 +209,7 @@ func TestInferMapsReasoningArtifactsAndReasoningTokens(t *testing.T) {
 func TestInferMapsGatewayTotalCostIntoAccountingSample(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_cost","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30,"cost":"0.000123"}}`))
+		_, _ = w.Write([]byte(`{"id":"resp_cost","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"print(\\\"FINAL_ANSWER_START\\\\ndone\\\\nFINAL_ANSWER_END\\\\n\\\")\",\"intent\":\"Emit verified final answer.\",\"expected_observation\":\"A final-answer block containing done.\"}}"}]}],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30,"cost":"0.000123"}}`))
 	}))
 	defer server.Close()
 
@@ -245,7 +245,7 @@ func TestInferMapsGatewayTotalCostIntoAccountingSample(t *testing.T) {
 func TestInferMapsTopLevelGatewayCostIntoAccountingSampleWhenUsageIsAbsent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_top_level_cost","status":"completed","provider":"openai","model":"gpt-5.1","cost":"0.000123","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}]}`))
+		_, _ = w.Write([]byte(`{"id":"resp_top_level_cost","status":"completed","provider":"openai","model":"gpt-5.1","cost":"0.000123","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"print(\\\"FINAL_ANSWER_START\\\\ndone\\\\nFINAL_ANSWER_END\\\\n\\\")\",\"intent\":\"Emit verified final answer.\",\"expected_observation\":\"A final-answer block containing done.\"}}"}]}]}`))
 	}))
 	defer server.Close()
 
@@ -284,7 +284,7 @@ func TestInferMapsTopLevelGatewayCostIntoAccountingSampleWhenUsageIsAbsent(t *te
 func TestInferKeepsMissingUsageFieldsUnknownInAccountingSample(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_partial_usage","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":20}}`))
+		_, _ = w.Write([]byte(`{"id":"resp_partial_usage","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"print(\\\"FINAL_ANSWER_START\\\\ndone\\\\nFINAL_ANSWER_END\\\\n\\\")\",\"intent\":\"Emit verified final answer.\",\"expected_observation\":\"A final-answer block containing done.\"}}"}]}],"usage":{"input_tokens":20}}`))
 	}))
 	defer server.Close()
 
@@ -329,7 +329,7 @@ func TestInferKeepsMissingUsageFieldsUnknownInAccountingSample(t *testing.T) {
 func TestInferDerivesTotalTokensWhenOneReportedSideIsZero(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"resp_zero_output","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"final\",\"final\":{\"answer\":\"done\"}}"}]}],"usage":{"input_tokens":42,"output_tokens":0}}`))
+		_, _ = w.Write([]byte(`{"id":"resp_zero_output","status":"completed","provider":"openai","model":"gpt-5.1","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"continue\",\"continuation\":{\"repl_code\":\"print(\\\"FINAL_ANSWER_START\\\\ndone\\\\nFINAL_ANSWER_END\\\\n\\\")\",\"intent\":\"Emit verified final answer.\",\"expected_observation\":\"A final-answer block containing done.\"}}"}]}],"usage":{"input_tokens":42,"output_tokens":0}}`))
 	}))
 	defer server.Close()
 
@@ -503,17 +503,17 @@ func asReasoningCapabilityError(err error, target **inference.ReasoningCapabilit
 }
 
 func TestDecodePayloadTextAcceptsTrailingContentAfterFirstJSONObject(t *testing.T) {
-	payload, err := decodePayloadText(`{"decision":"final","final":{"answer":"done"}}{"unexpected":"trailing"}`)
+	payload, err := decodePayloadText(`{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"}}{"unexpected":"trailing"}`)
 	if err != nil {
 		t.Fatalf("expected payload decode success, got %v", err)
 	}
-	if payload["decision"] != "final" {
-		t.Fatalf("expected decision final, got %+v", payload)
+	if payload["decision"] != "continue" {
+		t.Fatalf("expected decision continue, got %+v", payload)
 	}
 }
 
 func TestDecodePayloadTextRejectsInvalidJSONPrefix(t *testing.T) {
-	_, err := decodePayloadText(`not-json {"decision":"final"}`)
+	_, err := decodePayloadText(`not-json {"decision":"continue"}`)
 	if err == nil {
 		t.Fatal("expected decode failure for invalid json prefix")
 	}
@@ -572,7 +572,7 @@ func TestExtractStructuredPayloadPrefersFinalAnswerPhaseForRLMResponses(t *testi
 				"content": []any{
 					map[string]any{
 						"type": "output_text",
-						"text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/root/context.json"}],"confidence":"high"}}`,
+						"text": `{"decision":"continue","continuation":{"repl_code":"fmt.Println(\"FINAL_ANSWER_START\")\nfmt.Println(\"done\")\nfmt.Println(\"FINAL_ANSWER_END\")","intent":"Emit verified final answer.","expected_observation":"A final-answer block containing done."}}`,
 					},
 				},
 			},
@@ -583,8 +583,8 @@ func TestExtractStructuredPayloadPrefersFinalAnswerPhaseForRLMResponses(t *testi
 	if err != nil {
 		t.Fatalf("expected extraction success, got %v", err)
 	}
-	if payload["decision"] != "final" {
-		t.Fatalf("expected final payload selection, got %+v", payload)
+	if payload["decision"] != "continue" {
+		t.Fatalf("expected action-only payload selection, got %+v", payload)
 	}
 	if metadata["source"] != "output[1].content[0].text" {
 		t.Fatalf("expected final payload source, got %+v", metadata)

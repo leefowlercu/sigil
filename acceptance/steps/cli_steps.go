@@ -2125,7 +2125,7 @@ func (w *harnessWorld) ensureRunStartMockGateway() error {
 		w.inferenceMockServer = newOpenRouterMockServer()
 		w.inferenceMockServer.SetResponses(mockGatewayResponse{
 			statusCode: 200,
-			body:       validFinalGatewayResponseBody(),
+			body:       finalGatewayResponseBody("done"),
 		})
 	}
 
@@ -2830,8 +2830,8 @@ func finalGatewayResponseBody(answer string) map[string]any {
 					map[string]any{
 						"type": "output_text",
 						"text": fmt.Sprintf(
-							`{"decision":"final","final":{"answer":%q,"evidence":[{"ref":"__context_ref__"}],"confidence":"medium"}}`,
-							answer,
+							`{"decision":"continue","continuation":{"repl_code":%q,"intent":"Emit verified final answer.","expected_observation":"A final-answer block containing the requested answer."}}`,
+							fmt.Sprintf("print(%q)", "FINAL_ANSWER_START\n"+answer+"\nFINAL_ANSWER_END\n"),
 						),
 					},
 				},

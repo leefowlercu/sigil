@@ -39,9 +39,9 @@ func registerInferenceSteps(ctx *godog.ScenarioContext, world *harnessWorld) {
 	ctx.Step(`^runtime retries with bounded policy \(3 total attempts exponential backoff base 250ms jitter max 2s\)$`, world.runtimeRetriesWithBoundedPolicy)
 	ctx.Step(`^inference fails with typed error code "([^"]*)"$`, world.inferenceFailsWithTypedErrorCode)
 	ctx.Step(`^normalized output contains all required canonical fields$`, world.normalizedOutputContainsAllRequiredCanonicalFields)
-	ctx.Step(`^decision discriminator enforces continue or final$`, world.decisionDiscriminatorEnforcesContinueOrFinal)
+	ctx.Step(`^decision discriminator enforces action-only continue$`, world.decisionDiscriminatorEnforcesContinueOrFinal)
 	ctx.Step(`^continuation branch invariant is enforced$`, world.continuationBranchInvariantIsEnforced)
-	ctx.Step(`^final branch invariant is enforced$`, world.finalBranchInvariantIsEnforced)
+	ctx.Step(`^direct final decision is rejected$`, world.finalBranchInvariantIsEnforced)
 	ctx.Step(`^unknown fields are rejected with typed output-validation error$`, world.unknownFieldsAreRejectedWithTypedOutputValidationError)
 	ctx.Step(`^reasoning artifacts are under top-level reasoning and reasoning token counts are under usage.reasoning_tokens$`, world.reasoningArtifactsAreUnderTopLevelReasoningAndReasoningTokenCountsAreUnderUsageReasoningTokens)
 }
@@ -181,7 +181,7 @@ func (w *harnessWorld) inferenceExecutionRuns() error {
 	}
 
 	if w.inferenceMockServer == nil && w.inferenceRequest.SchemaID == sigilschema.SigilRLMResponseV1SchemaID {
-		if err := w.openrouterMockGatewayReturnsPayloadFixture("valid-final"); err != nil {
+		if err := w.openrouterMockGatewayReturnsPayloadFixture("valid-continue"); err != nil {
 			return err
 		}
 	}
@@ -440,8 +440,8 @@ func (w *harnessWorld) finalBranchInvariantIsEnforced() error {
 	if err := w.inferenceFailsWithTypedErrorCode(string(sigilinference.ErrorCodeOutputValidation)); err != nil {
 		return err
 	}
-	if !strings.Contains(w.inferenceErr.Error(), "decision=final") {
-		return fmt.Errorf("expected final branch invariant failure, got %v", w.inferenceErr)
+	if !strings.Contains(w.inferenceErr.Error(), "decision must be continue") && !strings.Contains(w.inferenceErr.Error(), "final") {
+		return fmt.Errorf("expected direct final decision rejection, got %v", w.inferenceErr)
 	}
 
 	return nil
@@ -730,7 +730,7 @@ func unknownFieldGatewayResponseBody() map[string]any {
 		"provider": "openai",
 		"model":    "gpt-5.1",
 		"output": []any{
-			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"final","final":{"answer":"done","evidence":[{"ref":"run-artifact://node/example/context.json"}]},"unexpected":"value"}`}}},
+			map[string]any{"content": []any{map[string]any{"type": "output_text", "text": `{"decision":"continue","continuation":{"repl_code":"next","intent":"inspect","expected_observation":"match"},"unexpected":"value"}`}}},
 		},
 	}
 }
